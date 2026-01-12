@@ -1,0 +1,19 @@
+{
+    "name": "pyhtml-client",
+    "version": "0.0.1",
+    "description": "PyHTML client-side library with transport fallbacks",
+    "private": true,
+    "scripts": {
+        "build": "node build.mjs",
+        "build:dev": "node build.mjs --dev",
+        "watch": "node build.mjs --watch"
+    },
+    "devDependencies": {
+        "@types/morphdom": "^2.3.0",
+        "esbuild": "^0.20.0",
+        "typescript": "^5.3.0"
+    },
+    "dependencies": {
+        "morphdom": "^2.7.7"
+    }
+}

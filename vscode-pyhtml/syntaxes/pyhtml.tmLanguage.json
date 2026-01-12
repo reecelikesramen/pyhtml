@@ -1,0 +1,93 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "PyHTML",
+    "scopeName": "source.pyhtml",
+    "patterns": [
+      {
+        "include": "#directives"
+      },
+      {
+        "include": "#python-section"
+      },
+      {
+        "include": "#html-content"
+      }
+    ],
+    "repository": {
+      "directives": {
+        "match": "^\\s*(!\\w+)(.*)$",
+        "captures": {
+          "1": {
+            "name": "keyword.control.directive.pyhtml"
+          },
+          "2": {
+            "patterns": [
+              {
+                "include": "source.python"
+              }
+            ]
+          }
+        }
+      },
+      "python-section": {
+        "begin": "^(---)\\s*$",
+        "beginCaptures": {
+          "1": {
+            "name": "punctuation.separator.pyhtml"
+          }
+        },
+        "end": "(?=not)possible",
+        "contentName": "meta.embedded.block.python",
+        "patterns": [
+          {
+            "include": "source.python"
+          }
+        ]
+      },
+      "html-content": {
+        "patterns": [
+          {
+            "include": "#event-handler-value"
+          },
+          {
+            "include": "#special-attributes"
+          },
+          {
+            "include": "#interpolation"
+          },
+          {
+            "include": "text.html.basic"
+          }
+        ]
+      },
+      "event-handler-value": {
+        "begin": "(@\\w+)=\"",
+        "end": "\"",
+        "beginCaptures": {
+          "1": {
+            "name": "entity.other.attribute-name.event.pyhtml"
+          }
+        },
+        "contentName": "meta.embedded.inline.python",
+        "patterns": [
+          {
+            "include": "source.python"
+          }
+        ]
+      },
+      "special-attributes": {
+        "match": "(\\$if|\\$for|\\$bind|@click|@submit|@change)",
+        "name": "entity.other.attribute-name.special.pyhtml"
+      },
+      "interpolation": {
+        "begin": "\\{",
+        "end": "\\}",
+        "name": "meta.embedded.inline.python",
+        "patterns": [
+          {
+            "include": "source.python"
+          }
+        ]
+      }
+    }
+  }

@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# PyHTML specific
+.pyhtml_cache/
+dist/
+build/
+*.egg-info/
+pyhtml/src/pyhtml/client/node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Demo app
+demo-app/.pyhtml_cache/
+
+# Node modules
+node_modules/
+
+out/

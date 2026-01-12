@@ -1,0 +1,34 @@
+!path { 'main': '/', 'test': '/a/:id' }
+
+<div>
+    <h1>Greetings, {name}!</h1>
+    <button @click="change_name()">Change name</button>
+    <button @click="increment_count(2)">Click me</button>
+    <h1>{"Main" if path["main"] else "Test"}</h1>
+    <p>Clicked {count} times</p>
+    <p>Path: {path}</p>
+    <p>URL: {url}</p>
+    <p>Params: {params}</p>
+    <p>Query: {query}</p>
+</div>
+
+---
+name = "World"
+count = 0
+
+async def __on_load():
+    # Initial load
+    global count
+    count = 1
+    pass
+
+def increment_count(amount=1):
+    """Increment the counter"""
+    global count
+    count += amount
+
+def change_name():
+    """Change the name of the page"""
+    global name, count
+    name = "PyHTML" 
+    count += 1
