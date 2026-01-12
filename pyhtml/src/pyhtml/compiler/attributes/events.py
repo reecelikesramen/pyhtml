@@ -36,7 +36,7 @@ class EventAttributeParser(AttributeParser):
             value=attr_value,
             event_type=event_type,
             handler_name=handler_name,
-            handler_args=handler_args,
+            args=handler_args,
             line=line,
             column=col
         )

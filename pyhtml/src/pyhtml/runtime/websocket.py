@@ -4,6 +4,9 @@ from typing import Dict, Any, Set
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from pyhtml.runtime.page import BasePage
+import io
+import contextlib
+import traceback
 
 
 class WebSocketHandler:
@@ -63,8 +66,30 @@ class WebSocketHandler:
 
         if msg_type == 'event':
             await self._handle_event(websocket, data)
+        elif msg_type == 'relocate':
+            await self._handle_relocate(websocket, data)
         else:
             print(f"Unknown message type: {msg_type}")
+
+    async def _send_console_message(self, websocket: WebSocket, output: str, error: str = None):
+        """Send captured stdout/stderr/exception to client console."""
+        if output:
+            lines = output.strip().split('\n')
+            if lines:
+                await websocket.send_json({
+                    'type': 'console',
+                    'level': 'info',
+                    'lines': lines
+                })
+        
+        if error:
+            lines = error.strip().split('\n')
+            if lines:
+                await websocket.send_json({
+                    'type': 'console',
+                    'level': 'error',
+                    'lines': lines
+                })
 
     async def _handle_event(self, websocket: WebSocket, data: Dict[str, Any]):
         """Handle client event."""
@@ -72,99 +97,334 @@ class WebSocketHandler:
         path = data.get('path', '/')
         event_data = data.get('data', {})
 
-        # Get or create page instance
-        if websocket not in self.connection_pages:
-            # Split path into pathname and query string
+        # Capture output for the entire event handling lifecycle
+        stdout_capture = io.StringIO()
+        error_capture = None
+
+        try:
+            with contextlib.redirect_stdout(stdout_capture):
+                # Get or create page instance
+                if websocket not in self.connection_pages:
+                    # Split path into pathname and query string
+                    from urllib.parse import urlparse, parse_qs
+                    parsed_url = urlparse(path)
+                    pathname = parsed_url.path
+                    query_string = parsed_url.query
+                    
+                    # Find page class for path (use pathname only, not query string)
+                    match = self.app.router.match(pathname)
+                    if not match:
+                        print(f"No route found for path: {pathname}")
+                        return
+                    
+                    page_class, params, variant_name = match
+                    
+                    # Create minimal request-like object if needed, or update Page 
+                    # to accept None/minimal context for WS mode
+                    # For now, we'll pass a mock request or the websocket itself if Page supports it
+                    from starlette.requests import Request
+                    
+                    # Construct a mock request from the websocket scope
+                    # This is a simplification; ideally Page accepts WebSocket or Request
+                    # Construct a mock request with the correct page path
+                    # We copy scope to avoid mutating the actual WebSocket scope
+                    scope = dict(websocket.scope)
+                    scope['type'] = 'http' 
+                    scope['path'] = pathname
+                    scope['raw_path'] = pathname.encode('ascii')
+                    scope['query_string'] = query_string.encode('ascii') if query_string else b''
+                    request = Request(scope)
+                    
+                    # Extract query params from the path's query string
+                    if query_string:
+                        # parse_qs returns lists, we want single values
+                        parsed = parse_qs(query_string)
+                        query = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
+                    else:
+                        query = {}
+                    
+                    # Build path info dict
+                    path_info = {}
+                    if hasattr(page_class, '__routes__'):
+                        for name in page_class.__routes__.keys():
+                            path_info[name] = (name == variant_name)
+                    elif hasattr(page_class, '__route__'):
+                        path_info['main'] = True
+                    
+                    # Build URL helper
+                    from pyhtml.runtime.router import URLHelper
+                    url_helper = None
+                    if hasattr(page_class, '__routes__'):
+                            url_helper = URLHelper(page_class.__routes__)
+                    
+                    page = page_class(request, params, query, path=path_info, url=url_helper)
+                    
+                    # Optional: Populate user if hook exists
+                    if hasattr(self.app, 'get_user'):
+                        page.user = self.app.get_user(websocket)
+                        
+                    self.connection_pages[websocket] = page
+                    
+                    # Run load hook
+                    if hasattr(page, '__on_load'):
+                        if asyncio.iscoroutinefunction(page.__on_load):
+                            await page.__on_load()
+                        else:
+                            page.__on_load()
+                else:
+                    page = self.connection_pages[websocket]
+
+                # Call handler
+                print(f"DEBUG EVENT: {handler_name} payload={event_data}")
+                response = await page.handle_event(handler_name, event_data)
+
+                # Get updated HTML
+                # Note: Response object contains bytes, we need string
+                # Assuming page.render() returns a Response with .body
+                html = response.body.decode('utf-8')
+
+                # Send update
+                await websocket.send_json({
+                    'type': 'update',
+                    'html': html
+                })
+
+        except Exception:
+            # Capture exception trace
+            error_capture = traceback.format_exc()
+            # Also print to server console for backup
+            print(error_capture)
+
+        # Send any captured output/errors to client
+        await self._send_console_message(websocket, stdout_capture.getvalue(), error_capture)
+
+    async def _handle_relocate(self, websocket: WebSocket, data: Dict[str, Any]):
+        """Handle SPA navigation between sibling paths.
+        
+        Updates page.path, page.params, page.query, page.url without reinstantiating.
+        Preserves page state across path changes.
+        """
+        path = data.get('path', '/')
+        
+        # Get existing page instance
+        page = self.connection_pages.get(websocket)
+        if not page:
+            # No page instance yet - create one for this path
+            # This happens when user navigates via SPA link before any @click
             from urllib.parse import urlparse, parse_qs
+            from starlette.requests import Request
+            from pyhtml.runtime.router import URLHelper
+            
             parsed_url = urlparse(path)
             pathname = parsed_url.path
             query_string = parsed_url.query
             
-            # Find page class for path (use pathname only, not query string)
             match = self.app.router.match(pathname)
             if not match:
-                print(f"No route found for path: {pathname}")
+                print(f"Relocate: No route found for path: {pathname}")
                 return
             
             page_class, params, variant_name = match
             
-            # Create minimal request-like object if needed, or update Page 
-            # to accept None/minimal context for WS mode
-            # For now, we'll pass a mock request or the websocket itself if Page supports it
-            from starlette.requests import Request
-            
-            # Construct a mock request from the websocket scope
-            # This is a simplification; ideally Page accepts WebSocket or Request
-            scope = websocket.scope
-            scope['type'] = 'http' # Hack to satisfy Request init if it checks
+            # Create request with correct path
+            scope = dict(websocket.scope)
+            scope['type'] = 'http'
+            scope['path'] = pathname
+            scope['raw_path'] = pathname.encode('ascii')
+            scope['query_string'] = query_string.encode('ascii') if query_string else b''
             request = Request(scope)
             
-            # Extract query params from the path's query string
+            # Parse query
             if query_string:
-                # parse_qs returns lists, we want single values
                 parsed = parse_qs(query_string)
                 query = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
             else:
                 query = {}
             
-            # Build path info dict
+            # Build path info
             path_info = {}
             if hasattr(page_class, '__routes__'):
                 for name in page_class.__routes__.keys():
                     path_info[name] = (name == variant_name)
-            elif hasattr(page_class, '__route__'):
-                path_info['main'] = True
             
             # Build URL helper
-            from pyhtml.runtime.router import URLHelper
             url_helper = None
             if hasattr(page_class, '__routes__'):
-                 url_helper = URLHelper(page_class.__routes__)
+                url_helper = URLHelper(page_class.__routes__)
             
+            # Create page instance
             page = page_class(request, params, query, path=path_info, url=url_helper)
             
-            # Optional: Populate user if hook exists
+            # Populate user if hook exists
             if hasattr(self.app, 'get_user'):
                 page.user = self.app.get_user(websocket)
-                
+            
             self.connection_pages[websocket] = page
             
-            # Run load hook
+            # Run __on_load lifecycle hook
             if hasattr(page, '__on_load'):
                 if asyncio.iscoroutinefunction(page.__on_load):
                     await page.__on_load()
                 else:
                     page.__on_load()
+            
+            # Render and send initial HTML
+            response = await page.render()
+            html = response.body.decode('utf-8')
+            await websocket.send_json({
+                'type': 'update',
+                'html': html
+            })
+            return
+        
+        # Parse new URL
+        from urllib.parse import urlparse, parse_qs
+        parsed_url = urlparse(path)
+        pathname = parsed_url.path
+        query_string = parsed_url.query
+        
+        # Match route to get new params and variant
+        match = self.app.router.match(pathname)
+        if not match:
+            print(f"Relocate: No route found for path: {pathname}")
+            return
+        
+        page_class, params, variant_name = match
+        
+        # Verify this is the same page class (sanity check)
+        if type(page) != page_class:
+            print(f"Relocate: Page class mismatch, expected {type(page)}, got {page_class}")
+            return
+        
+        # Update params
+        page.params = params
+        
+        # Update query
+        if query_string:
+            parsed = parse_qs(query_string)
+            page.query = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
         else:
-            page = self.connection_pages[websocket]
+            page.query = {}
+            
+        # Update request object to reflect new path (critical for hot reload)
+        # We need to create a new Request because it's immutable-ish
+        from starlette.requests import Request
+        scope = dict(websocket.scope)
+        scope['type'] = 'http'
+        scope['path'] = pathname
+        scope['raw_path'] = pathname.encode('ascii')
+        scope['query_string'] = query_string.encode('ascii') if query_string else b''
+        page.request = Request(scope)
+        
+        # Update path info dict
+        if hasattr(page_class, '__routes__'):
+            for name in page_class.__routes__.keys():
+                page.path[name] = (name == variant_name)
+        
+        # Call __on_relocate__ lifecycle hook if it exists
+        stdout_capture = io.StringIO()
+        error_capture = None
 
-        # Dispatch event
-        response = await page.handle_event(handler_name, event_data)
+        try:
+            with contextlib.redirect_stdout(stdout_capture):
+                if hasattr(page, '__on_relocate__'):
+                    if asyncio.iscoroutinefunction(page.__on_relocate__):
+                        await page.__on_relocate__()
+                    else:
+                        page.__on_relocate__()
+                
+                # Re-render and send update
+                response = await page.render()
+                html = response.body.decode('utf-8')
+                
+                await websocket.send_json({
+                    'type': 'update',
+                    'html': html
+                })
+        except Exception:
+            error_capture = traceback.format_exc()
+            print(error_capture)
 
-        # Get updated HTML
-        # Note: Response object contains bytes, we need string
-        # Assuming page.render() returns a Response with .body
-        html = response.body.decode('utf-8')
-
-        # Send update
-        await websocket.send_json({
-            'type': 'update',
-            'html': html
-        })
+        # Send captured output
+        await self._send_console_message(websocket, stdout_capture.getvalue(), error_capture)
 
     async def broadcast_reload(self):
-        """Broadcast reload signal to all clients."""
+        """Broadcast reload to all clients, preserving state where possible.
+        
+        For each connection with an existing page instance, attempts to:
+        1. Create a new page instance from the updated class
+        2. Migrate user state from old instance to new instance
+        3. Re-render and send 'update' message
+        4. Fall back to hard 'reload' if any step fails
+        """
         if not self.active_connections:
             return
             
         disconnected = set()
-        for connection in self.active_connections:
+        for connection in list(self.active_connections):
             try:
-                await connection.send_json({'type': 'reload'})
+                old_page = self.connection_pages.get(connection)
+                if old_page:
+                    try:
+                        # Get the current URL path from the old page's request
+                        path = old_page.request.url.path
+                        
+                        # Find the NEW page class from the router (which was just updated)
+                        match = self.app.router.match(path)
+                        if not match:
+                            raise Exception(f"No route found for {path}")
+                        
+                        new_page_class, params, variant_name = match
+                        
+                        # Create new page instance with same context
+                        new_page = new_page_class(
+                            old_page.request,
+                            params,
+                            old_page.query,
+                            path=old_page.path,
+                            url=old_page.url
+                        )
+                        
+                        # Migrate user state: copy all non-framework attributes
+                        # Framework attrs to skip
+                        skip_attrs = {'request', 'params', 'query', 'path', 'url', 
+                                      'user', 'errors', 'loading'}
+                        for attr, value in old_page.__dict__.items():
+                            if attr not in skip_attrs and not attr.startswith('_'):
+                                try:
+                                    setattr(new_page, attr, value)
+                                except AttributeError:
+                                    pass  # Read-only or property, skip
+                        
+                        # Preserve user
+                        new_page.user = old_page.user
+                        
+                        # Update our reference
+                        self.connection_pages[connection] = new_page
+                        
+                        # Render with new code but preserved state
+                        response = await new_page.render()
+                        html = response.body.decode('utf-8')
+                        await connection.send_json({
+                            'type': 'update',
+                            'html': html
+                        })
+                        print(f"PyHTML: Hot reload (state preserved) for {type(new_page).__name__}")
+                        
+                    except Exception as e:
+                        # Anything failed, fall back to hard reload
+                        print(f"PyHTML: Hot reload failed, falling back to hard reload: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        await connection.send_json({'type': 'reload'})
+                else:
+                    # No page instance, do hard reload
+                    await connection.send_json({'type': 'reload'})
             except Exception:
                 disconnected.add(connection)
         
         for conn in disconnected:
-            self.active_connections.remove(conn)
+            self.active_connections.discard(conn)
             if conn in self.connection_pages:
                 del self.connection_pages[conn]
+

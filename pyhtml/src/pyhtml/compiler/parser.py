@@ -1,110 +1,20 @@
 """Main PyHTML parser orchestrator."""
 import ast
-from html.parser import HTMLParser
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any, Union
 
-from pyhtml.compiler.ast_nodes import ParsedPyHTML, SpecialAttribute, TemplateNode
+from lxml import html, etree
+
+from pyhtml.compiler.ast_nodes import ParsedPyHTML, SpecialAttribute, TemplateNode, InterpolationNode
 from pyhtml.compiler.attributes.base import AttributeParser
 from pyhtml.compiler.attributes.events import EventAttributeParser
 from pyhtml.compiler.directives.base import DirectiveParser
 from pyhtml.compiler.directives.path import PathDirectiveParser
+from pyhtml.compiler.directives.no_spa import NoSpaDirectiveParser
+from pyhtml.compiler.attributes.conditional import ConditionalAttributeParser
+from pyhtml.compiler.attributes.loop import LoopAttributeParser, KeyAttributeParser
+from pyhtml.compiler.attributes.bind import BindAttributeParser
 from pyhtml.compiler.interpolation.jinja import JinjaInterpolationParser
-
-
-class TemplateHTMLParser(HTMLParser):
-    """HTML parser that builds TemplateNode tree with special attribute support."""
-
-    def __init__(self, attribute_parsers: List[AttributeParser], interpolation_parser):
-        super().__init__()
-        self.attribute_parsers = attribute_parsers
-        self.interpolation_parser = interpolation_parser
-        self.nodes: List[TemplateNode] = []
-        self.stack: List[TemplateNode] = []
-        self.current_line = 1
-        self.current_col = 0
-
-    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]):
-        """Handle opening tag."""
-        regular_attrs, special_attrs = self._parse_attributes(attrs)
-
-        node = TemplateNode(
-            tag=tag,
-            attributes=regular_attrs,
-            special_attributes=special_attrs,
-            line=self.current_line,
-            column=self.current_col
-        )
-
-        if self.stack:
-            self.stack[-1].children.append(node)
-        else:
-            self.nodes.append(node)
-
-        self.stack.append(node)
-
-    def handle_endtag(self, tag: str):
-        """Handle closing tag."""
-        if self.stack and self.stack[-1].tag == tag:
-            self.stack.pop()
-
-    def handle_data(self, data: str):
-        """Handle text content."""
-        if not data.strip():
-            return
-
-        # Parse interpolations
-        parts = self.interpolation_parser.parse(data, self.current_line, self.current_col)
-
-        # Create text nodes for each part
-        for part in parts:
-            if isinstance(part, str):
-                if part.strip():
-                    text_node = TemplateNode(
-                        tag=None,
-                        text_content=part,
-                        line=self.current_line,
-                        column=self.current_col
-                    )
-                    if self.stack:
-                        self.stack[-1].children.append(text_node)
-                    else:
-                        self.nodes.append(text_node)
-            else:
-                # InterpolationNode - wrap in text node
-                text_node = TemplateNode(
-                    tag=None,
-                    text_content=None,
-                    line=part.line,
-                    column=part.column
-                )
-                text_node.special_attributes = [part]  # Store interpolation as special attribute
-                if self.stack:
-                    self.stack[-1].children.append(text_node)
-                else:
-                    self.nodes.append(text_node)
-
-    def _parse_attributes(self, attrs: List[Tuple[str, Optional[str]]]) -> Tuple[dict, List[SpecialAttribute]]:
-        """Separate regular attrs from special ones."""
-        regular = {}
-        special = []
-
-        for name, value in attrs:
-            if value is None:
-                value = ""
-            parsed = False
-            for parser in self.attribute_parsers:
-                if parser.can_parse(name):
-                    attr = parser.parse(name, value, self.current_line, self.current_col)
-                    if attr:
-                        special.append(attr)
-                    parsed = True
-                    break
-
-            if not parsed:
-                regular[name] = value
-
-        return regular, special
 
 
 class PyHTMLParser:
@@ -114,13 +24,17 @@ class PyHTMLParser:
         # Directive registry
         self.directive_parsers: List[DirectiveParser] = [
             PathDirectiveParser(),
+            NoSpaDirectiveParser(),
             # Future: LayoutDirectiveParser(), etc.
         ]
 
         # Attribute parser chain
-        self.attribute_parsers = [
+        self.attribute_parsers: List[AttributeParser] = [
             EventAttributeParser(),
-            # Future: BindAttributeParser(), ConditionalParser(), etc.
+            ConditionalAttributeParser(),
+            LoopAttributeParser(),
+            KeyAttributeParser(),
+            BindAttributeParser(),
         ]
 
         # Interpolation parser (pluggable)
@@ -155,28 +69,110 @@ class PyHTMLParser:
             directive_section = content
             python_section = ""
 
-        # Parse directives
-        for line_num, line in enumerate(directive_section.split('\n'), 1):
+        # Parse directives (handles multiline directives by accumulating lines)
+        directive_lines = directive_section.split('\n')
+        i = 0
+        while i < len(directive_lines):
+            line = directive_lines[i]
             line_stripped = line.strip()
+            line_num = i + 1
+            
             if not line_stripped or line_stripped.startswith('---'):
+                i += 1
                 continue
 
             # Check if it's a directive
+            found_directive = False
             for parser in self.directive_parsers:
                 if parser.can_parse(line_stripped):
+                    # Try single line first
                     directive = parser.parse(line_stripped, line_num, 0)
                     if directive:
                         directives.append(directive)
+                        found_directive = True
+                        i += 1
                         break
-            else:
+                    
+                    # If single line failed, try accumulating multiline content
+                    # Count open braces/brackets to find the end
+                    accumulated = line_stripped
+                    brace_count = accumulated.count('{') - accumulated.count('}')
+                    bracket_count = accumulated.count('[') - accumulated.count(']')
+                    j = i + 1
+                    
+                    while (brace_count > 0 or bracket_count > 0) and j < len(directive_lines):
+                        next_line = directive_lines[j].strip()
+                        accumulated += '\n' + next_line
+                        brace_count += next_line.count('{') - next_line.count('}')
+                        bracket_count += next_line.count('[') - next_line.count(']')
+                        j += 1
+                    
+                    # Try parsing the accumulated content
+                    directive = parser.parse(accumulated, line_num, 0)
+                    if directive:
+                        directives.append(directive)
+                        found_directive = True
+                        i = j  # Skip past all accumulated lines
+                        break
+                    else:
+                        i += 1
+                    break
+            
+            if not found_directive:
                 # Not a directive, part of template
                 template_lines.append(line)
+                i += 1
 
-        # Parse template HTML
+        # Parse template HTML using lxml
         template_html = '\n'.join(template_lines)
-        html_parser = TemplateHTMLParser(self.attribute_parsers, self.interpolation_parser)
-        html_parser.feed(template_html)
-        template_nodes = html_parser.nodes
+        template_nodes = []
+        
+        if template_html.strip():
+            # lxml.html.fragments_fromstring handles multiple top-level elements
+            # It returns a list of elements and strings (for top-level text)
+            try:
+                # fragments_fromstring might raise error if html is empty or very partial
+                fragments = html.fragments_fromstring(template_html)
+                
+                for frag in fragments:
+                    if isinstance(frag, str):
+                        # Top-level text
+                        text_nodes = self._parse_text(frag)
+                        if text_nodes:
+                            template_nodes.extend(text_nodes)
+                    else:
+                        # Element
+                        mapped_node = self._map_node(frag)
+                        template_nodes.append(mapped_node)
+                        
+                        # Handle tail text of top-level element (text after it)
+                        # Wait, lxml fragments_fromstring returns mixed list of elements and strings
+                        # so tail text is usually returned as a subsequent string fragment.
+                        # BUT, documentation says: "Returns a list of the elements found..."
+                        # It doesn't always guarantee correct tail handling for top level.
+                        # Let's verify: 
+                        # fragments_fromstring("<div></div>text") -> [Element div, "text"]
+                        # elements tail is probably not set if it's top level list??
+                        # Actually if we use fragments_fromstring, checking tail is safe.
+                        
+                        if frag.tail:
+                             # Wait, if fragments_fromstring returns it as separate string item, we duplicate?
+                             # Let's rely on testing. If lxml puts it in list, frag.tail should be None?
+                             # Nope, lxml behavior: 
+                             # fragments_fromstring("<a></a>tail") -> [Element a]
+                             # The tail is attached to 'a'.
+                             # So we DO need to handle tail here.
+                             
+                             tail_nodes = self._parse_text(frag.tail)
+                             if tail_nodes:
+                                 template_nodes.extend(tail_nodes)
+
+            except Exception as e:
+                # Failed to parse, maybe empty or purely comment?
+                # or critical error
+                import traceback
+                traceback.print_exc()
+                pass
 
         # Parse Python code
         python_ast = None
@@ -186,6 +182,15 @@ class PyHTMLParser:
             except SyntaxError:
                 pass  # Will be caught later
 
+        if python_ast:
+            # Shift line numbers to match original file
+            # python_start is index of '---' line
+            # python_section code starts at python_start + 1
+            # Current AST lines start at 1.
+            # We want line 1 to map to (python_start + 1) + 1 = python_start + 2
+            # So offset = python_start + 1
+            ast.increment_lineno(python_ast, python_start + 1)
+
         return ParsedPyHTML(
             directives=directives,
             template=template_nodes,
@@ -193,3 +198,96 @@ class PyHTMLParser:
             python_ast=python_ast,
             file_path=file_path
         )
+
+    def _parse_text(self, text: str) -> List[TemplateNode]:
+        """Helper to parse text string into list of text/interpolation nodes."""
+        if not text:
+            return []
+            
+        parts = self.interpolation_parser.parse(text, line=0, col=0)
+        nodes = []
+        for part in parts:
+            if isinstance(part, str):
+                if parts: # Keep whitespace unless explicitly stripping policy?
+                   # Current policy seems to be keep unless empty? 
+                   # "if not text.strip(): return" was in old parser
+                   # But if we are inside <pre>, we need it. 
+                   # BS4/lxml default to preserving. 
+                   nodes.append(TemplateNode(
+                       tag=None,
+                       text_content=part,
+                       line=0, column=0
+                   ))
+            else:
+                 node = TemplateNode(
+                    tag=None, text_content=None,
+                    line=part.line, column=part.column
+                 )
+                 node.special_attributes = [part]
+                 nodes.append(node)
+        return nodes
+
+    def _map_node(self, element: html.HtmlElement) -> TemplateNode:
+        # lxml elements have tag, attrib, text, tail
+        
+        # Parse attributes
+        regular_attrs, special_attrs = self._parse_attributes(dict(element.attrib))
+        
+        node = TemplateNode(
+            tag=element.tag,
+            attributes=regular_attrs,
+            special_attributes=special_attrs,
+            line=getattr(element, 'sourceline', 0), 
+            column=0
+        )
+        
+        # Handle inner text (before first child)
+        if element.text:
+            text_nodes = self._parse_text(element.text)
+            if text_nodes:
+                node.children.extend(text_nodes)
+                
+        # Handle children
+        for child in element:
+            # 1. Map child element
+            child_node = self._map_node(child)
+            
+            # Special logic: lxml comments are Elements with generic function tag
+            if isinstance(child, html.HtmlComment):
+                continue # Skip comments
+            if not isinstance(child.tag, str):
+                # Processing instruction etc
+                continue
+
+            node.children.append(child_node)
+            
+            # 2. Handle child's tail (text immediately after child, before next sibling)
+            if child.tail:
+                tail_nodes = self._parse_text(child.tail)
+                if tail_nodes:
+                    node.children.extend(tail_nodes)
+        
+        return node
+
+    def _parse_attributes(self, attrs: Dict[str, Any]) -> Tuple[dict, List[SpecialAttribute]]:
+        """Separate regular attrs from special ones."""
+        regular = {}
+        special = []
+
+        for name, value in attrs.items():
+            if value is None:
+                value = ""
+            
+            parsed = False
+            for parser in self.attribute_parsers:
+                if parser.can_parse(name):
+                    attr = parser.parse(name, str(value), 0, 0)
+                    if attr:
+                        special.append(attr)
+                    parsed = True
+                    break
+
+            if not parsed:
+                regular[name] = str(value)
+
+        return regular, special

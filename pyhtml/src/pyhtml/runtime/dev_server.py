@@ -111,7 +111,46 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
     # Watcher task
     async def watch_changes():
         try:
-            async for changes in awatch(pages_dir, stop_event=shutdown_event):
+            # Determine pyhtml source directory
+            import pyhtml
+            pyhtml_src_dir = Path(pyhtml.__file__).parent
+            
+            # Watch both pages and source
+            async for changes in awatch(pages_dir, pyhtml_src_dir, stop_event=shutdown_event):
+                # Check what changed
+                library_changed = False
+                for change_type, file_path in changes:
+                    if str(file_path).startswith(str(pyhtml_src_dir)):
+                        library_changed = True
+                        break
+                
+                if library_changed:
+                     print("PyHTML: Library code changed, restarting server...")
+                     # Signal shutdown to trigger restart (managed by outer loop in future, 
+                     # but for now we just exit so user can rely on tools like nodemon/watchdog or 
+                     # we can try to re-exec).
+                     # Since we are inside the app process, we can't easily re-exec self cleanly 
+                     # without losing the socket ownership if not careful.
+                     # BUT, users usually run this via `python -m pyhtml.cli` which might not have a watcher wrapper.
+                     
+                     # Simple approach: Exit with a specific code or just print message?
+                     # Standard Uvicorn reload works by spawning a subprocess. We are running in-process here.
+                     
+                     # Check if we can just trigger a reload of modules? Unlikely to work well.
+                     
+                     # Wait, if we are running in `dev` command, we might be inside a reloader?
+                     # No, we disabled uvicorn reloader `config.use_reloader = False`.
+                     
+                     # If we want full reload on library changes, we should probably let Uvicorn manage it
+                     # or implement a re-exec.
+                     
+                     # For now, let's just create a marker file or print a loud message. 
+                     # Actually, if we just want to reload pages, we do that below. 
+                     # But for `page.py` changes (base class), we need a restart.
+                     
+                     print("!!! Library change detected. Please restart server manually for now (Ctrl+C and run again) until auto-restart is implemented. !!!")
+                     
+                # First, recompile changed pages
                 # First, recompile changed pages
                 should_reload = False
                 for change_type, file_path in changes:

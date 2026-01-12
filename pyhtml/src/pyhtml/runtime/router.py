@@ -209,6 +209,14 @@ class Router:
         """Add route from compiled page."""
         self.routes.append(Route(pattern, page_class, name))
 
+    def add_page(self, page_class: Type[BasePage]):
+        """Register all routes for a page class."""
+        if hasattr(page_class, '__routes__'):
+             for name, pattern in page_class.__routes__.items():
+                 self.add_route(pattern, page_class, name)
+        elif hasattr(page_class, '__route__'):
+             self.add_route(page_class.__route__, page_class)
+
     def match(self, path: str) -> Optional[Tuple[Type[BasePage], dict, str]]:
         """Match URL path to page class. Returns: (PageClass, params, variant_name)."""
         for route in self.routes:
@@ -216,3 +224,13 @@ class Router:
             if params is not None:
                 return (route.page_class, params, route.name)
         return None
+
+    def remove_routes_for_file(self, file_path: str):
+        """Remove all routes associated with a file path."""
+        # Normalize file path for comparison
+        file_path = str(file_path)
+        
+        self.routes = [
+            r for r in self.routes 
+            if getattr(r.page_class, '__file_path__', '') != file_path
+        ]

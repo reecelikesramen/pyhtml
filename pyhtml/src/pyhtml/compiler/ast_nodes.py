@@ -28,6 +28,14 @@ class PathDirective(Directive):
 
 
 @dataclass
+class NoSpaDirective(Directive):
+    """!no_spa - disables client-side SPA navigation for this page."""
+
+    def __str__(self) -> str:
+        return "NoSpaDirective()"
+
+
+@dataclass
 class SpecialAttribute(ASTNode):
     """Base for special attributes ($, @, :)."""
     name: str
@@ -35,14 +43,62 @@ class SpecialAttribute(ASTNode):
 
 
 @dataclass
-class EventAttribute(SpecialAttribute):
-    """@click="handler_name"."""
-    event_type: str  # 'click', 'submit', etc.
-    handler_name: str
-    handler_args: List[str] = field(default_factory=list)  # For future: @click="handler(arg1, arg2)"
+class KeyAttribute(SpecialAttribute):
+    """$key="unique_id"."""
+    expr: str
 
     def __str__(self) -> str:
-        return f"EventAttribute(event={self.event_type}, handler={self.handler_name})"
+        return f"KeyAttribute(expr={self.expr})"
+
+
+@dataclass
+class IfAttribute(SpecialAttribute):
+    """$if="condition"."""
+    condition: str
+    
+    def __str__(self) -> str:
+        return f"IfAttribute(condition={self.condition})"
+
+
+@dataclass
+class ShowAttribute(SpecialAttribute):
+    """$show="condition"."""
+    condition: str
+    
+    def __str__(self) -> str:
+        return f"ShowAttribute(condition={self.condition})"
+
+
+@dataclass
+class ForAttribute(SpecialAttribute):
+    """$for="item in items"."""
+    is_template_tag: bool # <template $for>
+    loop_vars: str # "item" or "key, value"
+    iterable: str # "items" or "items.items()"
+    key: Optional[str] = None
+    
+    def __str__(self) -> str:
+        return f"ForAttribute(vars={self.loop_vars}, in={self.iterable})"
+
+
+@dataclass
+class BindAttribute(SpecialAttribute):
+    """$bind="variable"."""
+    variable: str
+    
+    def __str__(self) -> str:
+        return f"BindAttribute(var={self.variable})"
+
+
+@dataclass
+class EventAttribute(SpecialAttribute):
+    """@click="handler_name" or @click="handler(arg1)"."""
+    event_type: str  # 'click', 'submit', etc.
+    handler_name: str
+    args: List[str] = field(default_factory=list)  # List of python expressions for arguments
+
+    def __str__(self) -> str:
+        return f"EventAttribute(event={self.event_type}, handler={self.handler_name}, args={self.args})"
 
 
 @dataclass

@@ -1,6 +1,6 @@
 import { TransportManager, TransportConfig } from './transport-manager';
 import { DOMUpdater } from './dom-updater';
-import { ServerMessage, ClientMessage, EventData } from './transports';
+import { ServerMessage, ClientMessage, EventData, RelocateMessage } from './transports';
 
 export interface PyHTMLConfig extends TransportConfig {
     /** Auto-initialize on DOMContentLoaded */
@@ -22,6 +22,8 @@ export class PyHTMLApp {
     private updater: DOMUpdater;
     private initialized = false;
     private config: PyHTMLConfig;
+    private siblingPaths: string[] = [];
+    private pathRegexes: RegExp[] = [];
 
     constructor(config: Partial<PyHTMLConfig> = {}) {
         this.config = { ...DEFAULT_CONFIG, ...config };
@@ -46,10 +48,97 @@ export class PyHTMLApp {
             console.error('PyHTML: Failed to connect:', e);
         }
 
+        // Load SPA metadata and setup navigation
+        this.loadSPAMetadata();
+        this.setupSPANavigation();
+
         // Setup event interception
         this.setupEventInterceptors();
 
-        console.log(`PyHTML: Initialized (transport: ${this.transport.getActiveTransport()})`);
+        console.log(`PyHTML: Initialized (transport: ${this.transport.getActiveTransport()}, spa_paths: ${this.siblingPaths.length})`);
+    }
+
+    /**
+     * Load SPA navigation metadata from injected script tag.
+     */
+    private loadSPAMetadata(): void {
+        const metaScript = document.getElementById('_pyhtml_spa_meta');
+        if (metaScript) {
+            try {
+                const meta = JSON.parse(metaScript.textContent || '{}');
+                this.siblingPaths = meta.sibling_paths || [];
+                // Convert path patterns to regexes for matching
+                this.pathRegexes = this.siblingPaths.map(p => this.patternToRegex(p));
+            } catch (e) {
+                console.warn('PyHTML: Failed to parse SPA metadata', e);
+            }
+        }
+    }
+
+    /**
+     * Convert route pattern like '/a/:id' to regex.
+     */
+    private patternToRegex(pattern: string): RegExp {
+        // Escape special regex chars except for our placeholders
+        let regex = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+        // Replace :param:type or :param with capture groups
+        regex = regex.replace(/:(\w+)(:\w+)?/g, '([^/]+)');
+        // Replace {param:type} or {param} with capture groups
+        regex = regex.replace(/\{(\w+)(:\w+)?\}/g, '([^/]+)');
+        return new RegExp(`^${regex}$`);
+    }
+
+    /**
+     * Check if a path matches any sibling path pattern.
+     */
+    private isSiblingPath(path: string): boolean {
+        return this.pathRegexes.some(regex => regex.test(path));
+    }
+
+    /**
+     * Setup SPA navigation for sibling paths.
+     */
+    private setupSPANavigation(): void {
+        if (this.siblingPaths.length === 0) return;
+
+        // Intercept link clicks
+        document.addEventListener('click', (e) => {
+            const link = (e.target as Element).closest('a[href]') as HTMLAnchorElement | null;
+            if (!link) return;
+
+            // Only intercept same-origin links
+            if (link.origin !== window.location.origin) return;
+
+            // Check if the path matches a sibling path
+            if (this.isSiblingPath(link.pathname)) {
+                e.preventDefault();
+                this.navigateTo(link.pathname + link.search);
+            }
+        });
+
+        // Handle browser back/forward
+        window.addEventListener('popstate', () => {
+            this.sendRelocate(window.location.pathname + window.location.search);
+        });
+    }
+
+    /**
+     * Navigate to a sibling path using SPA navigation.
+     */
+    navigateTo(path: string): void {
+        history.pushState({}, '', path);
+        this.sendRelocate(path);
+    }
+
+    /**
+     * Send relocate message to server.
+     */
+    private sendRelocate(path: string): void {
+        const message: RelocateMessage = {
+            type: 'relocate',
+            path
+        };
+        this.transport.send(message);
     }
 
     /**
@@ -66,7 +155,8 @@ export class PyHTMLApp {
                     this.sendEvent(handler, {
                         type: 'click',
                         id: target.id,
-                        value: (target as HTMLInputElement).value
+                        value: (target as HTMLInputElement).value,
+                        args: this.getArgs(target)
                     });
                 }
             }
@@ -89,7 +179,8 @@ export class PyHTMLApp {
                     this.sendEvent(handler, {
                         type: 'submit',
                         id: target.id,
-                        formData: data
+                        formData: data,
+                        args: this.getArgs(target)
                     });
                 }
             }
@@ -107,7 +198,8 @@ export class PyHTMLApp {
                         this.sendEvent(handler, {
                             type: 'input',
                             id: target.id,
-                            value: (target as HTMLInputElement).value
+                            value: (target as HTMLInputElement).value,
+                            args: this.getArgs(target)
                         });
                     }
                 }, 150); // 150ms debounce
@@ -124,11 +216,34 @@ export class PyHTMLApp {
                         type: 'change',
                         id: target.id,
                         value: (target as HTMLInputElement).value,
-                        checked: (target as HTMLInputElement).checked
+                        checked: (target as HTMLInputElement).checked,
+                        args: this.getArgs(target)
                     });
                 }
             }
         });
+    }
+
+    /**
+     * Collect data-arg-* attributes from element.
+     */
+    private getArgs(element: Element): Record<string, unknown> {
+        const args: Record<string, unknown> = {};
+        if (element instanceof HTMLElement) {
+            for (const key in element.dataset) {
+                if (key.startsWith('arg')) {
+                    // dataset keys are camelCase (data-arg-0 -> arg0)
+                    // Values are JSON encoded
+                    try {
+                        args[key] = JSON.parse(element.dataset[key] || 'null');
+                    } catch (e) {
+                        console.warn('PyHTML: Failed to parse arg', key, element.dataset[key]);
+                        args[key] = element.dataset[key];
+                    }
+                }
+            }
+        }
+        return args;
     }
 
     /**
@@ -162,6 +277,20 @@ export class PyHTMLApp {
 
             case 'error':
                 console.error('PyHTML: Server error:', msg.error);
+                break;
+
+            case 'console':
+                if (msg.lines) {
+                    const prefix = 'PyHTML Server:';
+                    const lines = msg.lines;
+                    if (msg.level === 'error') {
+                        console.error(prefix, ...lines);
+                    } else if (msg.level === 'warn') {
+                        console.warn(prefix, ...lines);
+                    } else {
+                        console.log(prefix, ...lines);
+                    }
+                }
                 break;
 
             default:

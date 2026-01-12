@@ -8,10 +8,15 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 
+from starlette.staticfiles import StaticFiles
+import traceback
+import re
+
 from pyhtml.runtime.loader import PageLoader
 from pyhtml.runtime.router import Router
 from pyhtml.runtime.websocket import WebSocketHandler
 from pyhtml.runtime.http_transport import HTTPTransportHandler
+from pyhtml.runtime.error_page import ErrorPage
 
 
 class PyHTMLApp:
@@ -62,56 +67,96 @@ class PyHTMLApp:
 
     def _load_pages(self):
         """Discover and compile all .pyhtml files."""
-        if not self.pages_dir.exists():
-            return
-
+        # Find all .pyhtml files
         for pyhtml_file in self.pages_dir.rglob('*.pyhtml'):
             try:
-                # Compile .pyhtml → PageClass
                 page_class = self.loader.load(pyhtml_file)
-
-                # Register routes from !path directive
-                if hasattr(page_class, '__routes__'):
-                    for name, pattern in page_class.__routes__.items():
-                        self.router.add_route(pattern, page_class, name)
-                elif hasattr(page_class, '__route__'):
-                    # Backward compatibility
-                    self.router.add_route(page_class.__route__, page_class, None)
+                self.router.add_page(page_class)
             except Exception as e:
-                print(f"Error loading {pyhtml_file}: {e}")
-                import traceback
+                print(f"Failed to load page {pyhtml_file}: {e}")
                 traceback.print_exc()
+                self._register_error_page(pyhtml_file, e)
+
+    def _register_error_page(self, file_path: Path, error: Exception):
+        """Register an error page for a failed file."""
+        # Try to infer route from file path/content
+        # 1. Start with path relative to pages_dir
+        try:
+            rel_path = file_path.relative_to(self.pages_dir)
+            
+            # Basic route inference from path
+            route_path = "/" + str(rel_path.with_suffix('')).replace('index', '').strip('/')
+            if not route_path:
+                route_path = "/"
+            
+            # Also try to regex extract !path directives from file content
+            # to handle custom routes properly even if compilation fails
+            try:
+                content = file_path.read_text()
+                # Look for !path "..." or !path '...'
+                # This is a simple regex, might need refinement
+                path_directives = re.findall(r'!path\s+[\'"]([^\'"]+)[\'"]', content)
+                
+                routes_to_register = []
+                if path_directives:
+                    routes_to_register = path_directives
+                else:
+                    routes_to_register = [route_path]
+                
+                error_detail = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+                
+                for route in routes_to_register:
+                    # Create a closure helper to generate ErrorPage instance
+                    # We can't pass the class directly because Routes expect a BasePage subclass
+                    # So we define a new class dynamically that inherits from ErrorPage
+                    # but has the specific error info baked in
+                    
+                    class BoundErrorPage(ErrorPage):
+                        def __init__(self, request: Request, *args, **kwargs):
+                            super().__init__(request, "Compilation Error", error_detail)
+
+                    self.router.add_route(route, BoundErrorPage)
+                    
+            except Exception:
+                # Fallback to basic path if regex fails
+                 pass
+
+        except Exception as e:
+            print(f"Failed to register error page for {file_path}: {e}")
 
     def reload_page(self, path: Path):
         """Reload and recompile a specific page."""
         try:
-            print(f"Reloading {path}...")
             # Recompile
-            page_class = self.loader.load(path)
+            new_page_class = self.loader.load(path)
             
-            # Update router - currently we just append, which is naive but works for MVP
-            # Ideally we'd replace existing route
-            # For now, let's just add it and since Router iterates list, we might need
-            # to make sure new one comes first or remove old one.
+            # Update router
+            # Note: This is tricky because we need to replace the old route
+            # For now, simplistic approach: add it again (router generally uses latest)
+            # Better approach: remove old routes for this file first?
+            # Implementation detail of router.add_page needed.
             
-            # Better approach: Clear routes and reload all? No, too slow.
-            # Let's remove old routes for this path if possible, but route doesn't know source file.
+            # Ideally we clear routes associated with this file_path first
+            self.router.remove_routes_for_file(str(path))
+            self.router.add_page(new_page_class)
             
-            # Hack: Just add new route to BEGINNING of list so it matches first
-            if hasattr(page_class, '__routes__'):
-                for name, pattern in page_class.__routes__.items():
-                    # Insert at 0
-                    from pyhtml.runtime.router import Route
-                    self.router.routes.insert(0, Route(pattern, page_class, name))
-            elif hasattr(page_class, '__route__'):
-                from pyhtml.runtime.router import Route
-                self.router.routes.insert(0, Route(page_class.__route__, page_class, None))
-                
-            print(f"Reloaded {path}")
+            print(f"Reloaded page: {path}")
+            return True
         except Exception as e:
-            print(f"Error reloading {path}: {e}")
-            import traceback
+            print(f"Failed to reload page {path}: {e}")
             traceback.print_exc()
+            
+            # Register error page for this file so user sees the error on refresh
+            self.router.remove_routes_for_file(str(path))
+            self._register_error_page(path, e)
+            
+            # If we have a websocket connection on this page, we should push the error?!
+            # The watcher in dev_server.py catches this exception.
+            # We should probably re-raise or handle it there to broadcast 'reload' 
+            # so the client reloads and sees the error page.
+            
+            # Re-raise so dev_server knows it failed
+            raise e
 
 
     async def _handle_request(self, request: Request) -> Response:

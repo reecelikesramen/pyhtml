@@ -1,8 +1,8 @@
 """Main code generator orchestrator."""
 import ast
-from typing import Dict, List, Type
+from typing import Dict, List, Type, Tuple, Set, Optional
 
-from pyhtml.compiler.ast_nodes import Directive, ParsedPyHTML, PathDirective, SpecialAttribute, EventAttribute
+from pyhtml.compiler.ast_nodes import Directive, ParsedPyHTML, PathDirective, NoSpaDirective, SpecialAttribute, EventAttribute
 from pyhtml.compiler.codegen.attributes.base import AttributeCodegen
 from pyhtml.compiler.codegen.attributes.events import EventAttributeCodegen
 from pyhtml.compiler.codegen.directives.base import DirectiveCodegen
@@ -42,11 +42,19 @@ class CodeGenerator:
         if parsed.python_ast:
             module_body.extend(self._extract_user_imports(parsed.python_ast))
 
+        # Extract method names early for binding logic
+        known_methods = self._collect_method_names(parsed.python_ast)
+        
+        # Inline handlers (with method names)
+        handlers = self._extract_inline_handlers(parsed, known_methods)
+        
         # Page class
-        page_class = self._generate_page_class(parsed)
+        page_class = self._generate_page_class(parsed, handlers)
         module_body.append(page_class)
 
-        return ast.Module(body=module_body, type_ignores=[])
+        module = ast.Module(body=module_body, type_ignores=[])
+        ast.fix_missing_locations(module)
+        return module
 
     def _generate_imports(self) -> List[ast.stmt]:
         """Generate framework imports."""
@@ -61,6 +69,7 @@ class CodeGenerator:
                 names=[ast.alias(name='Response', asname=None)],
                 level=0
             ),
+            ast.Import(names=[ast.alias(name='json', asname=None)]),
         ]
 
     def _extract_user_imports(self, python_ast: ast.Module) -> List[ast.stmt]:
@@ -71,19 +80,26 @@ class CodeGenerator:
                 imports.append(node)
         return imports
 
-    def _generate_page_class(self, parsed: ParsedPyHTML) -> ast.ClassDef:
+    def _generate_page_class(self, parsed: ParsedPyHTML, handlers: List[ast.AsyncFunctionDef]) -> ast.ClassDef:
         """Generate page class definition."""
         class_body = []
+        
+        # Add generated handlers
+        class_body.extend(handlers)
 
-        # Generate directive assignments
+        # Generate directive assignments (e.g., __routes__)
         for directive in parsed.directives:
             handler = self.directive_handlers.get(type(directive))
             if handler:
                 class_body.extend(handler.generate(directive))
 
+        # Generate SPA navigation metadata
+        class_body.extend(self._generate_spa_metadata(parsed))
+
         # Generate __init__ method
         class_body.append(self._generate_init_method(parsed))
 
+        # Transform user Python code to class methods
         # Transform user Python code to class methods
         if parsed.python_ast:
             class_body.extend(self._transform_user_code(parsed.python_ast))
@@ -91,61 +107,69 @@ class CodeGenerator:
         # Generate render method
         class_body.append(self._generate_render_method())
 
-        # Extract inline handlers BEFORE render template (modifies EventAttribute.handler_name)
-        inline_handlers = self._extract_inline_handlers(parsed)
-        class_body.extend(inline_handlers)
 
-        # Generate _render_template method (uses updated handler names)
-        class_body.append(self._generate_render_template_method(parsed))
+
+        # Generate _render_template method AND binding methods
+        render_func, binding_funcs = self._generate_render_template_method(parsed)
+        class_body.append(render_func)
+        class_body.extend(binding_funcs)
 
         # Generate handle_event method
         class_body.append(self._generate_handle_event_method())
 
-        return ast.ClassDef(
+        cls_def = ast.ClassDef(
             name=self._get_class_name(parsed),
             bases=[ast.Name(id='BasePage', ctx=ast.Load())],
             keywords=[],
             body=class_body,
             decorator_list=[]
         )
+        cls_def.lineno = 1
+        cls_def.col_offset = 0
+        return cls_def
 
-    def _extract_inline_handlers(self, parsed: ParsedPyHTML) -> List[ast.AsyncFunctionDef]:
-        """Extract inline handlers to methods."""
+    def _collect_method_names(self, python_ast: Optional[ast.Module]) -> Set[str]:
+        """Collect defined function names."""
+        names = set()
+        if python_ast:
+            for node in python_ast.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    names.add(node.name)
+        return names
+
+    def _extract_inline_handlers(self, parsed: ParsedPyHTML, known_methods: Set[str]) -> List[ast.AsyncFunctionDef]:
+        """Extract inline handlers to methods, lifting arguments."""
         handlers = []
         handler_count = 0
         from pyhtml.compiler.ast_nodes import EventAttribute
 
-        # Collect async method names
-        async_methods = set()
-        if parsed.python_ast:
-             for node in parsed.python_ast.body:
-                 if isinstance(node, ast.AsyncFunctionDef):
-                     async_methods.add(node.name)
-
-        # Traverse template for event attributes
-        # This is simple recursive traversal
         def visit_nodes(nodes):
             nonlocal handler_count
             for node in nodes:
                 for attr in node.special_attributes:
                     if isinstance(attr, EventAttribute):
-                        # Check if valid identifier
                         if not attr.handler_name.isidentifier():
-                            # It's inline code
-                            # Use single underscore to verify name mangling doesn't happen
+                            # Inline code - needs transformation
                             method_name = f'_handler_{handler_count}'
                             handler_count += 1
                             
-                            # Transform code
                             try:
-                                body = self._transform_inline_code(attr.handler_name, async_methods)
+                                body, args = self._transform_inline_code(attr.handler_name, known_methods)
                                 
-                                # Create method
+                                # Store extracted args for template rendering
+                                attr.args = args
+                                
+                                # Create handler method
+                                # async def _handler_X(self, arg0, arg1...):
+                                arg_definitions = [ast.arg(arg='self')]
+                                for i in range(len(args)):
+                                    arg_definitions.append(ast.arg(arg=f'arg{i}'))
+
                                 handlers.append(ast.AsyncFunctionDef(
                                     name=method_name,
                                     args=ast.arguments(
                                         posonlyargs=[],
-                                        args=[ast.arg(arg='self')],
+                                        args=arg_definitions,
                                         vararg=None,
                                         kwonlyargs=[],
                                         kw_defaults=[],
@@ -156,7 +180,6 @@ class CodeGenerator:
                                     returns=None
                                 ))
                                 
-                                # Update attribute to point to new method
                                 attr.handler_name = method_name
                                 
                             except Exception as e:
@@ -167,27 +190,53 @@ class CodeGenerator:
         visit_nodes(parsed.template)
         return handlers
 
-    def _transform_inline_code(self, code: str, async_methods: set = None) -> List[ast.stmt]:
-        """Transform inline code to method body (prefix vars with self)."""
+    def _transform_inline_code(self, code: str, known_methods: Set[str] = None) -> Tuple[List[ast.stmt], List[str]]:
+        """Transform inline code: lift arguments and prefix globals with self."""
         import builtins
         
-        # Parse code
         tree = ast.parse(code)
+        extracted_args = []
         
-        class SelfTransformer(ast.NodeTransformer):
-            def visit_Name(self, node):
-                # Don't transform if it's a builtin
-                if node.id in dir(builtins):
-                    return node
+        class ArgumentLifter(ast.NodeTransformer):
+            def visit_Call(self, node):
+                # Check arguments for unbound variables
+                new_args = []
+                for arg in node.args:
+                    # Quick check: does this arg contain unbound names?
+                    unbound = False
+                    for child in ast.walk(arg):
+                         if isinstance(child, ast.Name):
+                             if child.id not in known_methods and child.id not in dir(builtins):
+                                 unbound = True
+                                 break
+                    
+                    if unbound:
+                        # Lift it!
+                        arg_index = len(extracted_args)
+                        extracted_args.append(ast.unparse(arg))
+                        new_args.append(ast.Name(id=f'arg{arg_index}', ctx=ast.Load()))
+                    else:
+                        new_args.append(self.visit(arg))
                 
-                # Check context
-                if isinstance(node.ctx, (ast.Load, ast.Store, ast.Del)):
-                    return ast.Attribute(
+                node.args = new_args
+                return self.generic_visit(node)
+                
+            def visit_Name(self, node):
+                # Transform known methods and globals to self.X
+                if node.id in known_methods:
+                     return ast.Attribute(
                         value=ast.Name(id='self', ctx=ast.Load()),
                         attr=node.id,
                         ctx=node.ctx
                     )
                 return node
+
+        # Run transformer
+        transformer = ArgumentLifter()
+        new_tree = transformer.visit(tree)
+        ast.fix_missing_locations(new_tree)
+        
+        return new_tree.body, extracted_args
 
         # Transform
         SelfTransformer().visit(tree)
@@ -208,6 +257,49 @@ class CodeGenerator:
 
         ast.fix_missing_locations(tree)
         return tree.body
+
+    def _generate_spa_metadata(self, parsed: ParsedPyHTML) -> List[ast.stmt]:
+        """Generate __spa_enabled__ and __sibling_paths__ class attributes."""
+        stmts = []
+        
+        # Get path directive
+        path_directive = parsed.get_directive_by_type(PathDirective)
+        is_multi_path = path_directive and not path_directive.is_simple_string
+        
+        # Check for !no_spa directive
+        no_spa = parsed.get_directive_by_type(NoSpaDirective) is not None
+        
+        # SPA is enabled for multi-path pages unless !no_spa is present
+        spa_enabled = is_multi_path and not no_spa
+        
+        # __spa_enabled__ = True/False
+        stmts.append(ast.Assign(
+            targets=[ast.Name(id='__spa_enabled__', ctx=ast.Store())],
+            value=ast.Constant(value=spa_enabled)
+        ))
+        
+        # __sibling_paths__ = ['/path1', '/path2', ...]
+        if path_directive and not path_directive.is_simple_string:
+            paths = list(path_directive.routes.values())
+        else:
+            paths = []
+        
+        stmts.append(ast.Assign(
+            targets=[ast.Name(id='__sibling_paths__', ctx=ast.Store())],
+            value=ast.List(
+                elts=[ast.Constant(value=p) for p in paths],
+                ctx=ast.Load()
+            )
+        ))
+        
+        # Inject __file_path__ for hot reload route cleanup
+        if parsed.file_path:
+             stmts.append(ast.Assign(
+                targets=[ast.Name(id='__file_path__', ctx=ast.Store())],
+                value=ast.Constant(value=str(parsed.file_path))
+            ))
+        
+        return stmts
 
     def _get_class_name(self, parsed: ParsedPyHTML) -> str:
         """Generate class name from file path."""
@@ -267,6 +359,12 @@ class CodeGenerator:
     def _transform_user_code(self, python_ast: ast.Module) -> List[ast.stmt]:
         """Transform user Python code to class methods/attributes."""
         transformed = []
+        
+        # Collect all method names to treat them as 'globals' (attributes of self)
+        method_names = set()
+        for node in python_ast.body:
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                 method_names.add(node.name)
 
         for node in python_ast.body:
             if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -278,20 +376,23 @@ class CodeGenerator:
                 transformed.append(node)
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 # Functions become methods - transform them
-                transformed.append(self._transform_to_method(node))
+                transformed.append(self._transform_to_method(node, method_names))
             else:
                 # Other statements (keep as-is for now)
                 transformed.append(node)
 
         return transformed
 
-    def _transform_to_method(self, node):
+    def _transform_to_method(self, node, known_methods: Set[str] = None):
         """Transform a function into a method (add self, handle globals)."""
         # 1. Add self argument
         node.args.args.insert(0, ast.arg(arg='self'))
         
-        # 2. Find global declarations
+        # 2. Find global declarations and include known methods
         global_vars = set()
+        if known_methods:
+            global_vars.update(known_methods)
+            
         new_body = []
         for stmt in node.body:
             if isinstance(stmt, ast.Global):
@@ -359,176 +460,177 @@ class CodeGenerator:
             returns=None
         )
 
-    def _generate_render_template_method(self, parsed: ParsedPyHTML) -> ast.FunctionDef:
-        """Generate _render_template method."""
+    def _generate_render_template_method(self, parsed: ParsedPyHTML) -> Tuple[ast.FunctionDef, List[ast.AsyncFunctionDef]]:
+        """Generate _render_template method and binding handlers."""
         # Generate code string from template
         code_str = self.template_codegen.generate_render_code(parsed.template)
         
+        # Build SPA metadata injection
+        path_directive = parsed.get_directive_by_type(PathDirective)
+        no_spa = parsed.get_directive_by_type(NoSpaDirective) is not None
+        is_multi_path = path_directive and not path_directive.is_simple_string
+        spa_enabled = is_multi_path and not no_spa
+        
+        if spa_enabled and path_directive:
+            sibling_paths = list(path_directive.routes.values())
+            # Inject sibling paths as JSON for client-side link detection
+            spa_meta = f'''
+    # Inject SPA navigation metadata
+    import json
+    parts.append('<script id="_pyhtml_spa_meta" type="application/json">')
+    parts.append(json.dumps({{"sibling_paths": {repr(sibling_paths)}}}))
+    parts.append('</script>')
+'''
+        else:
+            spa_meta = ""
+        
         # Inject script tag for client library
-        injection = """
+        injection = f"""{spa_meta}
     # Inject client library script
-    parts.append('<script src="/_pyhtml/static/pyhtml.min.js"></script>')
+    parts.append('<script src=\"/_pyhtml/static/pyhtml.min.js\"></script>')
 """
         # Find where to inject - before closing </body> or at end
         if "return" in code_str:
-            # Simple string replacement for now
-            # In a robust implementation, we'd add AST nodes
             code_str = code_str.replace("    return", injection + "    return")
 
         # Parse the generated code
         render_ast = ast.parse(code_str)
+        render_func = render_ast.body[0] if isinstance(render_ast, ast.Module) and render_ast.body else None
         
-        # Extract the function definition
-        if isinstance(render_ast, ast.Module) and render_ast.body:
-            return render_ast.body[0]
-        
-        # Fallback
-        return ast.FunctionDef(
-            name='_render_template',
-            args=ast.arguments(
-                posonlyargs=[],
-                args=[ast.arg(arg='self')],
-                vararg=None,
-                kwonlyargs=[],
-                kw_defaults=[],
-                defaults=[]
-            ),
-            body=[
-                ast.Return(value=ast.Constant(value=''))
-            ],
-            decorator_list=[],
-            returns=None
-        )
+        if not render_func:
+             render_func = ast.FunctionDef(
+                name='_render_template',
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[ast.arg(arg='self')],
+                    vararg=None,
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    defaults=[]
+                ),
+                body=[ast.Return(value=ast.Constant(value=''))],
+                decorator_list=[],
+                returns=None
+            )
+
+        # Generate binding methods
+        binding_funcs = []
+        for binding in self.template_codegen.generated_bindings:
+            # async def _handle_bind_X(self, event_data):
+            #     # self.var = event_data['value'] (or checked)
+            #     val = event_data.get('value') # or checked
+            #     if val is not None:
+            #          # Cast? for now assume string or appropriate type
+            #          self.var = val
+            
+            target = binding.variable_name # This is the raw string "var" or "self.var"
+            # We need to construct assignment: target = value
+            # Since target might be complex "user.name", we rely on ast parsing
+            
+            val_key = 'checked' if binding.event_type == 'change' and 'checked' in code_str else 'value'
+            # Wait, 'checked' is for checkboxes. 
+            # Logic in template.py: input[type=checkbox] -> type=change, stores 'checked' expr.
+            # But the event data from client sends both value and checked?
+            # Client code:
+            # input: type=input, value=...
+            # change: type=change, value=..., checked=...
+            
+            # If it's a checkbox, we want 'checked'. If text, 'value'.
+            # BindingDef has event_type.
+            if binding.event_type == 'change': # Checkbox/Radio implied
+                val_key = 'checked'
+            else:
+                val_key = 'value'
+            
+            func_code = f"""
+async def {binding.handler_name}(self, event_data):
+    val = event_data.get('{val_key}')
+    if val is not None:
+        self.{target} = val
+"""
+            # Use `val` directly? Type casting?
+            # For now raw.
+            # Issue: `self.{target}` -> if target is `name`, then `self.name`.
+            # If target is `self.name`, then `self.self.name`.
+            # We need to normalize target.
+            
+            # In template.py: `variable=attr_value`. attr_value is raw "count".
+            # transform_expr converts it to `self.count` only for rendering context.
+            # Here we are in method context.
+            
+            # If user wrote `$bind="count"`. target="count". Code: `self.count = val`.
+            # If user wrote `$bind="user.name"`. target="user.name". Code: `self.user.name = val`.
+            # Correct.
+            
+            try:
+                func_ast = ast.parse(func_code)
+                if isinstance(func_ast, ast.Module) and func_ast.body:
+                    binding_funcs.append(func_ast.body[0])
+            except SyntaxError as e:
+                print(f"Error generating binding handler for {binding.variable_name}: {e}")
+
+        return render_func, binding_funcs
 
     def _generate_handle_event_method(self) -> ast.AsyncFunctionDef:
         """Generate handle_event method."""
-        return ast.AsyncFunctionDef(
-            name='handle_event',
-            args=ast.arguments(
-                posonlyargs=[],
-                args=[
-                    ast.arg(arg='self'),
-                    ast.arg(arg='event_name'),
-                    ast.arg(arg='event_data')
-                ],
-                vararg=None,
-                kwonlyargs=[],
-                kw_defaults=[],
-                defaults=[]
-            ),
-            body=[
-                # handler = getattr(self, event_name, None)
-                ast.Assign(
-                    targets=[ast.Name(id='handler', ctx=ast.Store())],
-                    value=ast.Call(
-                        func=ast.Name(id='getattr', ctx=ast.Load()),
-                        args=[
-                            ast.Name(id='self', ctx=ast.Load()),
-                            ast.Name(id='event_name', ctx=ast.Load()),
-                            ast.Constant(value=None)
-                        ],
-                        keywords=[]
-                    )
-                ),
-                # if not handler: raise ValueError(...)
-                ast.If(
-                    test=ast.UnaryOp(
-                        op=ast.Not(),
-                        operand=ast.Name(id='handler', ctx=ast.Load())
-                    ),
-                    body=[
-                        ast.Raise(
-                            exc=ast.Call(
-                                func=ast.Name(id='ValueError', ctx=ast.Load()),
-                                args=[
-                                    ast.JoinedStr(
-                                        values=[
-                                            ast.Constant(value='Handler '),
-                                            ast.FormattedValue(
-                                                value=ast.Name(id='event_name', ctx=ast.Load()),
-                                                conversion=-1,
-                                                format_spec=None
-                                            ),
-                                            ast.Constant(value=' not found')
-                                        ]
-                                    )
-                                ],
-                                keywords=[]
-                            ),
-                            cause=None
-                        )
-                    ],
-                    orelse=[]
-                ),
-                # Call handler (async-aware)
-                ast.If(
-                    test=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id='asyncio', ctx=ast.Load()),
-                            attr='iscoroutinefunction',
-                            ctx=ast.Load()
-                        ),
-                        args=[ast.Name(id='handler', ctx=ast.Load())],
-                        keywords=[]
-                    ),
-                    body=[
-                        ast.Expr(value=ast.Await(value=ast.Call(
-                            func=ast.Name(id='handler', ctx=ast.Load()),
-                            args=[],
-                            keywords=[
-                                ast.keyword(
-                                    arg=None,
-                                    value=ast.Call(
-                                        func=ast.Attribute(
-                                            value=ast.Name(id='event_data', ctx=ast.Load()),
-                                            attr='get',
-                                            ctx=ast.Load()
-                                        ),
-                                        args=[
-                                            ast.Constant(value='args'),
-                                            ast.Dict(keys=[], values=[])
-                                        ],
-                                        keywords=[]
-                                    )
-                                )
-                            ]
-                        )))
-                    ],
-                    orelse=[
-                        ast.Expr(value=ast.Call(
-                            func=ast.Name(id='handler', ctx=ast.Load()),
-                            args=[],
-                            keywords=[
-                                ast.keyword(
-                                    arg=None,
-                                    value=ast.Call(
-                                        func=ast.Attribute(
-                                            value=ast.Name(id='event_data', ctx=ast.Load()),
-                                            attr='get',
-                                            ctx=ast.Load()
-                                        ),
-                                        args=[
-                                            ast.Constant(value='args'),
-                                            ast.Dict(keys=[], values=[])
-                                        ],
-                                        keywords=[]
-                                    )
-                                )
-                            ]
-                        ))
-                    ]
-                ),
-                # Return render()
-                ast.Return(value=ast.Await(value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id='self', ctx=ast.Load()),
-                        attr='render',
-                        ctx=ast.Load()
-                    ),
-                    args=[],
-                    keywords=[]
-                )))
-            ],
-            decorator_list=[],
-            returns=None
-        )
+        # Use a template string and parse it, much cleaner than manual AST construction
+        code = """
+async def handle_event(self, event_name: str, event_data: dict):
+    import inspect
+    
+    # Retrieve handler
+    handler = getattr(self, event_name, None)
+    if not handler:
+        raise ValueError(f"Handler {event_name} not found")
+
+    # Call handler
+    if event_name.startswith('_handle_bind_'):
+        # Binding handlers expect raw event_data
+        if asyncio.iscoroutinefunction(handler):
+            await handler(event_data)
+        else:
+            handler(event_data)
+    else:
+        # Regular handlers: intelligent argument mapping
+        args = event_data.get('args', {})
+        
+        # Normalize args keys (arg-0 -> arg0) because dataset keys preserve hyphens before digits
+        normalized_args = {}
+        for k, v in args.items():
+            if k.startswith('arg'):
+                normalized_args[k.replace('-', '')] = v
+            else:
+                normalized_args[k] = v
+                
+        call_kwargs = {k: v for k, v in event_data.items() if k != 'args'}
+        call_kwargs.update(normalized_args)
+        
+        # Check signature to see what arguments the handler accepts
+        sig = inspect.signature(handler)
+        bound_kwargs = {}
+        
+        has_var_kw = False
+        for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                has_var_kw = True
+                break
+        
+        if has_var_kw:
+            # If accepts **kwargs, pass everything
+            bound_kwargs = call_kwargs
+        else:
+            # Only pass arguments that match parameters
+            for name in sig.parameters:
+                if name in call_kwargs:
+                    bound_kwargs[name] = call_kwargs[name]
+        
+        if asyncio.iscoroutinefunction(handler):
+            await handler(**bound_kwargs)
+        else:
+            handler(**bound_kwargs)
+            
+    # Re-render
+    return await self.render()
+"""
+        module = ast.parse(code)
+        return module.body[0]

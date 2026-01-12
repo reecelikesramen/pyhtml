@@ -10,7 +10,7 @@ from pyhtml.compiler.directives.base import DirectiveParser
 class PathDirectiveParser(DirectiveParser):
     """Parses !path directives."""
 
-    PATTERN = re.compile(r'^!path\s+(.+)$')
+    PATTERN = re.compile(r'^!path\s+(.+)$', re.DOTALL)
 
     def can_parse(self, line: str) -> bool:
         """Check if line starts with !path."""

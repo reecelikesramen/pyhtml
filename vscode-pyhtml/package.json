@@ -56,7 +56,23 @@
           "description": "Traces the communication between VS Code and the language server"
         }
       }
-    }
+    },
+    "commands": [
+      {
+        "command": "pyhtml.toggleComment",
+        "title": "PyHTML: Toggle Comment"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "pyhtml.toggleComment",
+        "key": "cmd+/",
+        "mac": "cmd+/",
+        "win": "ctrl+/",
+        "linux": "ctrl+/",
+        "when": "editorTextFocus && editorLangId == pyhtml"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

@@ -24,22 +24,39 @@ export interface Transport {
 export type MessageHandler = (message: ServerMessage) => void;
 
 export interface ServerMessage {
-    type: 'update' | 'reload' | 'error';
+    type: 'update' | 'reload' | 'error' | 'console';
     html?: string;
     error?: string;
+    level?: 'info' | 'warn' | 'error';
+    lines?: string[];
 }
 
-export interface ClientMessage {
+export interface ConsoleMessage {
+    type: 'console';
+    level: 'info' | 'warn' | 'error';
+    lines: string[];
+
+}
+
+export type ClientMessage = EventMessage | RelocateMessage;
+
+export interface EventMessage {
     type: 'event';
     handler: string;
     path: string;
     data: EventData;
 }
 
+export interface RelocateMessage {
+    type: 'relocate';
+    path: string;
+}
+
 export interface EventData {
     type: string;
     id?: string;
     value?: string;
+    args?: Record<string, unknown>;
     [key: string]: unknown;
 }
 

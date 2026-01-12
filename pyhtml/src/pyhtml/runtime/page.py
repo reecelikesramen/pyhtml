@@ -47,15 +47,25 @@ class BasePage:
 
     async def handle_event(self, event_name: str, event_data: dict) -> Response:
         """Handle client event (from @click, etc.)."""
+        # print(f"HANDLING EVENT: {event_name}")
         handler = getattr(self, event_name, None)
         if not handler:
             raise ValueError(f"Handler {event_name} not found")
 
         # Call handler with event data
-        if asyncio.iscoroutinefunction(handler):
-            await handler(**event_data.get('args', {}))
+        if event_name.startswith('_handle_bind_'):
+            # print(f"DISPATCHING BIND HANDLER: {event_name}")
+            # Binding handlers expect the raw event data object
+            if asyncio.iscoroutinefunction(handler):
+                await handler(event_data)
+            else:
+                handler(event_data)
         else:
-            handler(**event_data.get('args', {}))
+            # Regular handlers use unpacked args
+            if asyncio.iscoroutinefunction(handler):
+                await handler(**event_data.get('args', {}))
+            else:
+                handler(**event_data.get('args', {}))
 
         # Re-render
         return await self.render()
