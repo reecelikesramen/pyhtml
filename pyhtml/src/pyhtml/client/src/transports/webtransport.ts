@@ -12,6 +12,9 @@ export class WebTransportTransport extends BaseTransport {
     private readonly url: string;
     private encoder = new TextEncoder();
     private decoder = new TextDecoder();
+    private shouldReconnect = true;
+    private reconnectAttempts = 0;
+    private maxReconnectDelay = 5000;
 
     constructor(url?: string) {
         super();
@@ -37,7 +40,7 @@ export class WebTransportTransport extends BaseTransport {
 
         try {
             // Check for self-signed cert hash (Dev Mode)
-            const options: any = {};
+            const options: WebTransportOptions = {};
             const certHash = (window as any).PYHTML_CERT_HASH;
             if (certHash && Array.isArray(certHash)) {
                 options.serverCertificateHashes = [{
@@ -54,9 +57,28 @@ export class WebTransportTransport extends BaseTransport {
 
             console.log('PyHTML: WebTransport ready');
             this.connected = true;
+            this.reconnectAttempts = 0;
+
+            // Send init message for page instantiation
+            await this.sendInit();
 
             // Start reading incoming streams
             this.startReading();
+
+            // Handle connection close
+            this.transport.closed.then(() => {
+                console.log('PyHTML: WebTransport closed');
+                this.handleDisconnect();
+                if (this.shouldReconnect) {
+                    this.scheduleReconnect();
+                }
+            }).catch((e) => {
+                console.error('PyHTML: WebTransport closed with error', e);
+                this.handleDisconnect();
+                if (this.shouldReconnect) {
+                    this.scheduleReconnect();
+                }
+            });
 
         } catch (e) {
             this.handleDisconnect();
@@ -64,10 +86,29 @@ export class WebTransportTransport extends BaseTransport {
         }
     }
 
+    /**
+     * Send init message to initialize page on server.
+     */
+    private async sendInit(): Promise<void> {
+        await this.send({
+            type: 'init',
+            path: window.location.pathname + window.location.search
+        });
+    }
+
     private async startReading(): Promise<void> {
         if (!this.transport) return;
 
-        // Read from bidirectional streams
+        // Read from bidirectional streams (responses to our requests)
+        this.readBidirectionalStreams();
+
+        // Read from datagrams (server-initiated messages like broadcast_reload)
+        this.readDatagrams();
+    }
+
+    private async readBidirectionalStreams(): Promise<void> {
+        if (!this.transport) return;
+
         const reader = this.transport.incomingBidirectionalStreams.getReader();
 
         try {
@@ -80,14 +121,15 @@ export class WebTransportTransport extends BaseTransport {
             }
         } catch (e) {
             if (this.connected) {
-                console.error('PyHTML: WebTransport read error', e);
-                this.handleDisconnect();
+                console.error('PyHTML: WebTransport bidirectional stream read error', e);
             }
         }
     }
 
-    private async handleStream(stream: WebTransportBidirectionalStream): Promise<void> {
-        const reader = stream.readable.getReader();
+    private async readDatagrams(): Promise<void> {
+        if (!this.transport) return;
+
+        const reader = this.transport.datagrams.readable.getReader();
 
         try {
             while (true) {
@@ -100,8 +142,38 @@ export class WebTransportTransport extends BaseTransport {
                         const msg = JSON.parse(text) as ServerMessage;
                         this.notifyHandlers(msg);
                     } catch (e) {
-                        console.error('PyHTML: Error parsing WebTransport message', e);
+                        console.error('PyHTML: Error parsing WebTransport datagram', e);
                     }
+                }
+            }
+        } catch (e) {
+            if (this.connected) {
+                console.error('PyHTML: WebTransport datagram read error', e);
+            }
+        }
+    }
+
+    private async handleStream(stream: WebTransportBidirectionalStream): Promise<void> {
+        const reader = stream.readable.getReader();
+        let buffer = '';
+
+        try {
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                if (value) {
+                    buffer += this.decoder.decode(value, { stream: true });
+                }
+            }
+
+            // Parse complete message
+            if (buffer) {
+                try {
+                    const msg = JSON.parse(buffer) as ServerMessage;
+                    this.notifyHandlers(msg);
+                } catch (e) {
+                    console.error('PyHTML: Error parsing WebTransport message', e, buffer);
                 }
             }
         } catch (e) {
@@ -133,6 +205,7 @@ export class WebTransportTransport extends BaseTransport {
     }
 
     disconnect(): void {
+        this.shouldReconnect = false;
         if (this.transport) {
             this.transport.close();
             this.transport = null;
@@ -145,5 +218,22 @@ export class WebTransportTransport extends BaseTransport {
         this.connected = false;
         this.transport = null;
         this.writer = null;
+    }
+
+    private scheduleReconnect(): void {
+        const delay = Math.min(
+            1000 * Math.pow(2, this.reconnectAttempts),
+            this.maxReconnectDelay
+        );
+
+        console.log(`PyHTML: WebTransport reconnecting in ${delay}ms...`);
+
+        setTimeout(() => {
+            this.reconnectAttempts++;
+            this.connect().catch((e) => {
+                console.warn('PyHTML: WebTransport reconnect failed', e);
+                // Will try again via closed handler
+            });
+        }, delay);
     }
 }

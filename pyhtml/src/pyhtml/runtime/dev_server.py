@@ -86,12 +86,14 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
         from hypercorn.config import Config
         import aioquic
         HAS_HTTP3 = True
+        
+        # Patch Hypercorn to enable WebTransport support
+        from pyhtml.runtime.h3_webtransport import patch_hypercorn
+        patch_hypercorn()
     except ImportError:
         HAS_HTTP3 = False
     
-    # DEBUG: Force disable HTTP/3 to avoid Hypercorn/aioquic crash (KeyError: 9) on form uploads
-    print("DEBUG: Forcing HTTP/3 disabled for stress testing form uploads.")
-    HAS_HTTP3 = False
+    
     if not HAS_HTTP3:
         print("PyHTML: HTTP/3 (WebTransport) disabled. Install 'aioquic' and 'hypercorn' to enable.")
 
@@ -241,9 +243,21 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
                             cert_path = str(c_file)
                         
                         key_path = str(k_file)
-                        # Don't inject hash if using trusted certs (expected validity > 14 days)
-                        if hasattr(app.state, 'webtransport_cert_hash'):
-                             del app.state.webtransport_cert_hash
+                        
+                        # Calculate cert hash for WebTransport options
+                        # This ensures connection works even if Chrome doesn't trust the CA for QUIC
+                        try:
+                            from cryptography import x509
+                            from cryptography.hazmat.primitives import hashes
+                            from cryptography.hazmat.backends import default_backend
+                            
+                            c_content = c_file.read_bytes()
+                            cert_obj = x509.load_pem_x509_certificate(c_content, default_backend())
+                            app.state.webtransport_cert_hash = cert_obj.fingerprint(hashes.SHA256())
+                            print(f"PyHTML: Calculated certificate hash for {c_file.name}")
+                        except Exception as e:
+                            print(f"PyHTML: Failed to calculate cert hash: {e}")
+                        
                         break
                 
 

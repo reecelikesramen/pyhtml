@@ -65,10 +65,14 @@ class PyHTMLApp:
     
     async def _handle_capabilities(self, request: Request) -> JSONResponse:
         """Return server transport capabilities for client negotiation."""
+        # Detect if we're running under Hypercorn with HTTP/3
+        # HTTP/3 requests have http_version='3' in scope
+        is_http3 = request.scope.get('http_version', '1.1') == '3'
+        
         return JSONResponse({
             'transports': ['websocket', 'http'],
-            # WebTransport requires HTTP/3 - only available when running with Hypercorn
-            'webtransport': False,
+            # WebTransport is available when we're running under HTTP/3
+            'webtransport': is_http3,
             'version': '0.0.1'
         })
 
@@ -279,6 +283,11 @@ class PyHTMLApp:
                  response = Response(body, media_type='text/html')
         
         return response
+
+    @property
+    def state(self):
+        """Proxy state to Starlette app."""
+        return self.app.state
 
     async def __call__(self, scope, receive, send):
         """ASGI interface."""

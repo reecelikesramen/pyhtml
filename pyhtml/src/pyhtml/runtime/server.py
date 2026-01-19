@@ -20,4 +20,4 @@ def create_app(pages_dir: Path = None, reload: bool = False):
     app.app.state.ws_handler = app.ws_handler
     app.app.state.http_handler = app.http_handler
     app.app.state.pyhtml_app = app
-    return app.app
+    return app
