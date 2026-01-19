@@ -183,9 +183,9 @@ export class PyHTMLApp {
                         }
                     });
 
-                    // Handle file inputs specially
+                    // Handle file inputs: Upload via HTTP endpoint first
                     const fileInputs = form.querySelectorAll('input[type="file"]');
-                    const fileReads: Promise<void>[] = [];
+                    const uploadPromises: Promise<void>[] = [];
 
                     fileInputs.forEach((input) => {
                         const fileInput = input as HTMLInputElement;
@@ -193,40 +193,119 @@ export class PyHTMLApp {
                         if (!name) return;
 
                         if (fileInput.files && fileInput.files.length > 0) {
-                            // Handle single/multiple files
-                            // For MVP, just take the first file if not multiple?
-                            // Or support list of files?
-                            // Let's stick to single file per input name for now unless multiple is set, 
-                            // but FormData standard allows multiple entries for same name.
-                            // To simplify: if input has files, read them.
+                            const file = fileInput.files[0];
 
-                            const file = fileInput.files[0]; // TODO: Support multiple='multiple'
-                            if (file) {
-                                const readPromise = new Promise<string>((resolve, reject) => {
-                                    const reader = new FileReader();
-                                    reader.onload = () => resolve(reader.result as string);
-                                    reader.onerror = reject;
-                                    reader.readAsDataURL(file);
-                                }).then((content) => {
-                                    // Create file object matching Python FileUpload.from_dict expectation
-                                    data[name] = {
-                                        name: file.name,
-                                        type: file.type,
-                                        size: file.size,
-                                        content: content
-                                    };
+                            // Client-side Validation
 
-                                    // Optional: Emit progress? 
-                                    // Since we read fully before sending, "progress" is just "reading... done".
-                                    // Real upload progress requires streaming.
-                                });
-                                fileReads.push(readPromise);
+                            // Check size
+                            const maxSizeAttr = fileInput.getAttribute('max-size');
+                            if (maxSizeAttr) {
+                                let maxSize = parseInt(maxSizeAttr);
+                                const lower = maxSizeAttr.toLowerCase();
+                                if (lower.endsWith('kb') || lower.endsWith('k')) maxSize = parseInt(lower) * 1024;
+                                else if (lower.endsWith('mb') || lower.endsWith('m')) maxSize = parseInt(lower) * 1024 * 1024;
+                                else if (lower.endsWith('gb') || lower.endsWith('g')) maxSize = parseInt(lower) * 1024 * 1024 * 1024;
+
+                                if (file.size > maxSize) {
+                                    const msg = `File is too large. Max size is ${maxSizeAttr}.`;
+                                    alert(msg);
+                                    uploadPromises.push(Promise.reject(msg));
+                                    return;
+                                }
                             }
+
+                            // Check type (if accept is set, though browser handles picker)
+                            const accept = fileInput.accept;
+                            if (accept) {
+                                // Simple check for basic types if needed
+                                // Skipping complex MIME parsing for now as server validates strictly
+                            }
+
+                            const uploadFormData = new FormData();
+                            uploadFormData.append(name, file);
+
+                            const uploadPromise = new Promise<void>((resolve, reject) => {
+                                const xhr = new XMLHttpRequest();
+                                xhr.open('POST', '/_pyhtml/upload');
+
+                                // Add Upload Token
+                                const tokenMeta = document.querySelector('meta[name="pyhtml-upload-token"]');
+                                if (tokenMeta) {
+                                    const token = tokenMeta.getAttribute('content');
+                                    if (token) {
+                                        xhr.setRequestHeader('X-Upload-Token', token);
+                                    }
+                                }
+
+                                // Progress handling
+                                // Throttle progress updates to avoid flooding
+                                let lastProgressTime = 0;
+                                xhr.upload.onprogress = (e) => {
+                                    if (e.lengthComputable) {
+                                        const now = Date.now();
+                                        if (now - lastProgressTime >= 100) { // 100ms throttle
+                                            lastProgressTime = now;
+                                            const percent = e.loaded / e.total;
+
+                                            // Send directly to avoid detached DOM node issues if re-rendered
+                                            const handler = fileInput.getAttribute('data-on-upload-progress');
+                                            if (handler) {
+                                                this.sendEvent(handler, {
+                                                    type: 'upload-progress',
+                                                    id: fileInput.id,
+                                                    progress: percent,
+                                                    args: this.getArgs(fileInput)
+                                                });
+                                            }
+                                        }
+                                    }
+                                };
+
+                                xhr.onload = () => {
+                                    if (xhr.status >= 200 && xhr.status < 300) {
+                                        try {
+                                            const result = JSON.parse(xhr.responseText);
+                                            if (result[name]) {
+                                                data[name] = {
+                                                    _upload_id: result[name],
+                                                    name: file.name,
+                                                    type: file.type,
+                                                    size: file.size
+                                                };
+                                                resolve();
+                                            } else {
+                                                console.error('PyHTML: Upload failed, no ID returned', result);
+                                                reject(new Error('No ID returned'));
+                                            }
+                                        } catch (e) {
+                                            reject(e);
+                                        }
+                                    } else {
+                                        // Handle server errors (e.g. 413 Payload Too Large)
+                                        const msg = `Upload failed: ${xhr.status} ${xhr.statusText}`;
+                                        console.error('PyHTML: Upload failed', xhr.status, xhr.responseText);
+                                        alert(msg); // Provide immediate feedback
+                                        reject(new Error(msg));
+                                    }
+                                };
+
+                                xhr.onerror = () => reject(xhr.statusText);
+                                xhr.send(uploadFormData);
+                            });
+
+                            uploadPromises.push(uploadPromise);
                         }
                     });
 
-                    // Wait for all files to be read
-                    await Promise.all(fileReads);
+                    // Wait for all uploads
+                    console.log('PyHTML: Waiting for uploads...');
+                    try {
+                        await Promise.all(uploadPromises);
+                        console.log('PyHTML: Uploads complete. Sending submit event.');
+                    } catch (e) {
+                        console.error('PyHTML: Upload validation failed', e);
+                        return;
+                    }
 
                     this.sendEvent(handler, {
                         type: 'submit',
@@ -274,6 +353,7 @@ export class PyHTMLApp {
                 }
             }
         });
+
     }
 
     /**

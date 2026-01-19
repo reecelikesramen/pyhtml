@@ -382,6 +382,29 @@ class PyHTMLParser:
         # Title (custom error message)
         if 'title' in attrs:
             rules.title = attrs['title']
+            
+        # File validation
+        if 'accept' in attrs:
+            # Split by comma
+            rules.allowed_types = [t.strip() for t in attrs['accept'].split(',')]
+            
+        if 'max-size' in attrs:
+            val = attrs['max-size'].lower().strip()
+            multiplier = 1
+            if val.endswith('kb') or val.endswith('k'):
+                multiplier = 1024
+                val = val.rstrip('kb')
+            elif val.endswith('mb') or val.endswith('m'):
+                multiplier = 1024 * 1024
+                val = val.rstrip('mb')
+            elif val.endswith('gb') or val.endswith('g'):
+                multiplier = 1024 * 1024 * 1024
+                val = val.rstrip('gb')
+            
+            try:
+                rules.max_size = int(float(val) * multiplier)
+            except ValueError:
+                pass
         
         # Check for reactive validation attributes (:required, :min, :max)
         from pyhtml.compiler.ast_nodes import ReactiveAttribute

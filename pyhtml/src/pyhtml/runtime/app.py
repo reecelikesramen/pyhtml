@@ -16,7 +16,9 @@ from pyhtml.runtime.loader import PageLoader
 from pyhtml.runtime.router import Router
 from pyhtml.runtime.websocket import WebSocketHandler
 from pyhtml.runtime.http_transport import HTTPTransportHandler
+from pyhtml.runtime.http_transport import HTTPTransportHandler
 from pyhtml.runtime.error_page import ErrorPage
+from pyhtml.runtime.upload_manager import upload_manager
 
 
 class PyHTMLApp:
@@ -33,6 +35,9 @@ class PyHTMLApp:
         # Initialize WebTransport handler
         from pyhtml.runtime.webtransport_handler import WebTransportHandler
         self.web_transport_handler = WebTransportHandler(self)
+        
+        # Valid upload tokens
+        self.upload_tokens = set()
 
         # Compile and register all pages
         self._load_pages()
@@ -50,6 +55,8 @@ class PyHTMLApp:
             Route('/_pyhtml/session', self.http_handler.create_session, methods=['POST']),
             Route('/_pyhtml/poll', self.http_handler.poll, methods=['GET']),
             Route('/_pyhtml/event', self.http_handler.handle_event, methods=['POST']),
+            # Upload endpoint
+            Route('/_pyhtml/upload', self._handle_upload, methods=['POST']),
             # Static files
             Mount('/_pyhtml/static', app=StaticFiles(directory=str(static_dir)), name='static'),
             # Default page handler
@@ -64,6 +71,43 @@ class PyHTMLApp:
             'webtransport': False,
             'version': '0.0.1'
         })
+
+    async def _handle_upload(self, request: Request) -> JSONResponse:
+        """Handle file uploads."""
+        print(f"DEBUG: Handling upload request for {request.url}")
+        try:
+            # Check for upload token
+            token = request.headers.get('X-Upload-Token')
+            if not token or token not in self.upload_tokens:
+                return JSONResponse({'error': 'Invalid or expired upload token'}, status_code=403)
+
+            # Fail-fast: Check Content-Length header
+            content_length = request.headers.get('content-length')
+            if content_length:
+                try:
+                    length = int(content_length)
+                    # Global safety limit: 10MB (allows for 5MB file + overhead)
+                    # Real app might configure this or inspect specific field limits after streaming
+                    if length > 10 * 1024 * 1024:
+                        print(f"WARN: Upload rejected. Content-Length {length} exceeds 10MB limit.")
+                        return JSONResponse({'error': 'Payload Too Large'}, status_code=413)
+                except ValueError:
+                    pass
+
+            form = await request.form()
+            response_data = {}
+            for field_name, file in form.items():
+                if hasattr(file, 'filename'): # It's an UploadFile
+                    # We don't really need the ID if we are just testing upload for now?
+                    # Wait, saving returns the ID!
+                    upload_id = upload_manager.save(file)
+                    response_data[field_name] = upload_id
+            
+            print(f"DEBUG: Upload successful. Returning: {response_data}")
+            return JSONResponse(response_data)
+        except Exception as e:
+            traceback.print_exc()
+            return JSONResponse({'error': str(e)}, status_code=500)
 
     def _load_pages(self):
         """Discover and compile all .pyhtml files."""
@@ -160,19 +204,16 @@ class PyHTMLApp:
             # Re-raise so dev_server knows it failed
             raise e
 
-
     async def _handle_request(self, request: Request) -> Response:
         """Handle HTTP request."""
+        # ... (simplified context)
         path = request.url.path
-
-        # Route matching
-        # Route matching
         match = self.router.match(path)
         if not match:
-            return Response("404 Not Found", status_code=404)
-
+             return Response("404 Not Found", status_code=404)
+        
         page_class, params, variant_name = match
-
+        # ... (params, query, path_info, url_helper construction)
         # Build query params
         query = dict(request.query_params)
         
@@ -182,9 +223,6 @@ class PyHTMLApp:
             for name in page_class.__routes__.keys():
                 path_info[name] = (name == variant_name)
         elif hasattr(page_class, '__route__'):
-            # Backward compatibility / simple string case
-            # If string mode, __routes__ has {'main': ...}
-            # But just in case
             path_info['main'] = True
             
         # Build URL helper
@@ -192,7 +230,7 @@ class PyHTMLApp:
         url_helper = None
         if hasattr(page_class, '__routes__'):
              url_helper = URLHelper(page_class.__routes__)
-
+        
         # Instantiate page
         page = page_class(request, params, query, path=path_info, url=url_helper)
 
@@ -215,17 +253,30 @@ class PyHTMLApp:
         # to ensure it's present in both dev and production.
         
         # Inject WebTransport certificate hash if available (Dev Mode)
-        if hasattr(request.app.state, 'webtransport_cert_hash') and isinstance(response, Response) and response.media_type == 'text/html':
-             cert_hash = list(request.app.state.webtransport_cert_hash)
+        if isinstance(response, Response) and response.media_type == 'text/html':
              body = response.body.decode('utf-8')
-             hash_script = f'<script>window.PYHTML_CERT_HASH = {cert_hash};</script>'
+             injections = []
              
-             if '</body>' in body:
-                 body = body.replace('</body>', hash_script + '</body>')
-             else:
-                 body += hash_script
+             # WebTransport Hash
+             if hasattr(request.app.state, 'webtransport_cert_hash'):
+                 cert_hash = list(request.app.state.webtransport_cert_hash)
+                 injections.append(f'<script>window.PYHTML_CERT_HASH = {cert_hash};</script>')
                  
-             response = Response(body, media_type='text/html')
+             # Upload Token Injection
+             if getattr(page, '__has_uploads__', False):
+                 import secrets
+                 token = secrets.token_urlsafe(32)
+                 self.upload_tokens.add(token)
+                 # Token meta tag
+                 injections.append(f'<meta name="pyhtml-upload-token" content="{token}">')
+                 
+             if injections:
+                 injection_str = '\n'.join(injections)
+                 if '</body>' in body:
+                     body = body.replace('</body>', injection_str + '</body>')
+                 else:
+                     body += injection_str
+                 response = Response(body, media_type='text/html')
         
         return response
 

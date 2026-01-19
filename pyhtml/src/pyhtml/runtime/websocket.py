@@ -190,7 +190,12 @@ class WebSocketHandler:
 
                 # Call handler
                 print(f"DEBUG EVENT: {handler_name} payload={event_data}")
-                response = await page.handle_event(handler_name, event_data)
+                try:
+                    response = await page.handle_event(handler_name, event_data)
+                    print(f"DEBUG EVENT SUCCESS: {handler_name}")
+                except Exception as e:
+                    print(f"DEBUG EVENT FAILED: {handler_name} with {e}")
+                    raise e
 
                 # Get updated HTML
                 # Note: Response object contains bytes, we need string

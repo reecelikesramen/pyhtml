@@ -132,6 +132,9 @@
             <article class="success">
                 <header>Advanced Success!</header>
                 {advanced_success}
+                <div $if="image_preview">
+                    <img src="{image_preview}" style="max-width: 100%; max-height: 400px; margin-top: 10px; border-radius: 8px;">
+                </div>
                 <pre>{advanced_data}</pre>
             </article>
         </div>
@@ -174,13 +177,78 @@
             </fieldset>
             
             <label>
-                Profile Picture (File Upload)
-                <input type="file" name="profile_pic">
+                Large File Upload with Progress
+                <input type="file" name="profile_pic" $bind:progress="upload_progress" accept="image/*" max-size="5MB">
+                <progress value="{upload_progress}" max="1" style="width: 100%; display: block; margin-top: 5px;" $if="upload_progress > 0 and upload_progress < 1"></progress>
                 <small class="error" $if="errors.get('profile_pic')">{errors.get('profile_pic')}</small>
             </label>
             
             <button type="submit">Submit Advanced Form</button>
         </form>
+        
+        <hr>
+        
+        <h2>Dynamic Validation (Phase 5)</h2>
+        <div $if="shipment_success">
+            <article class="success">
+                <header>Shipment Created!</header>
+                {shipment_success}
+                <pre>{json.dumps(shipment_data, indent=2)}</pre>
+            </article>
+        </div>
+        
+        <form @submit="create_shipment" $if="not shipment_success">
+            <div>
+                <label>Delivery Method</label>
+                <select name="delivery_method" $bind="delivery_method">
+                    <option value="standard">Standard Shipping</option>
+                    <option value="express">Express Shipping</option>
+                    <option value="pickup">Store Pickup</option>
+                </select>
+            </div>
+            
+            <!-- Address fields only required if not pickup -->
+            <fieldset $if="delivery_method != 'pickup'">
+                <legend>Delivery Address</legend>
+                
+                <label>Street
+                <input name="street" placeholder="Street Address" value="{form_data.get('street', '')}" :required="delivery_method != 'pickup'">
+                <small class="error" $if="errors.get('street')">{errors.get('street')}</small>
+                </label>
+                
+                <label>City
+                <input name="city" placeholder="City" value="{form_data.get('city', '')}" :required="delivery_method != 'pickup'">
+                <small class="error" $if="errors.get('city')">{errors.get('city')}</small>
+                </label>
+                
+                <label>ZIP Code (5 digits)
+                <input name="zip" pattern="[0-9]{{5}}" title="Must be exactly 5 digits" placeholder="ZIP Code" value="{form_data.get('zip', '')}" :required="delivery_method != 'pickup'">
+                <small class="error" $if="errors.get('zip')">{errors.get('zip')}</small>
+                </label>
+            </fieldset>
+            
+            <!-- Express delivery date only shown/required for express -->
+            <div $if="delivery_method == 'express'">
+                <label>Delivery Date (Must be tomorrow+)</label>
+                <input name="delivery_date" type="date" :min="tomorrow" required>
+                <small class="error" $if="errors.get('delivery_date')">{errors.get('delivery_date')}</small>
+            </div>
+            
+            <button type="submit">Submit Order</button>
+        </form>
+        
+        <hr>
+        
+        <h2>Custom Progress Provider (Async Task)</h2>
+        <div style="background: #f0f0f0; padding: 20px; border-radius: 8px;">
+            <p>Task Status: <strong>{task_status_text}</strong></p>
+            <progress :value="task_progress" max="100" style="width: 100%; height: 20px;"></progress>
+            <div style="margin-top: 10px;">
+                <button @click="run_long_task" :disabled="task_running">
+                    { 'Running...' if task_running else 'Start Long Task' }
+                </button>
+            </div>
+        </div>
     </main>
 </body>
 </html>
@@ -193,11 +261,18 @@ from typing import Optional
 # State
 success_message = ""
 form_data = {}
+delivery_method = "standard"
 has_referral = False
 pydantic_success = ""
 pydantic_data = None
 advanced_success = ""
 advanced_data = None
+upload_progress = 0.0
+# Async Task State
+task_progress = 0
+task_status_text = "Idle"
+task_running = False
+
 errors = {}  # BasePage has self.errors, but we can explicitly define for local ref if needed?
 errors = {}  # BasePage has self.errors, but we can explicitly define for local ref if needed? 
 # Actually BasePage.errors is auto-populated.
@@ -227,6 +302,37 @@ async def handle_submit(data):
     self.advanced_success = ""
     self.advanced_data = None
 
+import asyncio
+
+async def run_long_task(event_data):
+    if self.task_running:
+        return
+
+    self.task_running = True
+    self.task_progress = 0
+    self.task_status_text = "Initializing task..."
+    await self.push_state()
+    
+    # Simulate processing steps
+    total_steps = 50
+    for i in range(1, total_steps + 1):
+        # Simulate work
+        await asyncio.sleep(0.05)
+        
+        # Update progress
+        self.task_progress = (i / total_steps) * 100
+        self.task_status_text = f"Processing item {i} of {total_steps}..."
+        
+        # Push updates to UI periodically (every 5 steps or so to avoid flooding)
+        if i % 2 == 0:
+            await self.push_state()
+            
+    self.task_status_text = "Task Completed Successfully!"
+    self.task_progress = 100
+    self.task_running = False
+    # Final state update happens automatically on return, but explicit doesn't hurt
+
+
 # Pydantic Model
 class User(BaseModel):
     username: str
@@ -255,15 +361,36 @@ class AdvancedUser(BaseModel):
     profile_pic: Optional[FileUpload] = None
 
 async def handle_advanced(user: AdvancedUser):
+    import base64
     self.advanced_success = f"Advanced Valid! Name: {user.full_name}, Role: {user.role}, File: {user.profile_pic.filename if user.profile_pic else 'None'}"
-    # Convert manually to dict for JSON dump since FileUpload/Enum might need help?
-    # pydantic .dict() handles Enums (to value) and nested models.
-    # FileUpload is dataclass, pydantic handles it if we configure arbitrary_types_allowed?
-    # Or simple dict() works.
+    print(user)
+    
+    if user.profile_pic:
+        b64_data = base64.b64encode(user.profile_pic.content).decode('utf-8')
+        mime_type = user.profile_pic.content_type
+        self.image_preview = f"data:{mime_type};base64,{b64_data}"
+    else:
+        self.image_preview = None
+
     self.advanced_data = str(user)
+    
     
 async def handle_pydantic_submit(user: User):
     # This handler receives a Pydantic model instance!
     self.pydantic_success = f"Pydantic Form Valid! User: {user.username}, Age: {user.age}, Active: {user.is_active}"
     self.pydantic_data = user.dict()
     # errors are cleared automatically
+
+from datetime import date, timedelta
+tomorrow = (date.today() + timedelta(days=1)).isoformat()
+shipment_success = ""
+shipment_data = None
+delivery_method = 'standard'
+image_preview = None
+
+async def create_shipment(data):
+    self.shipment_success = f"Shipment Created! Method: {data.get('delivery_method')}, Address: {data.get('street')}, Date: {data.get('delivery_date')}"
+    self.shipment_data = data
+    # Reset for demo
+    self.delivery_method = 'standard'
+

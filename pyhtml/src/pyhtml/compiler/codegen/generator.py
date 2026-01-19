@@ -183,13 +183,13 @@ class CodeGenerator:
         class_body.append(self._generate_init_method(parsed))
 
         # Transform user Python code to class methods
+        all_globals = known_methods.union(known_vars)
         if parsed.python_ast:
-            all_globals = known_methods.union(known_vars)
             class_body.extend(self._transform_user_code(parsed.python_ast, all_globals))
 
         # Generate form validation schemas and wrappers
         # MUST happen before render generation as it updates EventAttributes to point to wrappers
-        form_validation_methods = self._generate_form_validation_methods(parsed, known_methods)
+        form_validation_methods = self._generate_form_validation_methods(parsed, all_globals)
         class_body.extend(form_validation_methods)        
         # Generate _render_template method AND binding methods
         # Pass ALL globals to avoid auto-calling variables and prefixing imports
@@ -199,6 +199,13 @@ class CodeGenerator:
         if render_func:
             class_body.append(render_func)
         class_body.extend(binding_funcs)
+        
+        # Inject __has_uploads__ flag if file inputs were detected
+        if self.template_codegen.has_file_inputs:
+             class_body.append(ast.Assign(
+                 targets=[ast.Name(id='__has_uploads__', ctx=ast.Store())],
+                 value=ast.Constant(value=True)
+             ))
 
 
 
@@ -449,7 +456,7 @@ class CodeGenerator:
         
         return new_tree.body, extracted_args
     
-    def _generate_form_validation_methods(self, parsed: ParsedPyHTML, known_methods: Set[str]) -> List[ast.stmt]:
+    def _generate_form_validation_methods(self, parsed: ParsedPyHTML, known_globals: Set[str]) -> List[ast.stmt]:
         """Generate validation schema and wrapper methods for forms with @submit."""
         methods = []
         form_count = 0
@@ -471,14 +478,14 @@ class CodeGenerator:
                                 
                                 # Build dict literal for schema fields
                                 schema_methods = self._generate_form_schema_literal(
-                                    attr.validation_schema, schema_name
+                                    attr.validation_schema, schema_name, known_globals
                                 )
                                 methods.extend(schema_methods)
                                 
                                 # Generate wrapper handler
                                 wrapper = self._generate_form_wrapper(
                                     form_id, original_handler, schema_name, 
-                                    attr.validation_schema, known_methods
+                                    attr.validation_schema, known_globals
                                 )
                                 methods.append(wrapper)
                                 
@@ -491,7 +498,7 @@ class CodeGenerator:
         visit_nodes(parsed.template)
         return methods
     
-    def _generate_form_schema_literal(self, schema: FormValidationSchema, schema_name: str) -> List[ast.stmt]:
+    def _generate_form_schema_literal(self, schema: FormValidationSchema, schema_name: str, known_globals: Set[str]) -> List[ast.stmt]:
         """Generate validation schema as a class attribute."""
         # Generate code like:
         # _form_schema_0 = {
@@ -507,7 +514,8 @@ class CodeGenerator:
             if rules.required:
                 keywords.append(ast.keyword(arg='required', value=ast.Constant(value=True)))
             if rules.required_expr:
-                keywords.append(ast.keyword(arg='required_expr', value=ast.Constant(value=rules.required_expr)))
+                expr = self.template_codegen._transform_expr(rules.required_expr, set(), known_globals)
+                keywords.append(ast.keyword(arg='required_expr', value=ast.Constant(value=expr)))
             if rules.pattern:
                 keywords.append(ast.keyword(arg='pattern', value=ast.Constant(value=rules.pattern)))
             if rules.minlength is not None:
@@ -517,17 +525,29 @@ class CodeGenerator:
             if rules.min_value:
                 keywords.append(ast.keyword(arg='min_value', value=ast.Constant(value=rules.min_value)))
             if rules.min_expr:
-                keywords.append(ast.keyword(arg='min_expr', value=ast.Constant(value=rules.min_expr)))
+                expr = self.template_codegen._transform_expr(rules.min_expr, set(), known_globals)
+                keywords.append(ast.keyword(arg='min_expr', value=ast.Constant(value=expr)))
             if rules.max_value:
                 keywords.append(ast.keyword(arg='max_value', value=ast.Constant(value=rules.max_value)))
             if rules.max_expr:
-                keywords.append(ast.keyword(arg='max_expr', value=ast.Constant(value=rules.max_expr)))
+                expr = self.template_codegen._transform_expr(rules.max_expr, set(), known_globals)
+                keywords.append(ast.keyword(arg='max_expr', value=ast.Constant(value=expr)))
             if rules.step:
                 keywords.append(ast.keyword(arg='step', value=ast.Constant(value=rules.step)))
             if rules.input_type != 'text':
                 keywords.append(ast.keyword(arg='input_type', value=ast.Constant(value=rules.input_type)))
             if rules.title:
                 keywords.append(ast.keyword(arg='title', value=ast.Constant(value=rules.title)))
+            if rules.max_size is not None:
+                keywords.append(ast.keyword(arg='max_size', value=ast.Constant(value=rules.max_size)))
+            if rules.allowed_types:
+                keywords.append(ast.keyword(
+                    arg='allowed_types', 
+                    value=ast.List(
+                        elts=[ast.Constant(value=t) for t in rules.allowed_types],
+                        ctx=ast.Load()
+                    )
+                ))
             
             field_rules_call = ast.Call(
                 func=ast.Name(id='FieldRules', ctx=ast.Load()),
@@ -571,7 +591,7 @@ class CodeGenerator:
         original_handler: str, 
         schema_name: str,
         schema: FormValidationSchema,
-        known_methods: Set[str]
+        known_globals: Set[str]
     ) -> ast.AsyncFunctionDef:
         """Generate wrapper handler that validates then calls original handler."""
         wrapper_name = f'_form_submit_{form_id}'
@@ -626,9 +646,19 @@ class CodeGenerator:
                     func=ast.Name(id='eval', ctx=ast.Load()),
                     args=[
                         ast.Name(id='expr', ctx=ast.Load()),
+                        ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='__dict__', ctx=ast.Load()),
+                                attr='copy',
+                                ctx=ast.Load()
+                            ),
+                            args=[],
+                            keywords=[]
+                        ),
+                        # Make 'self' and global imports available
                         ast.Dict(
-                            keys=[ast.Constant(value='self')],
-                            values=[ast.Name(id='self', ctx=ast.Load())]
+                            keys=[ast.Constant(value='self')] + [ast.Constant(value=name) for name in known_globals],
+                            values=[ast.Name(id='self', ctx=ast.Load())] + [ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=name, ctx=ast.Load()) for name in known_globals]
                         )
                     ],
                     keywords=[]
@@ -1199,6 +1229,8 @@ class CodeGenerator:
             # Fallback logic: check event type
             if binding.event_type == 'change':
                  val_key = 'checked'
+            elif binding.event_type == 'upload-progress':
+                 val_key = 'progress'
             else:
                  val_key = 'value'
             

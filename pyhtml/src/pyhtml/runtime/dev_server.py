@@ -88,6 +88,11 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
         HAS_HTTP3 = True
     except ImportError:
         HAS_HTTP3 = False
+    
+    # DEBUG: Force disable HTTP/3 to avoid Hypercorn/aioquic crash (KeyError: 9) on form uploads
+    print("DEBUG: Forcing HTTP/3 disabled for stress testing form uploads.")
+    HAS_HTTP3 = False
+    if not HAS_HTTP3:
         print("PyHTML: HTTP/3 (WebTransport) disabled. Install 'aioquic' and 'hypercorn' to enable.")
 
     # Create shutdown event

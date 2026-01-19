@@ -33,6 +33,7 @@ class TemplateCodegen:
         self._binding_counter = 0
         self._slot_default_counter = 0
         self.auxiliary_functions: List[str] = []
+        self.has_file_inputs = False
 
     def generate_render_method(self, template_nodes: List[TemplateNode], layout_id: str = None, 
                              known_methods: Set[str] = None, known_globals: Set[str] = None, async_methods: Set[str] = None) -> Tuple[str, List[str]]:
@@ -114,7 +115,9 @@ class TemplateCodegen:
         self.generated_bindings = []
         self._binding_counter = 0
         self._slot_default_counter = 0
+        self._slot_default_counter = 0
         self.auxiliary_functions = []
+        self.has_file_inputs = False
 
     def _generate_function(self, nodes: List[TemplateNode], func_name: str, is_async: bool = False, layout_id: str = None,
                          known_methods: Set[str] = None, known_globals: Set[str] = None, async_methods: Set[str] = None) -> str:
@@ -320,7 +323,20 @@ class TemplateCodegen:
                 tag = node.tag.lower()
                 input_type = node.attributes.get('type', 'text')
                 
-                if tag == 'input' and input_type in ('checkbox', 'radio'):
+                if tag == 'input' and input_type == 'file':
+                     self.has_file_inputs = True
+                
+                if bind_attr.binding_type == 'progress':
+                    event_type = 'upload-progress'
+                    # Progress is one-way (bottom-up), no value binding on input
+                    self.generated_bindings.append(BindingDef(
+                        handler_name=handler_name,
+                        variable_name=var_name,
+                        event_type=event_type
+                    ))
+                    bindings[f'data-on-upload-progress'] = repr(handler_name)
+                    
+                elif tag == 'input' and input_type in ('checkbox', 'radio'):
                         event_type = 'change'
                         target_var = self._transform_expr(var_name, local_vars, known_globals)
                         bindings['checked'] = target_var 
@@ -334,12 +350,13 @@ class TemplateCodegen:
                     target_var = self._transform_expr(var_name, local_vars, known_globals)
                     bindings['value'] = f'str({target_var})'
                 
-                self.generated_bindings.append(BindingDef(
-                    handler_name=handler_name,
-                    variable_name=var_name, 
-                    event_type=event_type
-                ))
-                bindings[f'data-on-{event_type}'] = repr(handler_name)
+                if bind_attr.binding_type != 'progress':
+                    self.generated_bindings.append(BindingDef(
+                        handler_name=handler_name,
+                        variable_name=var_name, 
+                        event_type=event_type
+                    ))
+                    bindings[f'data-on-{event_type}'] = repr(handler_name)
                 
             show_attr = next((a for a in node.special_attributes if isinstance(a, ShowAttribute)), None)
             key_attr = next((a for a in node.special_attributes if isinstance(a, KeyAttribute)), None)

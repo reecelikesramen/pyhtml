@@ -168,16 +168,33 @@ class BasePage:
             else:
                 # Only pass arguments that match parameters
                 for name in sig.parameters:
-                    if name in call_kwargs:
+                    if name == 'event_data':
+                        bound_kwargs['event_data'] = event_data
+                    elif name in call_kwargs:
                         bound_kwargs[name] = call_kwargs[name]
             
-            if asyncio.iscoroutinefunction(handler):
-                await handler(**bound_kwargs)
-            else:
-                handler(**bound_kwargs)
+            try:
+                if asyncio.iscoroutinefunction(handler):
+                    await handler(**bound_kwargs)
+                else:
+                    handler(**bound_kwargs)
+            except Exception as e:
+                print(f"ERROR in handle_event for {handler_name}: {e}")
+                import traceback
+                traceback.print_exc()
+                raise e
+
 
         # Re-render without re-initializing
         return await self.render(init=False)
+
+    async def push_state(self):
+        """Force a UI update with current state (useful for streaming progress)."""
+        if self._on_update:
+            if asyncio.iscoroutinefunction(self._on_update):
+                await self._on_update()
+            else:
+                self._on_update()
 
     async def _render_template(self) -> str:
         """Render template - implemented by codegen."""

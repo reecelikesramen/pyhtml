@@ -116,6 +116,8 @@ class FieldValidationRules:
     step: Optional[str] = None
     input_type: str = "text"  # email, url, number, date, etc.
     title: Optional[str] = None  # Custom error message
+    max_size: Optional[int] = None  # Max file size in bytes
+    allowed_types: Optional[List[str]] = None  # Allowed MIME types or extensions
     
     def __str__(self) -> str:
         return f"FieldValidationRules(name={self.name}, required={self.required})"

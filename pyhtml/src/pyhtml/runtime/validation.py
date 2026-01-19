@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 from pyhtml.runtime.files import FileUpload
+from pyhtml.runtime.upload_manager import upload_manager
 
 
 @dataclass
@@ -24,6 +25,8 @@ class FieldRules:
     step: Optional[str] = None
     input_type: str = "text"
     title: Optional[str] = None  # Custom error message
+    max_size: Optional[int] = None  # Max file size in bytes
+    allowed_types: Optional[List[str]] = None  # Allowed MIME types or extensions
 
 
 @dataclass
@@ -115,6 +118,41 @@ class FormValidator:
             
         elif rules.input_type == 'date':
             return self._validate_date(str_value, rules, state_getter)
+            
+        elif rules.input_type == 'file':
+            # File validation
+            if isinstance(value, FileUpload):
+                # Check size
+                if rules.max_size is not None and value.size > rules.max_size:
+                    size_mb = rules.max_size / (1024 * 1024)
+                    return rules.title or f"File is too large (max {size_mb:.1f}MB)"
+                
+                # Check type
+                if rules.allowed_types:
+                    # Simple MIME type check
+                    # rules.allowed_types is list like ['image/*', 'application/pdf', '.jpg']
+                    allowed = False
+                    for pattern in rules.allowed_types:
+                        pattern = pattern.strip()
+                        if pattern.startswith('.'):
+                            # Extension check
+                            if value.filename.lower().endswith(pattern.lower()):
+                                allowed = True
+                                break
+                        elif pattern.endswith('/*'):
+                            # Wildcard MIME check (e.g. image/*)
+                            base_type = pattern[:-2] # remove /*
+                            if value.content_type.startswith(base_type):
+                                allowed = True
+                                break
+                        else:
+                            # Exact MIME check
+                            if value.content_type == pattern:
+                                allowed = True
+                                break
+                    
+                    if not allowed:
+                        return rules.title or f"File type not allowed. Accepted: {', '.join(rules.allowed_types)}"
         
         # Range validation for non-typed fields
         if rules.input_type == 'text':
@@ -320,9 +358,17 @@ class FormValidator:
             return bool(value)
             
         elif input_type == 'file':
-            # File uploads come as dicts from client, need conversion to FileUpload
-            if isinstance(value, dict) and 'content' in value:
-                return FileUpload.from_dict(value)
+            # File uploads come as dicts from client. 
+            # If it has _upload_id, resolve it via UploadManager.
+            # If it has content (old way), use from_dict.
+            if isinstance(value, dict):
+                if '_upload_id' in value:
+                     file = upload_manager.get(value['_upload_id'])
+                     if file:
+                         return file
+                     return None # Pending or expired?
+                elif 'content' in value:
+                    return FileUpload.from_dict(value)
             return value
             
         return value
