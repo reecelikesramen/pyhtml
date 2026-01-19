@@ -5,7 +5,10 @@ from typing import List, Optional, Tuple, Dict, Any, Union
 
 from lxml import html, etree
 
-from pyhtml.compiler.ast_nodes import ParsedPyHTML, SpecialAttribute, TemplateNode, InterpolationNode
+from pyhtml.compiler.ast_nodes import (
+    ParsedPyHTML, SpecialAttribute, TemplateNode, InterpolationNode,
+    EventAttribute, FormValidationSchema, FieldValidationRules, ModelAttribute
+)
 from pyhtml.compiler.attributes.base import AttributeParser
 from pyhtml.compiler.attributes.events import EventAttributeParser
 from pyhtml.compiler.directives.base import DirectiveParser
@@ -17,6 +20,7 @@ from pyhtml.compiler.attributes.loop import LoopAttributeParser, KeyAttributePar
 from pyhtml.compiler.attributes.loop import LoopAttributeParser, KeyAttributeParser
 from pyhtml.compiler.attributes.bind import BindAttributeParser
 from pyhtml.compiler.attributes.reactive import ReactiveAttributeParser
+from pyhtml.compiler.attributes.form import ModelAttributeParser
 from pyhtml.compiler.interpolation.jinja import JinjaInterpolationParser
 
 
@@ -40,6 +44,7 @@ class PyHTMLParser:
             KeyAttributeParser(),
             BindAttributeParser(),
             ReactiveAttributeParser(),
+            ModelAttributeParser(),
         ]
 
         # Interpolation parser (pluggable)
@@ -266,9 +271,6 @@ class PyHTMLParser:
                 
         # Handle children
         for child in element:
-            # 1. Map child element
-            child_node = self._map_node(child)
-            
             # Special logic: lxml comments are Elements with generic function tag
             if isinstance(child, html.HtmlComment):
                 continue # Skip comments
@@ -276,6 +278,8 @@ class PyHTMLParser:
                 # Processing instruction etc
                 continue
 
+            # 1. Map child element
+            child_node = self._map_node(child)
             node.children.append(child_node)
             
             # 2. Handle child's tail (text immediately after child, before next sibling)
@@ -284,7 +288,113 @@ class PyHTMLParser:
                 if tail_nodes:
                     node.children.extend(tail_nodes)
         
+        # === Form Validation Schema Extraction ===
+        # If this is a <form> with @submit, extract validation rules from child inputs
+        if isinstance(element.tag, str) and element.tag.lower() == 'form':
+            submit_attr = None
+            model_attr = None
+            for attr in node.special_attributes:
+                if isinstance(attr, EventAttribute) and attr.event_type == 'submit':
+                    submit_attr = attr
+                elif isinstance(attr, ModelAttribute):
+                    model_attr = attr
+            
+            if submit_attr:
+                # Build validation schema from form inputs
+                schema = self._extract_form_validation_schema(node)
+                if model_attr:
+                    schema.model_name = model_attr.model_name
+                submit_attr.validation_schema = schema
+        
         return node
+    
+    def _extract_form_validation_schema(self, form_node: TemplateNode) -> FormValidationSchema:
+        """Extract validation rules from form inputs."""
+        schema = FormValidationSchema()
+        
+        def visit_node(node: TemplateNode):
+            if not node.tag:
+                return
+            
+            tag_lower = node.tag.lower()
+            
+            # Check for input, textarea, select with name attribute
+            if tag_lower in ('input', 'textarea', 'select'):
+                name = node.attributes.get('name')
+                if name:
+                    rules = self._extract_field_rules(node, name)
+                    schema.fields[name] = rules
+            
+            # Recurse into children
+            for child in node.children:
+                visit_node(child)
+        
+        for child in form_node.children:
+            visit_node(child)
+        
+        return schema
+    
+    def _extract_field_rules(self, node: TemplateNode, field_name: str) -> FieldValidationRules:
+        """Extract validation rules from a single input node."""
+        attrs = node.attributes
+        special_attrs = node.special_attributes
+        
+        rules = FieldValidationRules(name=field_name)
+        
+        # Required - static or reactive
+        if 'required' in attrs:
+            rules.required = True
+        
+        # Pattern
+        if 'pattern' in attrs:
+            rules.pattern = attrs['pattern']
+        
+        # Length constraints
+        if 'minlength' in attrs:
+            try:
+                rules.minlength = int(attrs['minlength'])
+            except ValueError:
+                pass
+        if 'maxlength' in attrs:
+            try:
+                rules.maxlength = int(attrs['maxlength'])
+            except ValueError:
+                pass
+        
+        # Min/max (for number, date, etc.)
+        if 'min' in attrs:
+            rules.min_value = attrs['min']
+        if 'max' in attrs:
+            rules.max_value = attrs['max']
+        
+        # Step
+        if 'step' in attrs:
+            rules.step = attrs['step']
+        
+        # Input type
+        if 'type' in attrs:
+            rules.input_type = attrs['type'].lower()
+        elif node.tag and node.tag.lower() == 'textarea':
+            rules.input_type = 'textarea'
+        elif node.tag and node.tag.lower() == 'select':
+            rules.input_type = 'select'
+        
+        # Title (custom error message)
+        if 'title' in attrs:
+            rules.title = attrs['title']
+        
+        # Check for reactive validation attributes (:required, :min, :max)
+        from pyhtml.compiler.ast_nodes import ReactiveAttribute
+        for attr in special_attrs:
+            if isinstance(attr, ReactiveAttribute):
+                if attr.name == 'required':
+                    rules.required_expr = attr.expr
+                elif attr.name == 'min':
+                    rules.min_expr = attr.expr
+                elif attr.name == 'max':
+                    rules.max_expr = attr.expr
+        
+        return rules
 
     def _parse_attributes(self, attrs: Dict[str, Any]) -> Tuple[dict, List[SpecialAttribute]]:
         """Separate regular attrs from special ones."""

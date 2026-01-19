@@ -1,0 +1,269 @@
+!path "/forms_test"
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PyHTML Form Validation Test</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <style>
+        .error { color: #d93526; font-size: 0.875rem; margin-top: 0.25rem; display: block; }
+        input.invalid { border-color: #d93526; }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <h1>Form Validation Demo</h1>
+        
+        <div $if="success_message">
+            <article class="success">
+                <header>Success!</header>
+                {success_message}
+                <footer><button @click="reset_form">Reset</button></footer>
+            </article>
+        </div>
+
+        <form @submit="handle_submit" $if="not success_message">
+            <!-- Username: Required, Min Lenth 3, Pattern -->
+            <label for="username">
+                Username (3+ chars, letters only)
+                <input type="text" 
+                       id="username" 
+                       name="username" 
+                       value="{form_data.get('username', '')}"
+                       required 
+                       minlength="3" 
+                       pattern="[A-Za-z]+"
+                       :aria-invalid="'true' if errors.get('username') else 'false'">
+                <small class="error" $if="errors.get('username')">{errors.get('username')}</small>
+            </label>
+
+            <!-- Email: Required, Type Email -->
+            <label for="email">
+                Email Address
+                <input type="email" 
+                       id="email" 
+                       name="email" 
+                       value="{form_data.get('email', '')}"
+                       required
+                       :aria-invalid="'true' if errors.get('email') else 'false'">
+                <small class="error" $if="errors.get('email')">{errors.get('email')}</small>
+            </label>
+
+            <!-- Age: Number, Min 18, Max 100 -->
+            <label for="age">
+                Age (18-100)
+                <input type="number" 
+                       id="age" 
+                       name="age" 
+                       value="{form_data.get('age', '')}"
+                       min="18" 
+                       max="100"
+                       :aria-invalid="'true' if errors.get('age') else 'false'">
+                <small class="error" $if="errors.get('age')">{errors.get('age')}</small>
+            </label>
+
+            <!-- Conditional Validation -->
+            <label for="has_referral">
+                <input type="checkbox" 
+                       id="has_referral" 
+                       $bind="has_referral">
+                I have a referral code
+            </label>
+
+            <label for="referral_code" $show="has_referral">
+                Referral Code (Required if checked)
+                <input type="text" 
+                       id="referral_code" 
+                       name="referral_code"
+                       value="{form_data.get('referral_code', '')}" 
+                       :required="has_referral"
+                       :aria-invalid="'true' if errors.get('referral_code') else 'false'">
+                <small class="error" $if="errors.get('referral_code')">{errors.get('referral_code')}</small>
+            </label>
+
+            <button type="submit">Submit Form</button>
+        </form>
+        
+        <details>
+            <summary>Debug State</summary>
+            <pre>Errors: {json.dumps(errors, indent=2)}</pre>
+            <pre>Data: {json.dumps(form_data, indent=2)}</pre>
+            <pre>Has Referral: {has_referral}</pre>
+        </details>
+        
+        <hr>
+        
+        <h2>Pydantic Integration Test</h2>
+        <div $if="pydantic_success">
+            <article class="success">
+                <header>Pydantic Success!</header>
+                {pydantic_success}
+                <pre>{json.dumps(pydantic_data, indent=2)}</pre>
+            </article>
+        </div>
+        
+        <form @submit="handle_pydantic_submit" $model="User" $if="not pydantic_success">
+            <label>
+                Username (Pydantic)
+                <input name="username" required>
+                <small class="error" $if="errors.get('username')">{errors.get('username')}</small>
+            </label>
+            
+            <label>
+                Age (Pydantic Int)
+                <input type="number" name="age" required>
+                <small class="error" $if="errors.get('age')">{errors.get('age')}</small>
+            </label>
+            
+            <label>
+                <input type="checkbox" name="is_active">
+                Is Active (Pydantic Bool)
+            </label>
+            
+        <button type="submit">Submit Pydantic Form</button>
+        </form>
+        
+        <hr>
+        
+        <h2>Advanced Features (Phase 4)</h2>
+        <div $if="advanced_success">
+            <article class="success">
+                <header>Advanced Success!</header>
+                {advanced_success}
+                <pre>{advanced_data}</pre>
+            </article>
+        </div>
+        
+        <form @submit="handle_advanced" $model="AdvancedUser" $if="not advanced_success">
+            <label>
+                Full Name
+                <input name="full_name" required>
+                <small class="error" $if="errors.get('full_name')">{errors.get('full_name')}</small>
+            </label>
+            
+            <label>
+                Role (Enum Binding)
+                <select name="role">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                    <option value="guest">Guest</option>
+                </select>
+                <small class="error" $if="errors.get('role')">{errors.get('role')}</small>
+            </label>
+            
+            <label>
+                Birth Date (Date Validation)
+                <input type="date" name="birth_date" required>
+                <small class="error" $if="errors.get('birth_date')">{errors.get('birth_date')}</small>
+            </label>
+            
+            <fieldset>
+                <legend>Address (Nested Model)</legend>
+                <label>
+                    Street
+                    <input name="address.street" required>
+                    <small class="error" $if="errors.get('address.street')">{errors.get('address.street')}</small>
+                </label>
+                <label>
+                    City
+                    <input name="address.city" required>
+                    <small class="error" $if="errors.get('address.city')">{errors.get('address.city')}</small>
+                </label>
+            </fieldset>
+            
+            <label>
+                Profile Picture (File Upload)
+                <input type="file" name="profile_pic">
+                <small class="error" $if="errors.get('profile_pic')">{errors.get('profile_pic')}</small>
+            </label>
+            
+            <button type="submit">Submit Advanced Form</button>
+        </form>
+    </main>
+</body>
+</html>
+
+---
+import json
+from pydantic import BaseModel
+from typing import Optional
+
+# State
+success_message = ""
+form_data = {}
+has_referral = False
+pydantic_success = ""
+pydantic_data = None
+advanced_success = ""
+advanced_data = None
+errors = {}  # BasePage has self.errors, but we can explicitly define for local ref if needed?
+errors = {}  # BasePage has self.errors, but we can explicitly define for local ref if needed? 
+# Actually BasePage.errors is auto-populated.
+# The template uses `errors.get('key')`, which accesses self.errors.
+
+async def handle_submit(data):
+    # This handler is only called if validation passes!
+    self.success_message = f"Form submitted successfully! Validated data: {json.dumps(data)}"
+    self.form_data = data
+    # self.errors is automatically cleared by the wrapper before calling this if valid? 
+    # Current implementation of wrapper:
+    # self.errors = form_validator.validate...
+    # if self.errors: return
+    # await handler(data)
+    # So if we are here, self.errors is empty (or None, depending on implementation).
+    
+    self.success_message = ""
+    self.form_data = {}
+    self.has_referral = False
+    self.errors = {}
+    self.success_message = ""
+    self.form_data = {}
+    self.has_referral = False
+    self.errors = {}
+    self.pydantic_success = ""
+    self.pydantic_data = None
+    self.advanced_success = ""
+    self.advanced_data = None
+
+# Pydantic Model
+class User(BaseModel):
+    username: str
+    age: int
+    is_active: bool = False
+
+# Phase 4: Advanced Models
+from enum import Enum
+from datetime import date
+from pyhtml.runtime.files import FileUpload
+
+class Role(str, Enum):
+    ADMIN = 'admin'
+    USER = 'user'
+    GUEST = 'guest'
+
+class Address(BaseModel):
+    street: str
+    city: str
+
+class AdvancedUser(BaseModel):
+    full_name: str
+    role: Role
+    birth_date: date
+    address: Address
+    profile_pic: Optional[FileUpload] = None
+
+async def handle_advanced(user: AdvancedUser):
+    self.advanced_success = f"Advanced Valid! Name: {user.full_name}, Role: {user.role}, File: {user.profile_pic.filename if user.profile_pic else 'None'}"
+    # Convert manually to dict for JSON dump since FileUpload/Enum might need help?
+    # pydantic .dict() handles Enums (to value) and nested models.
+    # FileUpload is dataclass, pydantic handles it if we configure arbitrary_types_allowed?
+    # Or simple dict() works.
+    self.advanced_data = str(user)
+    
+async def handle_pydantic_submit(user: User):
+    # This handler receives a Pydantic model instance!
+    self.pydantic_success = f"Pydantic Form Valid! User: {user.username}, Age: {user.age}, Active: {user.is_active}"
+    self.pydantic_data = user.dict()
+    # errors are cleared automatically

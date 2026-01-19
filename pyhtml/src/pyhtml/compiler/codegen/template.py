@@ -35,17 +35,17 @@ class TemplateCodegen:
         self.auxiliary_functions: List[str] = []
 
     def generate_render_method(self, template_nodes: List[TemplateNode], layout_id: str = None, 
-                             known_methods: Set[str] = None, async_methods: Set[str] = None) -> Tuple[str, List[str]]:
+                             known_methods: Set[str] = None, known_globals: Set[str] = None, async_methods: Set[str] = None) -> Tuple[str, List[str]]:
         """
         Generate standard _render_template method.
         Returns: (main_function_body_str, list_of_auxiliary_function_strs)
         """
         self._reset_state()
         main_func = self._generate_function(template_nodes, '_render_template', is_async=True, layout_id=layout_id,
-                                          known_methods=known_methods, async_methods=async_methods)
+                                          known_methods=known_methods, known_globals=known_globals, async_methods=async_methods)
         return main_func, self.auxiliary_functions
 
-    def generate_slot_methods(self, template_nodes: List[TemplateNode], file_id: str = "") -> Tuple[Dict[str, str], List[str]]:
+    def generate_slot_methods(self, template_nodes: List[TemplateNode], file_id: str = "", known_globals: Set[str] = None) -> Tuple[Dict[str, str], List[str]]:
         """
         Generate slot filler methods for child pages.
         Returns: ({slot_name: function_code}, list_of_auxiliary_function_strs)
@@ -86,7 +86,7 @@ class TemplateCodegen:
             safe_name = slot_name.replace('$', '_head_').replace('-', '_') if slot_name.startswith('$') else slot_name.replace('-', '_')
             # Include file hash to prevent method override in inheritance
             func_name = f'_render_slot_fill_{safe_name}_{file_hash}' if file_hash else f'_render_slot_fill_{safe_name}'
-            slot_funcs[slot_name] = self._generate_function(nodes, func_name, is_async=True)
+            slot_funcs[slot_name] = self._generate_function(nodes, func_name, is_async=True, known_globals=known_globals)
             
         return slot_funcs, self.auxiliary_functions
 
@@ -117,18 +117,18 @@ class TemplateCodegen:
         self.auxiliary_functions = []
 
     def _generate_function(self, nodes: List[TemplateNode], func_name: str, is_async: bool = False, layout_id: str = None,
-                         known_methods: Set[str] = None, async_methods: Set[str] = None) -> str:
+                         known_methods: Set[str] = None, known_globals: Set[str] = None, async_methods: Set[str] = None) -> str:
         """Generate a single function body."""
         def_kw = 'async def' if is_async else 'def'
         lines = [f'{def_kw} {func_name}(self):', '    parts = []', '    import json']
         
         for node in nodes:
-            self._add_node(node, lines, indent=1, layout_id=layout_id, known_methods=known_methods, async_methods=async_methods)
+            self._add_node(node, lines, indent=1, layout_id=layout_id, known_methods=known_methods, known_globals=known_globals, async_methods=async_methods)
             
         lines.append('    return "".join(parts)')
         return '\n'.join(lines)
 
-    def _transform_expr(self, expr: str, local_vars: Set[str]) -> str:
+    def _transform_expr(self, expr: str, local_vars: Set[str], known_globals: Set[str] = None) -> str:
         """Transform expression to use self. for non-local variables."""
         # Simple identifiers
         if expr.replace('_', '').isalnum() and not expr[0].isdigit():
@@ -146,7 +146,8 @@ class TemplateCodegen:
             class AddSelfTransformer(ast.NodeTransformer):
                 def visit_Name(self, node):
                     import builtins
-                    if node.id not in dir(builtins) and node.id not in local_vars:
+                    # Skip if builtin, local var, or KNOWN GLOBAL (import/class var)
+                    if node.id not in dir(builtins) and node.id not in local_vars and (known_globals is None or node.id not in known_globals):
                         return ast.Attribute(
                             value=ast.Name(id='self', ctx=ast.Load()),
                             attr=node.id,
@@ -163,6 +164,7 @@ class TemplateCodegen:
             def repl(m):
                 word = m.group(1)
                 if word in local_vars: return word
+                if known_globals and word in known_globals: return word
                 keywords = {'if', 'else', 'and', 'or', 'not', 'in', 'is', 'True', 'False', 'None', 'for', 'while', 'await'}
                 if word in keywords: return word
                 
@@ -176,7 +178,7 @@ class TemplateCodegen:
             
             return re.sub(r'\\b([a-zA-Z_]\w*)\\b(?!\s*[(\[])', repl, expr)
 
-    def _transform_reactive_expr(self, expr: str, local_vars: Set[str], known_methods: Set[str] = None, async_methods: Set[str] = None) -> str:
+    def _transform_reactive_expr(self, expr: str, local_vars: Set[str], known_methods: Set[str] = None, known_globals: Set[str] = None, async_methods: Set[str] = None) -> str:
         """
         Transform reactive expression. 
         - Apply self. prefix
@@ -184,7 +186,7 @@ class TemplateCodegen:
         - Handle async: await self.my_meth()
         """
         expr = expr.strip()
-        transformed = self._transform_expr(expr, local_vars)
+        transformed = self._transform_expr(expr, local_vars, known_globals)
         
         # Check if it's a simple method reference that needs calling
         if known_methods and expr in known_methods:
@@ -223,7 +225,7 @@ class TemplateCodegen:
         return transformed
 
     def _add_node(self, node: TemplateNode, lines: List[str], indent: int = 1, local_vars: Set[str] = None, bound_var: str = None, layout_id: str = None,
-                  known_methods: Set[str] = None, async_methods: Set[str] = None):
+                  known_methods: Set[str] = None, known_globals: Set[str] = None, async_methods: Set[str] = None):
         if local_vars is None:
             local_vars = set()
         
@@ -237,27 +239,27 @@ class TemplateCodegen:
             for var in loop_vars_str.split(','):
                 new_locals.add(var.strip())
             
-            iterable = self._transform_expr(for_attr.iterable, local_vars)
+            iterable = self._transform_expr(for_attr.iterable, local_vars, known_globals)
             lines.append(f'{indent_str}for {loop_vars_str} in {iterable}:')
             
             new_attrs = [a for a in node.special_attributes if a is not for_attr]
             if node.tag == 'template':
                 for child in node.children:
-                    self._add_node(child, lines, indent + 1, new_locals, bound_var, layout_id=layout_id)
+                    self._add_node(child, lines, indent + 1, new_locals, bound_var, layout_id=layout_id, known_methods=known_methods, known_globals=known_globals, async_methods=async_methods)
             else:
                 new_node = replace(node, special_attributes=new_attrs)
-                self._add_node(new_node, lines, indent + 1, new_locals, bound_var, layout_id=layout_id, known_methods=known_methods, async_methods=async_methods)
+                self._add_node(new_node, lines, indent + 1, new_locals, bound_var, layout_id=layout_id, known_methods=known_methods, known_globals=known_globals, async_methods=async_methods)
             return
 
         # 2. Handle $if
         if_attr = next((a for a in node.special_attributes if isinstance(a, IfAttribute)), None)
         if if_attr:
-            cond = self._transform_expr(if_attr.condition, local_vars)
+            cond = self._transform_expr(if_attr.condition, local_vars, known_globals)
             lines.append(f'{indent_str}if {cond}:')
             
             new_attrs = [a for a in node.special_attributes if a is not if_attr]
             new_node = replace(node, special_attributes=new_attrs)
-            self._add_node(new_node, lines, indent + 1, local_vars, bound_var, layout_id=layout_id, known_methods=known_methods, async_methods=async_methods)
+            self._add_node(new_node, lines, indent + 1, local_vars, bound_var, layout_id=layout_id, known_methods=known_methods, known_globals=known_globals, async_methods=async_methods)
             return
         
         # --- Handle <slot> ---
@@ -294,7 +296,7 @@ class TemplateCodegen:
                         if isinstance(part, str):
                             expr_parts.append(repr(part))
                         else:
-                            transformed = self._transform_expr(part.expression, local_vars)
+                            transformed = self._transform_expr(part.expression, local_vars, known_globals)
                             expr_parts.append(f'str({transformed})')
                     
                     full_expr = ' + '.join(expr_parts)
@@ -302,7 +304,7 @@ class TemplateCodegen:
             else:
                 for attr in node.special_attributes:
                     if isinstance(attr, InterpolationNode):
-                         expr = self._transform_expr(attr.expression, local_vars)
+                         expr = self._transform_expr(attr.expression, local_vars, known_globals)
                          lines.append(f'{indent_str}parts.append(str({expr}))')
         else:
             # Element
@@ -320,16 +322,16 @@ class TemplateCodegen:
                 
                 if tag == 'input' and input_type in ('checkbox', 'radio'):
                         event_type = 'change'
-                        target_var = self._transform_expr(var_name, local_vars)
+                        target_var = self._transform_expr(var_name, local_vars, known_globals)
                         bindings['checked'] = target_var 
                 elif tag == 'select':
                     event_type = 'input'
-                    target_var = self._transform_expr(var_name, local_vars)
+                    target_var = self._transform_expr(var_name, local_vars, known_globals)
                     bindings['value'] = f'str({target_var})'
                     new_bound_var = target_var
                 else:
                     event_type = 'input'
-                    target_var = self._transform_expr(var_name, local_vars)
+                    target_var = self._transform_expr(var_name, local_vars, known_globals)
                     bindings['value'] = f'str({target_var})'
                 
                 self.generated_bindings.append(BindingDef(
@@ -342,7 +344,7 @@ class TemplateCodegen:
             show_attr = next((a for a in node.special_attributes if isinstance(a, ShowAttribute)), None)
             key_attr = next((a for a in node.special_attributes if isinstance(a, KeyAttribute)), None)
             if key_attr:
-                bindings['id'] = f'str({self._transform_expr(key_attr.expr, local_vars)})'
+                bindings['id'] = f'str({self._transform_expr(key_attr.expr, local_vars, known_globals)})'
 
             lines.append(f'{indent_str}attrs = {{}}')
             
@@ -354,7 +356,7 @@ class TemplateCodegen:
                         if isinstance(part, str):
                             expr_parts.append(repr(part))
                         else:
-                            transformed = self._transform_expr(part.expression, local_vars)
+                            transformed = self._transform_expr(part.expression, local_vars, known_globals)
                             expr_parts.append(f'str({transformed})')
                     full_expr = ' + '.join(expr_parts)
                     lines.append(f'{indent_str}attrs[{repr(k)}] = {full_expr}')
@@ -372,11 +374,11 @@ class TemplateCodegen:
                 if isinstance(attr, EventAttribute):
                     lines.append(f'{indent_str}attrs["data-on-{attr.event_type}"] = {repr(attr.handler_name)}')
                     for i, arg_expr in enumerate(attr.args):
-                            val = self._transform_expr(arg_expr, local_vars)
+                            val = self._transform_expr(arg_expr, local_vars, known_globals)
                             lines.append(f'{indent_str}attrs["data-arg-{i}"] = json.dumps({val})')
                 elif isinstance(attr, ReactiveAttribute):
                     # Transformed expression (handling async calls and self. prefix)
-                    val_expr = self._transform_reactive_expr(attr.expr, local_vars, known_methods, async_methods)
+                    val_expr = self._transform_reactive_expr(attr.expr, local_vars, known_methods, known_globals, async_methods)
                     
                     # Store in temp var to handle reuse and checks
                     # Using a scoped block or just evaluating inline? Inline is fine if simple.
@@ -423,7 +425,7 @@ class TemplateCodegen:
                         lines.append(f'{indent_str}    attrs[{repr(attr.name)}] = str(_r_val)')
 
             if show_attr:
-                cond = self._transform_expr(show_attr.condition, local_vars)
+                cond = self._transform_expr(show_attr.condition, local_vars, known_globals)
                 lines.append(f'{indent_str}if not {cond}:')
                 lines.append(f'{indent_str}    attrs["style"] = attrs.get("style", "") + "; display: none"')
                 
@@ -439,7 +441,7 @@ class TemplateCodegen:
             lines.append(f'{indent_str}parts.append(f"<{node.tag}{{\'\'.join(header_parts)}}>")')
 
             for child in node.children:
-                self._add_node(child, lines, indent, local_vars, new_bound_var, layout_id=layout_id, known_methods=known_methods, async_methods=async_methods)
+                self._add_node(child, lines, indent, local_vars, new_bound_var, layout_id=layout_id, known_methods=known_methods, known_globals=known_globals, async_methods=async_methods)
 
             if node.tag.lower() not in self.VOID_ELEMENTS:
                 lines.append(f'{indent_str}parts.append("</{node.tag}>")')

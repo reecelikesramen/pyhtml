@@ -101,11 +101,53 @@ class BindAttribute(SpecialAttribute):
 
 
 @dataclass
+class FieldValidationRules:
+    """Validation rules for a single form field."""
+    name: str
+    required: bool = False
+    required_expr: Optional[str] = None  # For :required="condition"
+    pattern: Optional[str] = None
+    minlength: Optional[int] = None
+    maxlength: Optional[int] = None
+    min_value: Optional[str] = None  # String to support dates
+    min_expr: Optional[str] = None  # For :min="expr"
+    max_value: Optional[str] = None
+    max_expr: Optional[str] = None  # For :max="expr"
+    step: Optional[str] = None
+    input_type: str = "text"  # email, url, number, date, etc.
+    title: Optional[str] = None  # Custom error message
+    
+    def __str__(self) -> str:
+        return f"FieldValidationRules(name={self.name}, required={self.required})"
+
+
+@dataclass
+class FormValidationSchema:
+    """Schema containing all validation rules for a form."""
+    fields: Dict[str, FieldValidationRules] = field(default_factory=dict)
+    model_name: Optional[str] = None  # For $model="ClassName"
+    
+    def __str__(self) -> str:
+        return f"FormValidationSchema(fields={len(self.fields)}, model={self.model_name})"
+
+
+@dataclass
+class ModelAttribute(SpecialAttribute):
+    """$model="ModelClassName" - Pydantic model binding."""
+    model_name: str
+    
+    def __str__(self) -> str:
+        return f"ModelAttribute(model={self.model_name})"
+
+
+@dataclass
 class EventAttribute(SpecialAttribute):
     """@click="handler_name" or @click="handler(arg1)"."""
     event_type: str  # 'click', 'submit', etc.
     handler_name: str
     args: List[str] = field(default_factory=list)  # List of python expressions for arguments
+    # Form-specific fields
+    validation_schema: Optional[FormValidationSchema] = None  # Set for @submit handlers
 
     def __str__(self) -> str:
         return f"EventAttribute(event={self.event_type}, handler={self.handler_name}, args={self.args})"

@@ -163,18 +163,70 @@ export class PyHTMLApp {
         });
 
         // Submit events
-        document.addEventListener('submit', (e) => {
+        document.addEventListener('submit', async (e) => {
             const target = (e.target as Element).closest('[data-on-submit]');
             if (target) {
                 e.preventDefault();
                 const handler = target.getAttribute('data-on-submit');
                 if (handler) {
+                    const form = target as HTMLFormElement;
                     // Collect form data
-                    const formData = new FormData(target as HTMLFormElement);
-                    const data: Record<string, string> = {};
+                    const formData = new FormData(form);
+                    const data: Record<string, any> = {};
+
+                    // Handle regular fields
                     formData.forEach((value, key) => {
-                        data[key] = value.toString();
+                        if (value instanceof File) {
+                            // Skip files here, handle them below to support async reading
+                        } else {
+                            data[key] = value.toString();
+                        }
                     });
+
+                    // Handle file inputs specially
+                    const fileInputs = form.querySelectorAll('input[type="file"]');
+                    const fileReads: Promise<void>[] = [];
+
+                    fileInputs.forEach((input) => {
+                        const fileInput = input as HTMLInputElement;
+                        const name = fileInput.name;
+                        if (!name) return;
+
+                        if (fileInput.files && fileInput.files.length > 0) {
+                            // Handle single/multiple files
+                            // For MVP, just take the first file if not multiple?
+                            // Or support list of files?
+                            // Let's stick to single file per input name for now unless multiple is set, 
+                            // but FormData standard allows multiple entries for same name.
+                            // To simplify: if input has files, read them.
+
+                            const file = fileInput.files[0]; // TODO: Support multiple='multiple'
+                            if (file) {
+                                const readPromise = new Promise<string>((resolve, reject) => {
+                                    const reader = new FileReader();
+                                    reader.onload = () => resolve(reader.result as string);
+                                    reader.onerror = reject;
+                                    reader.readAsDataURL(file);
+                                }).then((content) => {
+                                    // Create file object matching Python FileUpload.from_dict expectation
+                                    data[name] = {
+                                        name: file.name,
+                                        type: file.type,
+                                        size: file.size,
+                                        content: content
+                                    };
+
+                                    // Optional: Emit progress? 
+                                    // Since we read fully before sending, "progress" is just "reading... done".
+                                    // Real upload progress requires streaming.
+                                });
+                                fileReads.push(readPromise);
+                            }
+                        }
+                    });
+
+                    // Wait for all files to be read
+                    await Promise.all(fileReads);
 
                     this.sendEvent(handler, {
                         type: 'submit',
