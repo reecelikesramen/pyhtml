@@ -36,6 +36,15 @@ class NoSpaDirective(Directive):
 
 
 @dataclass
+class LayoutDirective(Directive):
+    """!layout "path/to/layout.pyhtml" """
+    layout_path: str
+
+    def __str__(self) -> str:
+        return f"LayoutDirective(path={self.layout_path})"
+
+
+@dataclass
 class SpecialAttribute(ASTNode):
     """Base for special attributes ($, @, :)."""
     name: str
@@ -85,9 +94,10 @@ class ForAttribute(SpecialAttribute):
 class BindAttribute(SpecialAttribute):
     """$bind="variable"."""
     variable: str
+    binding_type: Optional[str] = None
     
     def __str__(self) -> str:
-        return f"BindAttribute(var={self.variable})"
+        return f"BindAttribute(var={self.variable}, type={self.binding_type})"
 
 
 @dataclass
@@ -99,6 +109,18 @@ class EventAttribute(SpecialAttribute):
 
     def __str__(self) -> str:
         return f"EventAttribute(event={self.event_type}, handler={self.handler_name}, args={self.args})"
+
+
+@dataclass
+class ReactiveAttribute(SpecialAttribute):
+    """
+    :attr="expression"
+    Represents a reactive attribute where the value is a python expression.
+    """
+    expr: str
+
+    def __str__(self) -> str:
+        return f"ReactiveAttribute(name={self.name}, expr={self.expr})"
 
 
 @dataclass

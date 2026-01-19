@@ -1,0 +1,73 @@
+!path {
+    'weather': '/basic/weather',
+    'weather/:id': '/basic/weather/:id'
+}
+!layout "layout.pyhtml"
+
+<slot name="title">Weather Forecast</slot>
+
+<h1>Weather</h1>
+<p>This component demonstrates fetching data from the server.</p>
+
+<div style="margin-bottom: 20px;">
+    <button @click="refresh_data" $bind:busy="is_loading" :aria-busy="is_loading">
+        { "Loading..." if is_loading else "Refresh Data" }
+    </button>
+</div>
+
+<h1 $show="path['weather/:id']">Weather</h1>
+
+<figure>
+    <table role="grid">
+        <thead>
+            <tr>
+                <th scope="col">Date</th>
+                <th scope="col">Temp. (C)</th>
+                <th scope="col">Temp. (F)</th>
+                <th scope="col">Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr $for="forecast in forecasts">
+                <td>{forecast['date']}</td>
+                <td>{forecast['temperatureC']}</td>
+                <td>{forecast['temperatureF']}</td>
+                <td>{forecast['summary']}</td>
+            </tr>
+        </tbody>
+    </table>
+</figure>
+
+---
+import datetime
+import random
+import asyncio
+
+forecasts = []
+is_loading = False
+
+async def on_load():
+    # Auto-fetch on initial load
+    await refresh_data()
+
+async def refresh_data():
+
+    
+    # Simulate API delay
+    await asyncio.sleep(1.0)
+    
+    start_date = datetime.date.today()
+    summaries = ["Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"]
+    
+    new_forecasts = []
+    for i in range(5):
+        date = start_date + datetime.timedelta(days=i)
+        temp_c = random.randint(-20, 55)
+        new_forecasts.append({
+            'date': date.strftime("%Y-%m-%d"),
+            'temperatureC': temp_c,
+            'temperatureF': 32 + int(temp_c / 0.5556),
+            'summary': random.choice(summaries)
+        })
+    
+    forecasts = new_forecasts

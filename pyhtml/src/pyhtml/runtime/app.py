@@ -126,6 +126,8 @@ class PyHTMLApp:
 
     def reload_page(self, path: Path):
         """Reload and recompile a specific page."""
+        # Invalidate cache for this file (could be page or layout)
+        self.loader.invalidate_cache(path)
         try:
             # Recompile
             new_page_class = self.loader.load(path)

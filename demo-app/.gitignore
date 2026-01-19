@@ -19,6 +19,9 @@ ENV/
 *.swp
 *.swo
 
+# Database
+chatbot.db
+
 # OS
 .DS_Store
 Thumbs.db

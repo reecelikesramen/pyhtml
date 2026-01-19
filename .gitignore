@@ -27,7 +27,9 @@ pyhtml/src/pyhtml/client/node_modules/
 Thumbs.db
 
 # Testing
-.pytest_cache/
+.pytest_cache
+.env
+chatbot.db
 .coverage
 htmlcov/
 

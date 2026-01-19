@@ -1,0 +1,640 @@
+!path {
+    'main': '/chatbot',
+    'conversation': '/chatbot/:id'
+}
+
+<html>
+    <head>
+        <title>AI Chatbot - PyHTML</title>
+        <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+        <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            .scrollbar-hide::-webkit-scrollbar { display: none; }
+            .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+            .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+            /* Markdown styles */
+            .prose pre { background: #2d2d2d; padding: 1em; border-radius: 0.5em; overflow-x: auto; }
+            .prose code { background: rgba(255,255,255,0.1); padding: 0.2em 0.4em; border-radius: 0.3em; font-family: monospace; }
+            .prose pre code { background: transparent; padding: 0; }
+            .prose p { margin-bottom: 0.8em; }
+            .prose p:last-child { margin-bottom: 0; }
+            .prose ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 0.8em; }
+            .prose ol { list-style-type: decimal; padding-left: 1.5em; margin-bottom: 0.8em; }
+            .prose a { color: #60a5fa; text-decoration: underline; }
+            .prose h1, .prose h2, .prose h3 { font-weight: bold; margin-top: 1em; margin-bottom: 0.5em; }
+            .prose table { display: block; overflow-x: auto; border-collapse: collapse; margin-bottom: 1em; width: 100%; }
+            .prose th, .prose td { border: 1px solid rgba(255,255,255,0.1); padding: 0.5em; text-align: left; }
+            .prose th { background: rgba(255,255,255,0.05); }
+            /* Break long words */
+            /* Break long words */
+            .break-words { overflow-wrap: break-word; word-wrap: break-word; -ms-word-break: break-all; word-break: break-word; }
+            
+            /* Custom Scrollbar */
+            ::-webkit-scrollbar { width: 6px; height: 6px; }
+            ::-webkit-scrollbar-track { background: transparent; }
+            ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+            ::-webkit-scrollbar-thumb:hover { background: #555; }
+        </style>
+    </head>
+    <body>
+        <div class="flex h-screen bg-[#0F0F0F] text-white font-sans overflow-hidden">
+            <!-- Sidebar -->
+            <div class="w-72 bg-[#121212] flex flex-col border-r border-white/5 transition-all duration-300">
+                <div class="p-6">
+                    <button @click="new_chat()" class="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-all bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 active:scale-95 group">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16" class="transition-transform group-hover:rotate-90">
+                            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                        </svg>
+                        New Chat
+                    </button>
+                </div>
+                
+                <div class="flex-1 overflow-y-auto px-3 space-y-1 scrollbar-hide">
+                    <div class="px-3 py-2 text-[10px] font-bold text-white/40 uppercase tracking-widest">Recent Chats</div>
+                    <div $for="conv in conversations" 
+                        class="group relative flex items-center gap-3 px-4 py-3 text-sm rounded-xl cursor-pointer transition-all hover:bg-white/5"
+                        :class="'bg-white/10 shadow-lg ring-1 ring-white/10' if current_conversation_id == conv.id else ''">
+                        <a href="/chatbot/{conv.id}" 
+                           @click.prevent="open_chat(conv.id)"
+                           class="flex-1 truncate transition-colors no-underline block"
+                           :class="'text-white' if current_conversation_id == conv.id else 'text-white/60 group-hover:text-white'">
+                            {conv.title or 'New Chat'}
+                        </a>
+                        <button @click.stop="delete_conversation(conv.id)" class="opacity-0 group-hover:opacity-100 ml-auto p-1.5 rounded-md hover:bg-red-500/20 hover:text-red-400 transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                                <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="p-4 border-t border-white/5 space-y-4 bg-[#121212]/80 backdrop-blur-xl">
+                    <!-- Temporary Chat Toggle -->
+                    <div class="flex items-center justify-between px-2 cursor-pointer" @click="toggle_temporary()">
+                        <div class="flex flex-col">
+                            <span class="text-xs font-medium">Temporary Chat</span>
+                            <span class="text-[10px] text-white/40">Don't save history</span>
+                        </div>
+                        <button 
+                                class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none"
+                                :class="'bg-blue-600' if is_temporary else 'bg-white/10'">
+                            <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                                :class="'translate-x-4' if is_temporary else 'translate-x-0'"></span>
+                        </button>
+                    </div>
+                    <div class="text-[10px] text-white/20 text-center tracking-wide font-medium">PyHTML Chatbot Premium v0.3</div>
+                </div>
+            </div>
+
+            <!-- Main Chat Area -->
+            <div class="flex-1 flex flex-col relative h-screen bg-[#0F0F0F]">
+                <!-- Header -->
+                <header class="h-16 flex items-center justify-between px-8 border-b border-white/5 bg-[#0F0F0F]/80 backdrop-blur-xl sticky top-0 z-10">
+                    <div class="flex items-center gap-3">
+                        <div $if="is_temporary" class="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/20">Temp</div>
+                        <h2 class="text-sm font-semibold tracking-tight truncate max-w-md transition-all">
+                            {current_title if current_title else ("AI Assistant" if not is_temporary else "Temporary Chat")}
+                        </h2>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button $if="current_conversation_id" @click="delete_conversation(current_conversation_id)" class="p-2 text-white/40 hover:text-red-400 transition-colors tooltip" title="Delete Chat">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                                <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </header>
+
+                <!-- Messages list -->
+                <div id="chat-container" class="flex-1 overflow-y-auto scroll-smooth pb-48">
+                    <div class="max-w-3xl mx-auto py-8 px-4 flex flex-col gap-6">
+                        <!-- Empty State -->
+                        <div $if="not messages" class="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 animate-fade-in">
+                            <div class="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-6 ring-1 ring-white/10 shadow-2xl">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="text-white/60" viewBox="0 0 16 16">
+                                    <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zM2 8a6 6 0 1 1 12 0A6 6 0 0 1 2 8z"/>
+                                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                                </svg>
+                            </div>
+                            <h1 class="text-3xl font-extrabold tracking-tight mb-3">What's on your mind?</h1>
+                            <p class="text-white/40 text-sm max-w-sm leading-relaxed">
+                                I'm here to help you code, write, and explore new ideas.
+                            </p>
+                        </div>
+
+                        <div $for="idx, msg in enumerate(messages)" 
+                            class="group mb-12 flex w-full animate-fade-in" 
+                            :class="'justify-end' if msg.role == 'user' else 'justify-start'">
+                            
+                            <div class="flex items-start gap-3 max-w-[85%] md:max-w-[80%]" 
+                                 :class="'flex-row-reverse' if msg.role == 'user' else 'flex-row'">
+                                
+                                <!-- Avatar -->
+                                <div class="flex-shrink-0 mt-1">
+                                    <div $if="msg.role == 'assistant'" 
+                                        class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shadow-xl ring-2 ring-[#0F0F0F] select-none">AI</div>
+                                    <div $if="msg.role == 'user'" 
+                                        class="w-10 h-10 rounded-full bg-slate-100 text-slate-900 border-2 border-slate-300 flex items-center justify-center text-[10px] font-black shadow-xl ring-2 ring-[#0F0F0F] select-none">ME</div>
+                                </div>
+                                
+                                <!-- Message Bubble -->
+                                <div class="relative px-8 py-6 shadow-2xl transition-all"
+                                     :class="('bg-blue-600 text-white rounded-[2rem] rounded-tr-none ml-12' if msg.role == 'user' else 'bg-[#1A1A1A] text-slate-100 rounded-[2rem] rounded-tl-none border border-white/10 mr-12')">
+                                     
+                                    <!-- Markdown Content -->
+                                    <div class="markdown-content break-words whitespace-pre-wrap text-[15px] leading-8 prose prose-slate prose-invert prose-sm max-w-none 
+                                                prose-p:text-slate-200 prose-headings:text-white prose-headings:font-bold prose-strong:text-white prose-strong:font-bold prose-code:text-indigo-300
+                                                prose-p:my-3 prose-headings:my-4 prose-pre:my-4 prose-table:my-4 prose-li:my-1 prose-li:text-slate-200" 
+                                         :id="'msg-content-' + str(idx)" 
+                                         :data-content="msg.content">{msg.content}</div>
+                                    
+                                    <!-- Attachments -->
+                                    <div $if="hasattr(msg, 'attachments') and msg.attachments" class="mt-5 pt-5 border-t border-white/10 flex flex-wrap gap-3">
+                                        <div $for="att in msg.attachments" class="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-black/20 text-xs text-white/90 font-medium backdrop-blur-sm border border-white/5">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                                                <path d="M4.5 3a2.5 2.5 0 0 1 5 0v9a1.5 1.5 0 0 1-3 0V5a.5.5 0 0 1 1 0v7a.5.5 0 0 0 1 0V3a1.5 1.5 0 1 0-3 0v9a2.5 2.5 0 0 0 5 0V5a.5.5 0 0 1 1 0v7a3.5 3.5 0 1 1-7 0V3z"/>
+                                            </svg>
+                                            <span class="truncate max-w-[200px]">{att.filename}</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Assistant Typing Indicator -->
+                                    <div $if="is_loading and idx == len(messages) - 1 and msg.role == 'assistant' and not msg.content" 
+                                        class="flex gap-2 py-3 justify-center mt-2">
+                                        <span class="w-2.5 h-2.5 bg-blue-500/80 rounded-full animate-bounce [animation-duration:0.6s]"></span>
+                                        <span class="w-2.5 h-2.5 bg-blue-500/80 rounded-full animate-bounce [animation-delay:0.2s] [animation-duration:0.6s]"></span>
+                                        <span class="w-2.5 h-2.5 bg-blue-500/80 rounded-full animate-bounce [animation-delay:0.4s] [animation-duration:0.6s]"></span>
+                                    </div>
+                                    
+                                    <!-- Edit Button (User only) -->
+                                    <div $if="msg.role == 'user'" class="absolute -bottom-8 left-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-3">
+                                         <button @click="start_edit(idx)" class="text-[9px] text-white/40 hover:text-white transition-all cursor-pointer px-2 py-1 rounded bg-white/5 hover:bg-white/10 font-bold tracking-[0.2em]">EDIT & REWIND</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                <!-- Input Area Container -->
+                <div class="fixed bottom-0 left-0 right-0 lg:left-72 bg-gradient-to-t from-[#0F0F0F] via-[#0F0F0F] to-transparent pt-12 pb-8 px-6">
+                    <div class="max-w-3xl mx-auto flex flex-col gap-3">
+                        
+                        <!-- Attachment Preview -->
+                        <div $if="pending_attachments" class="flex flex-wrap gap-2 px-2">
+                            <div $for="idx, att in enumerate(pending_attachments)" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#1E1E1E] border border-white/10 text-[10px] animate-fade-in">
+                                <span class="truncate max-w-[120px] font-medium">{att.name}</span>
+                                <button @click="remove_attachment(idx)" class="text-white/40 hover:text-red-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="currentColor" viewBox="0 0 16 16">
+                                        <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="relative flex flex-col w-full bg-[#1E1E1E] rounded-3xl border border-white/10 shadow-2xl focus-within:border-white/20 transition-all duration-300 group overflow-hidden outline-none ring-0">
+                            <textarea 
+                                id="chat-input"
+                                $bind="input_text"
+                                @keydown.enter.prevent="send_message()"
+                                placeholder="Type a message..."
+                                class="w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none py-5 px-6 pb-4 text-[15px] max-h-48 scrollbar-hide text-white/90 placeholder-white/20 outline-none"
+                                rows="1"
+                                :disabled="is_loading"
+                            ></textarea>
+                            
+                            <div class="flex items-center justify-between px-4 pb-4">
+                                <div class="flex items-center gap-1">
+                                    <button @click="trigger_file_upload()" 
+                                            class="p-2.5 rounded-xl text-white/40 hover:text-white hover:bg-white/5 transition-all outline-none focus:outline-none"
+                                            title="Upload Files">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                                            <path d="M4.5 3a2.5 2.5 0 0 1 5 0v9a1.5 1.5 0 0 1-3 0V5a.5.5 0 0 1 1 0v7a.5.5 0 0 0 1 0V3a1.5 1.5 0 1 0-3 0v9a2.5 2.5 0 0 0 5 0V5a.5.5 0 0 1 1 0v7a3.5 3.5 0 1 1-7 0V3z"/>
+                                        </svg>
+                                    </button>
+                                    <!-- Hidden File Input -->
+                                    <input type="file" id="file-input" class="hidden" multiple>
+                                </div>
+
+                                <button @click="send_message()" 
+                                        :disabled="is_loading or (not input_text.strip() and not pending_attachments)"
+                                        class="w-10 h-10 flex items-center justify-center rounded-2xl bg-white text-black transition-all hover:scale-105 active:scale-95 disabled:bg-white/5 disabled:text-white/20 disabled:scale-100 shadow-xl group/send outline-none focus:outline-none">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16" class="transition-transform group-hover/send:translate-x-0.5 group-hover/send:-translate-y-0.5">
+                                        <path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576 6.636 10.07Zm6.787-8.201L1.591 6.602l4.339 2.76 7.493-7.493Z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-[10px] text-center text-white/20 font-medium tracking-tight">
+                            Optimized for speed. Accuracy may vary.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <!-- Client-side injection for file handling and markdown -->
+    <script>
+        // File handling
+        window.trigger_file_upload = () => {
+            document.getElementById('file-input').click();
+        };
+
+        window.navigate_chat = (id) => {
+            history.pushState({}, '', '/chatbot/' + id);
+            // PyHTML will handle the event separately
+        };
+
+        window.handle_file_change = async (el) => {
+            const files = [];
+            for (const file of el.files) {
+                const reader = new FileReader();
+                const data = await new Promise((resolve) => {
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(file);
+                });
+                files.push({
+                    name: file.name,
+                    type: file.type,
+                    data: data
+                });
+            }
+            if (window.app) {
+                window.app.sendEvent('handle_files', { files: files });
+            }
+            el.value = '';
+        };
+
+        document.addEventListener('change', (e) => {
+            if (e.target.id === 'file-input') {
+                window.handle_file_change(e.target);
+            }
+        });
+
+        // Markdown rendering observer
+        // This watches for changes to the data-content attribute and updates innermost HTML
+        const renderMarkdown = () => {
+            if (typeof marked === 'undefined') return; // Fallback to raw text if lib not loaded
+            
+            document.querySelectorAll('.markdown-content').forEach(el => {
+                const content = el.getAttribute('data-content');
+                // Only re-render if content changed or if empty but has data
+                // We use a property on the element to track last rendered content to avoid loop
+                if (content !== el._lastRendered) {
+                    try {
+                        el.innerHTML = marked.parse(content || '');
+                        el.classList.remove('whitespace-pre-wrap'); // Remove pre-wrap once markdown handles formatting
+                        el._lastRendered = content;
+                        
+                        // Highlight code blocks (basic manual HL since we didn't include HLJS)
+                        el.querySelectorAll('pre code').forEach(block => {
+                            // Optional: could add simple class-based coloring here or leave as generic
+                        });
+                    } catch (err) {
+                        console.error('Markdown rendering failed', err);
+                        el.textContent = content; // Fallback
+                    }
+                }
+            });
+        };
+
+        // Watch for DOM changes to new messages
+        const observer = new MutationObserver((mutations) => {
+            renderMarkdown();
+            // Also scroll to bottom if user is near bottom?
+        });
+
+        observer.observe(document.body, {observer_config});
+
+        // Initial render
+        renderMarkdown();
+    </script>
+    </body>
+</html>
+
+---
+from groq import Groq
+import os
+import sys
+import importlib.util
+import json
+import base64
+from types import SimpleNamespace
+from dotenv import load_dotenv
+
+# Search for .env file
+dotenv_paths = [
+    os.path.join(os.getcwd(), "demo-app", ".env"),
+    os.path.join(os.getcwd(), ".env"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env") if "__file__" in locals() else ".env"
+]
+for p in dotenv_paths:
+    if os.path.exists(p):
+        load_dotenv(p)
+        break
+
+# Setup models import
+possible_paths = [
+    os.path.join(os.getcwd(), "demo-app", "src", "pages", "chatbot", "models.py"),
+    os.path.join(os.getcwd(), "src", "pages", "chatbot", "models.py"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "models.py") if "__file__" in locals() else "models.py"
+]
+
+models_path = next((p for p in possible_paths if os.path.exists(p)), None)
+if not models_path:
+    raise FileNotFoundError(f"Could not find models.py")
+
+spec = importlib.util.spec_from_file_location("chatbot_models", models_path)
+chatbot_models = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(chatbot_models)
+
+Session = chatbot_models.Session
+Conversation = chatbot_models.Conversation
+Message = chatbot_models.Message
+Attachment = chatbot_models.Attachment
+
+import asyncio
+from typing import List
+
+# Constants
+API_KEY = os.getenv("GROQ_API_KEY")
+MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+UPLOAD_DIR = os.path.join(os.getcwd(), "public", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+# State
+conversations = []
+messages = []
+current_conversation_id = None
+current_title = ""
+input_text = ""
+is_loading = False
+is_temporary = False
+pending_attachments = []
+observer_config = "{ childList: true, subtree: true, attributes: true, attributeFilter: ['data-content'] }"
+
+async def on_load():
+    global conversations
+    # Load all conversations for sidebar
+    with Session() as session:
+        convs = session.query(Conversation).order_by(Conversation.created_at.desc()).all()
+        conversations = [SimpleNamespace(id=c.id, title=c.title or "New Chat") for c in convs]
+    
+    # Check if we are on a specific conversation path
+    if path["conversation"]:
+        try:
+            current_conversation_id = int(params["id"])
+            await load_conversation_state(current_conversation_id)
+        except:
+            current_conversation_id = None
+
+async def load_conversation_state(conv_id):
+    global current_conversation_id, is_temporary, current_title, messages
+    current_conversation_id = conv_id
+    is_temporary = False
+    with Session() as session:
+        conv = session.query(Conversation).filter_by(id=conv_id).first()
+        if conv:
+            current_title = conv.title or "New Chat"
+            msgs = session.query(Message).filter_by(conversation_id=conv_id).order_by(Message.created_at.asc()).all()
+            messages = []
+            for m in msgs:
+                att_list = [SimpleNamespace(filename=a.filename) for a in m.attachments]
+                messages.append(SimpleNamespace(id=m.id, role=m.role, content=m.content, attachments=att_list))
+        else:
+            # Fallback if conversation not found
+            current_conversation_id = None
+            messages = []
+            current_title = ""
+
+async def load_conversation(conv_id):
+    if conv_id == current_conversation_id: return
+    # Trigger client-side URL update
+    if hasattr(self, 'page'):
+        await self.page.run_js(f"window.navigate_chat({conv_id})")
+    elif hasattr(self, 'call_js'): # Fallback depending on PyHTML version
+        await self.call_js(f"window.navigate_chat({conv_id})")
+    
+    await load_conversation_state(conv_id)
+
+async def open_chat(conv_id):
+    # Wrapper called by UI
+    await load_conversation(conv_id)
+
+def new_chat():
+    global current_conversation_id, messages, current_title, input_text, pending_attachments
+    current_conversation_id = None
+    messages = []
+    current_title = "New Chat"
+    input_text = ""
+    pending_attachments = []
+    if hasattr(self, 'page'):
+        self.page.run_js("history.pushState({}, '', '/chatbot')")
+    elif hasattr(self, 'call_js'):
+        self.call_js("history.pushState({}, '', '/chatbot')")
+
+def toggle_temporary():
+    global is_temporary
+    is_temporary = not is_temporary
+    if is_temporary:
+        new_chat()
+
+def trigger_file_upload():
+    # Custom JS call to click the hidden file input
+    pass
+
+def handle_files(event):
+    files = event.get('files', [])
+    for f in files:
+        pending_attachments.append(SimpleNamespace(
+            name=f['name'],
+            type=f['type'],
+            data=f['data'] # Base64 encoded
+        ))
+
+def remove_attachment(idx):
+    if 0 <= idx < len(pending_attachments):
+        pending_attachments.pop(idx)
+
+async def delete_conversation(conv_id):
+    global conversations, current_conversation_id
+    with Session() as session:
+        conv = session.query(Conversation).filter_by(id=conv_id).first()
+        if conv:
+            session.delete(conv)
+            session.commit()
+    
+    conversations = [c for c in conversations if c.id != conv_id]
+    if current_conversation_id == conv_id:
+        new_chat()
+
+async def generate_chat_title(conversation_id, first_messages):
+    global current_title, conversations
+    client = Groq(api_key=API_KEY)
+    history = [{"role": m.role, "content": m.content} for m in first_messages]
+    history.append({"role": "user", "content": "Generate a very short, catchy title (max 5 words) for this conversation. Start with a relevant emoji. Reply ONLY with the title."})
+    
+    try:
+        # User requested a simpler model for titles
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile", # Using a known reliable model on Groq or similar, fallback from 'gpt-oss20b' request which might be a placeholder
+            messages=history,
+            temperature=0.7,
+            max_completion_tokens=20
+        )
+        new_title = completion.choices[0].message.content.strip()
+        
+        with Session() as session:
+            conv = session.query(Conversation).filter_by(id=conversation_id).first()
+            if conv:
+                conv.title = new_title
+                session.commit()
+                # Update UI references
+                if current_conversation_id == conversation_id:
+                    current_title = new_title
+                
+                # Update sidebar list in place
+                for c in conversations:
+                    if c.id == conversation_id:
+                        c.title = new_title
+                        break
+    except Exception as e:
+        print(f"Title generation failed: {e}")
+
+async def send_message():
+    global input_text, is_loading, pending_attachments, current_conversation_id, current_title, messages, conversations
+    
+    text = input_text.strip()
+    if not text and not pending_attachments:
+        return
+    if is_loading:
+        return
+    
+    current_input_text = text # Store for logic
+    input_text = ""
+    is_loading = True
+    
+    user_attachments = []
+    current_pending = pending_attachments.copy()
+    pending_attachments = []
+
+    # Persistence logic
+    with Session() as session:
+        if not is_temporary:
+            if current_conversation_id is None:
+                title = current_input_text[:30] + "..." if len(current_input_text) > 30 else (current_input_text or "New Chat")
+                new_conv = Conversation(title=title)
+                session.add(new_conv)
+                session.commit()
+                current_conversation_id = new_conv.id
+                current_title = title
+                conversations.insert(0, SimpleNamespace(id=new_conv.id, title=title))
+            
+            user_msg = Message(conversation_id=current_conversation_id, role="user", content=current_input_text)
+            session.add(user_msg)
+            session.commit()
+            
+            # Save attachments
+            for f in current_pending:
+                try:
+                    save_name = f"{user_msg.id}_{f.name}"
+                    save_path = os.path.join(UPLOAD_DIR, save_name)
+                    header, data = f.data.split(',')
+                    with open(save_path, 'wb') as out:
+                        out.write(base64.b64decode(data))
+                    att = Attachment(message_id=user_msg.id, filename=f.name, file_path=save_path, file_type=f.type)
+                    session.add(att)
+                    user_attachments.append(SimpleNamespace(filename=f.name))
+                except Exception as e:
+                    print(f"Attachment save error: {e}")
+            session.commit()
+            user_msg_id = user_msg.id
+        else:
+            user_msg_id = None
+            for f in current_pending:
+                user_attachments.append(SimpleNamespace(filename=f.name))
+
+        # Update UI state
+        messages.append(SimpleNamespace(id=user_msg_id, role="user", content=current_input_text, attachments=user_attachments))
+        
+        # Assistant Response Placeholder
+        assistant_ui_msg = SimpleNamespace(id=None, role="assistant", content="")
+        messages.append(assistant_ui_msg)
+        
+        client = Groq(api_key=API_KEY)
+        
+        # Prepare history
+        history = [{"role": m.role, "content": m.content} for m in messages[:-1]]
+        
+        # Add context from attachments
+        if current_pending:
+            context = "User uploaded files: " + ", ".join([f.name for f in current_pending]) + "\n\n"
+            # Modify the last user message in history to include context
+            if history and history[-1]['role'] == 'user':
+                 history[-1]['content'] = context + history[-1]['content']
+        
+        try:
+            completion = client.chat.completions.create(
+                model=MODEL,
+                messages=history,
+                temperature=0.7,
+                stream=True
+            )
+            
+            full_content = ""
+            chunk_count = 0
+            for chunk in completion:
+                chunk_text = chunk.choices[0].delta.content or ""
+                if chunk_text:
+                    full_content += chunk_text
+                    assistant_ui_msg.content = full_content
+                    
+                    # Streaming optimization: update every few chunks or if newline
+                    chunk_count += 1
+                    if chunk_count % 1 == 0 or '\n' in chunk_text: # Increased freq
+                        if hasattr(self, '_on_update') and self._on_update:
+                            await self._on_update()
+            
+            # Final update
+            if hasattr(self, '_on_update') and self._on_update:
+                await self._on_update()
+            
+            if not is_temporary:
+                assistant_msg = Message(conversation_id=current_conversation_id, role="assistant", content=full_content)
+                session.add(assistant_msg)
+                session.commit()
+                assistant_ui_msg.id = assistant_msg.id
+                
+                # Check for title generation
+                # We need to ensure we don't block the UI, but here we just spawn the task
+                # Note: 'messages' variable in generate_chat_title will be the global one
+                # We should pass current state copy
+                if len(history) <= 2: # First exchange
+                     asyncio.create_task(generate_chat_title(current_conversation_id, messages[:2]))
+                    
+        except Exception as e:
+            assistant_ui_msg.content = f"Error: {str(e)}"
+    
+    is_loading = False
+
+async def start_edit(msg_idx):
+    global messages, input_text
+    if msg_idx >= len(messages): return
+    msg_to_edit = messages[msg_idx]
+    if msg_to_edit.role != 'user': return
+    
+    input_text = msg_to_edit.content
+    
+    if not is_temporary and current_conversation_id:
+        with Session() as session:
+            # Delete messages from this point onwards
+            to_delete_msgs = messages[msg_idx:]
+            ids_to_delete = [m.id for m in to_delete_msgs if hasattr(m, 'id') and m.id]
+            if ids_to_delete:
+                session.query(Message).filter(Message.id.in_(ids_to_delete)).delete(synchronize_session=False)
+                session.commit()
+            
+    messages = messages[:msg_idx]

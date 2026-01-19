@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { workspace, ExtensionContext, window, commands, Selection, Position, Range, TextEditor, TextEditorEdit } from 'vscode';
+import { workspace, ExtensionContext, window, commands, Selection, Position, Range, TextEditor, TextEditorEdit, languages } from 'vscode';
 import {
     LanguageClient,
     LanguageClientOptions,
@@ -189,14 +189,35 @@ export function activate(context: ExtensionContext) {
         clientOptions
     );
 
-    // Start the client (and server)
-    client.start().then(() => {
-        console.log('PyHTML language server started');
-        window.showInformationMessage('PyHTML language server is running');
-    }).catch(err => {
-        console.error('Failed to start PyHTML language server:', err);
-        window.showErrorMessage('Failed to start PyHTML language server: ' + err);
-    });
+    // Start services
+    (async () => {
+        try {
+            await client.start();
+            console.log('PyHTML language server started');
+
+            // Initialize Tree-sitter
+            const { TreeSitterService } = await import('./syntax/TreeSitterService');
+            const { PyHTMLSemanticTokenProvider, legend } = await import('./syntax/PyHTMLSemanticTokenProvider');
+
+            const treeSitterService = new TreeSitterService(context);
+            await treeSitterService.init();
+
+            const semanticProvider = new PyHTMLSemanticTokenProvider(treeSitterService);
+
+            context.subscriptions.push(
+                languages.registerDocumentSemanticTokensProvider(
+                    { language: 'pyhtml', scheme: 'file' },
+                    semanticProvider,
+                    legend
+                )
+            );
+
+            window.showInformationMessage('PyHTML services are running');
+        } catch (err) {
+            console.error('Failed to start PyHTML services:', err);
+            window.showErrorMessage('Failed to start PyHTML services: ' + err);
+        }
+    })();
 }
 
 export function deactivate(): Thenable<void> | undefined {

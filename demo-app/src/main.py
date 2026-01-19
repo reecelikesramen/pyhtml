@@ -15,6 +15,18 @@ def main():
     # Create app
     app = PyHTMLApp(pages_dir)
     
+    # Bootstrap chatbot DB
+    try:
+        from pages.chatbot.models import Base, engine
+        Base.metadata.create_all(engine)
+        print("Chatbot database initialized.")
+    except ImportError:
+        # If we're not running in an environment where pages is importable, 
+        # or it's not the chatbot demo, just skip.
+        pass
+    except Exception as e:
+        print(f"Failed to bootstrap chatbot DB: {e}")
+    
     # Run with uvicorn
     config = uvicorn.Config(
         app.app,

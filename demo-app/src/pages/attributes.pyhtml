@@ -1,7 +1,7 @@
-!path '/new-directives'
+!path '/new-attributes'
 
 <div style="font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
-    <h1>Directive Tests</h1>
+    <h1>Attribute Tests</h1>
     
     <!-- Navigation -->
     <div style="margin-bottom: 20px;">
@@ -149,14 +149,14 @@ def trigger_print():
     print("Hello from the server! This should appear in your browser console.")
 
 def add_item():
-    global items, new_item_text
+
     if new_item_text.strip():
         new_id = max([i['id'] for i in items] or [0]) + 1
         items.append({'id': new_id, 'text': new_item_text})
         new_item_text = ""
 
 def remove_item(item_id):
-    global items
+
     print(f"type of item_id({item_id}): {type(item_id)}")
     items = [i for i in items if i['id'] != item_id]
 
@@ -165,7 +165,7 @@ async def remove_item_handler(value):
     remove_item(int(value))
 
 def reset_form():
-    global user_input, selected_option, is_checked
+
     user_input = "Reset Value"
     selected_option = "A"
     is_checked = False

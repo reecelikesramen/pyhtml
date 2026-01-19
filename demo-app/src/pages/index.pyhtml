@@ -31,26 +31,25 @@
     <br>
     <a href="/form-test">Form</a>
     <br>
-    <a href="/new-directives">New Directives</a>
+    <a href="/new-attributes">New Attributes</a>
 </div>
 
 ---
 name = "World"
 count = 0
 
-async def __on_load():
+async def on_load():
     # Initial load
-    global count
     count = 1
+
     pass
 
 def increment_count(amount=1):
     """Increment the counter"""
-    global count
     count += amount
+
 
 def change_name():
     """Change the name of the page"""
-    global name, count
     name = "PyHTML" 
     count += 1

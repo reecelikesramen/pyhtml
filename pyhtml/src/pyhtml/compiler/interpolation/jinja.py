@@ -7,6 +7,8 @@ from pyhtml.compiler.ast_nodes import InterpolationNode
 from pyhtml.compiler.interpolation.base import InterpolationParser
 
 
+import ast
+
 class JinjaInterpolationParser(InterpolationParser):
     """Jinja2-based interpolation parser."""
 
@@ -17,6 +19,53 @@ class JinjaInterpolationParser(InterpolationParser):
             variable_end_string='}',
             autoescape=True  # XSS protection
         )
+
+    def _is_valid_python(self, text: str) -> bool:
+        """Check if text is valid Python expression (or with format spec)."""
+        stripped = text.strip()
+        
+        # 1. Try simple parse
+        try:
+            ast.parse(stripped, mode='eval')
+            return True
+        except SyntaxError:
+            pass
+
+        # 2. CSS-like check: If unparseable and contains semicolon, assume CSS
+        if ';' in text:
+            return False
+
+        # 3. Format specifier check: Find top-level colon
+        balance = 0
+        quote = None
+        split_idx = -1
+        
+        for i, char in enumerate(text):
+            if quote:
+                if char == quote:
+                    if i > 0 and text[i-1] != '\\':
+                        quote = None
+            else:
+                if char in "\"'":
+                    quote = char
+                elif char in "{[(":
+                    balance += 1
+                elif char in "}])":
+                    balance -= 1
+                elif char == ':' and balance == 0:
+                    split_idx = i
+                    break
+        
+        if split_idx != -1:
+            # We strip the expression part to allow "{ x :.2f }"
+            expr = text[:split_idx].strip()
+            try:
+                ast.parse(expr, mode='eval')
+                return True
+            except SyntaxError:
+                pass
+        
+        return False
 
     def parse(self, text: str, line: int, col: int) -> List[Union[str, InterpolationNode]]:
         """
@@ -54,11 +103,17 @@ class JinjaInterpolationParser(InterpolationParser):
                 if brace_count == 0:
                     # Found matching brace
                     expr = text[i+1:j-1]  # Extract expression without braces
-                    result.append(InterpolationNode(
-                        expression=expr,
-                        line=line,
-                        column=col + i
-                    ))
+                    
+                    if self._is_valid_python(expr):
+                        result.append(InterpolationNode(
+                            expression=expr,
+                            line=line,
+                            column=col + i
+                        ))
+                    else:
+                        # Treat as literal
+                        result.append(text[i:j])
+                        
                     last_end = j
                     i = j
                 else:
@@ -107,18 +162,32 @@ class JinjaInterpolationParser(InterpolationParser):
                     j += 1
                 
                 if brace_count == 0:
-                    # Found matching brace - prepend self. to simple identifiers
+                    # Found matching brace 
+                    # CHECK IF VALID PYTHON before trying to compile
+                    # (Though compile is usually called on text that parse() has already mostly validated,
+                    # parse() returns nodes for valid interpolations.
+                    # Wait, template codegen calls compile() on text_content of nodes.
+                    # If parse() returned literal text for CSS, then compile() will see the curly braces!
+                    # And compile() iterates braces independently.
+                    # So compile() MUST also respect the validity check!)
+                    
                     expr = text[i+1:j-1]
-                    # For simple identifiers, add self.
-                    # For complex expressions, leave as is (they reference self.* already)
-                    if re.match(r'^\w+$', expr):
-                        result.append(f'{{self.{expr}}}')
+                    if self._is_valid_python(expr):
+                        # Prepend self. to simple identifiers
+                        # For simple identifiers, add self.
+                        # For complex expressions, leave as is (they reference self.* already)
+                        if re.match(r'^\w+$', expr):
+                            result.append(f'{{self.{expr}}}')
+                        else:
+                            # Complex expression - assume it references self correctly
+                            # Replace standalone identifiers with self. references
+                            # This is simplistic but works for common cases
+                            modified_expr = re.sub(r'\b([a-zA-Z_]\w*)\b(?!\s*[(\[])', lambda m: f'self.{m.group(1)}' if m.group(1) not in ('if', 'else', 'and', 'or', 'not', 'in', 'is', 'True', 'False', 'None') else m.group(1), expr)
+                            result.append(f'{{{modified_expr}}}')
                     else:
-                        # Complex expression - assume it references self correctly
-                        # Replace standalone identifiers with self. references
-                        # This is simplistic but works for common cases
-                        modified_expr = re.sub(r'\b([a-zA-Z_]\w*)\b(?!\s*[(\[])', lambda m: f'self.{m.group(1)}' if m.group(1) not in ('if', 'else', 'and', 'or', 'not', 'in', 'is', 'True', 'False', 'None') else m.group(1), expr)
-                        result.append(f'{{{modified_expr}}}')
+                        # Literal (CSS etc)
+                        result.append(text[i:j])
+                        
                     last_end = j
                     i = j
                 else:

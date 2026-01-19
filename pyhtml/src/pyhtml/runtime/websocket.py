@@ -174,6 +174,20 @@ class WebSocketHandler:
                 else:
                     page = self.connection_pages[websocket]
 
+                # Define update broadcaster
+                async def broadcast_update():
+                    # Re-render and send update
+                    # Note: We use init=False to avoid re-running init hooks
+                    up_response = await page.render(init=False)
+                    up_html = up_response.body.decode('utf-8')
+                    await websocket.send_json({
+                        'type': 'update',
+                        'html': up_html
+                    })
+
+                # Inject update hook
+                page._on_update = broadcast_update
+
                 # Call handler
                 print(f"DEBUG EVENT: {handler_name} payload={event_data}")
                 response = await page.handle_event(handler_name, event_data)

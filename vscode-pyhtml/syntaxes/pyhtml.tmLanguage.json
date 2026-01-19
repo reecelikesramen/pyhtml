@@ -15,52 +15,8 @@
   ],
   "repository": {
     "directives": {
-      "patterns": [
-        {
-          "include": "#directive-path-multiline"
-        },
-        {
-          "include": "#directive-single-line"
-        }
-      ]
-    },
-    "directive-path-multiline": {
-      "begin": "^\\s*(!path)\\s*({)",
-      "beginCaptures": {
-        "1": {
-          "name": "keyword.control.directive.pyhtml"
-        },
-        "2": {
-          "name": "punctuation.definition.dict.begin.python"
-        }
-      },
-      "end": "(})",
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.dict.end.python"
-        }
-      },
-      "contentName": "meta.embedded.inline.python",
-      "patterns": [
-        {
-          "include": "source.python"
-        }
-      ]
-    },
-    "directive-single-line": {
-      "match": "^\\s*(!\\w+)(.*)$",
-      "captures": {
-        "1": {
-          "name": "keyword.control.directive.pyhtml"
-        },
-        "2": {
-          "patterns": [
-            {
-              "include": "source.python"
-            }
-          ]
-        }
-      }
+      "match": "^\\s*(!\\w+)",
+      "name": "keyword.control.directive.pyhtml"
     },
     "python-section": {
       "begin": "^(---)\\s*$",
@@ -69,7 +25,7 @@
           "name": "punctuation.separator.pyhtml"
         }
       },
-      "end": "(?=not)possible",
+      "end": "$^",
       "contentName": "meta.embedded.block.python",
       "patterns": [
         {
@@ -80,37 +36,12 @@
     "html-content": {
       "patterns": [
         {
-          "include": "#event-handler-value"
-        },
-        {
-          "include": "#special-attributes"
-        },
-        {
           "include": "#interpolation"
         },
         {
           "include": "text.html.basic"
         }
       ]
-    },
-    "event-handler-value": {
-      "begin": "(@\\w+)=\"",
-      "end": "\"",
-      "beginCaptures": {
-        "1": {
-          "name": "entity.other.attribute-name.event.pyhtml"
-        }
-      },
-      "contentName": "meta.embedded.inline.python",
-      "patterns": [
-        {
-          "include": "source.python"
-        }
-      ]
-    },
-    "special-attributes": {
-      "match": "(\\$if|\\$show|\\$for|\\$key|\\$bind|@click|@submit|@change|@input)",
-      "name": "entity.other.attribute-name.special.pyhtml"
     },
     "interpolation": {
       "begin": "\\{",

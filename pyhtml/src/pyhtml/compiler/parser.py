@@ -11,9 +11,12 @@ from pyhtml.compiler.attributes.events import EventAttributeParser
 from pyhtml.compiler.directives.base import DirectiveParser
 from pyhtml.compiler.directives.path import PathDirectiveParser
 from pyhtml.compiler.directives.no_spa import NoSpaDirectiveParser
+from pyhtml.compiler.directives.layout import LayoutDirectiveParser
 from pyhtml.compiler.attributes.conditional import ConditionalAttributeParser
 from pyhtml.compiler.attributes.loop import LoopAttributeParser, KeyAttributeParser
+from pyhtml.compiler.attributes.loop import LoopAttributeParser, KeyAttributeParser
 from pyhtml.compiler.attributes.bind import BindAttributeParser
+from pyhtml.compiler.attributes.reactive import ReactiveAttributeParser
 from pyhtml.compiler.interpolation.jinja import JinjaInterpolationParser
 
 
@@ -25,7 +28,8 @@ class PyHTMLParser:
         self.directive_parsers: List[DirectiveParser] = [
             PathDirectiveParser(),
             NoSpaDirectiveParser(),
-            # Future: LayoutDirectiveParser(), etc.
+            LayoutDirectiveParser(),
+            # Future: etc.
         ]
 
         # Attribute parser chain
@@ -35,6 +39,7 @@ class PyHTMLParser:
             LoopAttributeParser(),
             KeyAttributeParser(),
             BindAttributeParser(),
+            ReactiveAttributeParser(),
         ]
 
         # Interpolation parser (pluggable)
@@ -128,11 +133,23 @@ class PyHTMLParser:
         template_nodes = []
         
         if template_html.strip():
+            # Pre-process: Replace <head> with <pyhtml-head> to preserve it
+            # lxml strips standalone <head> tags in fragment mode
+            import re
+            template_html = re.sub(r'<head(\s|>|/>)', r'<pyhtml-head\1', template_html, flags=re.IGNORECASE)
+            template_html = re.sub(r'</head>', r'</pyhtml-head>', template_html, flags=re.IGNORECASE)
+            
             # lxml.html.fragments_fromstring handles multiple top-level elements
             # It returns a list of elements and strings (for top-level text)
             try:
                 # fragments_fromstring might raise error if html is empty or very partial
-                fragments = html.fragments_fromstring(template_html)
+                # Check for full document to preserve head/body
+                clean_html = template_html.strip().lower()
+                if clean_html.startswith('<!doctype') or clean_html.startswith('<html'):
+                     root = html.fromstring(template_html)
+                     fragments = [root]
+                else:
+                    fragments = html.fragments_fromstring(template_html)
                 
                 for frag in fragments:
                     if isinstance(frag, str):
