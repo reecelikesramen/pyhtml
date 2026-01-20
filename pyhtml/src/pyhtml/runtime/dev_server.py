@@ -86,10 +86,6 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
         from hypercorn.config import Config
         import aioquic
         HAS_HTTP3 = True
-        
-        # Patch Hypercorn to enable WebTransport support
-        from pyhtml.runtime.h3_webtransport import patch_hypercorn
-        patch_hypercorn()
     except ImportError:
         HAS_HTTP3 = False
     
@@ -268,6 +264,10 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
 
                 config = Config()
                 config.loglevel = "INFO"
+                
+                # Enable native WebTransport support
+                config.enable_webtransport = True
+                config.alpn_protocols = ["h3", "h2", "http/1.1"]
 
                 # Bind dual-stack (IPv4 + IPv6) for localhost
                 if host in ["127.0.0.1", "localhost"]:

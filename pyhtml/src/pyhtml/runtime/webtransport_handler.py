@@ -1,6 +1,6 @@
-"""WebTransport handler using ASGI standard.
+"""WebTransport handler using Starlette API.
 
-Handles 'webtransport' scope type from Hypercorn.
+Handles 'webtransport' connections using the high-level Starlette WebTransport API.
 Provides the same API as WebSocketHandler for seamless transport switching.
 """
 import json
@@ -9,17 +9,16 @@ import io
 import contextlib
 import traceback
 from dataclasses import dataclass, field
-from typing import Dict, Any, Set, Optional, Callable
+from typing import Dict, Any, Optional, Callable
 
+from starlette.webtransport import WebTransport, WebTransportStream, WebTransportDisconnect
 from pyhtml.runtime.page import BasePage
 
 
 @dataclass
 class WebTransportConnection:
     """Represents an active WebTransport connection."""
-    scope: dict
-    send: Callable
-    receive: Callable
+    session: WebTransport
     page: Optional[BasePage] = None
     # Queue for server-initiated messages (e.g. broadcast_reload)
     outbound_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
@@ -37,92 +36,74 @@ class WebTransportHandler:
         """Handle ASGI webtransport scope."""
         print("DEBUG: WebTransport handler started")
         
-        # Active streams buffer: stream_id -> bytes
-        streams: Dict[int, bytearray] = {}
-        
-        # 1. Wait for connection request
-        try:
-            message = await receive()
-            print(f"DEBUG: WebTransport received initial message: {message['type']}")
-            if message['type'] != 'webtransport.connect':
-                print(f"DEBUG: Unexpected message type: {message['type']}")
-                return
-        except Exception as e:
-            print(f"DEBUG: Error receiving connect message: {e}")
-            return
-            
-        # 2. Accept connection
-        await send({'type': 'webtransport.accept'})
+        # Initialize transport session
+        transport = WebTransport(scope, receive, send)
+        await transport.accept()
         print("DEBUG: WebTransport connection accepted")
         
         # Register connection
         connection_id = id(scope)
-        connection = WebTransportConnection(
-            scope=scope,
-            send=send,
-            receive=receive
-        )
+        connection = WebTransportConnection(session=transport)
         self.connections[connection_id] = connection
         
         try:
-            # Run two tasks concurrently:
-            # 1. Process incoming messages
-            # 2. Process outbound queue (for server-initiated messages)
-            await asyncio.gather(
-                self._process_incoming(connection, connection_id, streams),
-                self._process_outbound(connection, connection_id),
-                return_exceptions=True
-            )
+            async with asyncio.TaskGroup() as tg:
+                # 1. Process incoming streams (from client)
+                tg.create_task(self._process_streams(transport, connection))
+                # 2. Process outbound queue (for server-initiated messages)
+                tg.create_task(self._process_outbound(connection, connection_id))
+                
+        except (WebTransportDisconnect, asyncio.CancelledError):
+            print("WebTransport disconnected")
         except Exception as e:
             print(f"WebTransport handler error: {e}")
+            traceback.print_exc()
         finally:
             if connection_id in self.connections:
                 del self.connections[connection_id]
+            # Ensure transport is closed
+            await transport.close()
 
-    async def _process_incoming(self, connection: WebTransportConnection, connection_id: int, streams: Dict[int, bytearray]):
-        """Process incoming WebTransport messages."""
+    async def _process_streams(self, transport: WebTransport, connection: WebTransportConnection):
+        """Accept and handle incoming streams."""
         try:
             while True:
-                message = await connection.receive()
-                msg_type = message['type']
-                
-                if msg_type == 'webtransport.stream.connect':
-                    # New bidirectional stream opened by client
-                    stream_id = message['stream_id']
-                    streams[stream_id] = bytearray()
-                    
-                elif msg_type == 'webtransport.stream.receive':
-                    stream_id = message['stream_id']
-                    data = message.get('data', b'')
-                    
-                    if stream_id not in streams:
-                        streams[stream_id] = bytearray()
-                        
-                    streams[stream_id].extend(data)
-                    
-                    # Check if stream is finished
-                    more_body = message.get('more_body', False)
-                    
-                    if not more_body:
-                        # Full message received
-                        payload = streams[stream_id]
-                        del streams[stream_id]
-                        
-                        # Process message
-                        try:
-                            json_data = json.loads(payload.decode('utf-8'))
-                            await self._handle_message(json_data, connection, connection_id, stream_id)
-                        except Exception as e:
-                            print(f"WebTransport message error: {e}")
-                            traceback.print_exc()
-                            
-                elif msg_type == 'webtransport.disconnect':
-                    break
-                    
-        except asyncio.CancelledError:
+                stream = await transport.accept_stream()
+                # Spawn a task to handle this specific stream
+                asyncio.create_task(self._handle_stream(stream, connection))
+        except (WebTransportDisconnect, asyncio.CancelledError):
+            # Connection closed or cancelled
             pass
         except Exception as e:
-            print(f"WebTransport incoming error: {e}")
+            print(f"Error accepting stream: {e}")
+            traceback.print_exc()
+
+    async def _handle_stream(self, stream: WebTransportStream, connection: WebTransportConnection):
+        """Read full message from a stream and process it."""
+        print(f"DEBUG: Handling stream {stream.stream_id}")
+        try:
+            payload = bytearray()
+            while True:
+                try:
+                    chunk = await stream.receive_bytes()
+                    print(f"DEBUG: Stream {stream.stream_id} received chunk: {len(chunk)} bytes")
+                    payload.extend(chunk)
+                except WebTransportDisconnect:
+                    # Stream closed naturally (FIN received)
+                    print(f"DEBUG: Stream {stream.stream_id} disconnected (FIN)")
+                    break
+            
+            print(f"DEBUG: Stream {stream.stream_id} payload complete: {len(payload)} bytes")
+            if payload:
+                try:
+                    data = json.loads(payload.decode('utf-8'))
+                    await self._handle_message(data, connection, stream)
+                except Exception as e:
+                    print(f"Failed to process message on stream {stream.stream_id}: {e}")
+                    traceback.print_exc()
+                    
+        except Exception as e:
+            print(f"Stream {stream.stream_id} error: {e}")
 
     async def _process_outbound(self, connection: WebTransportConnection, connection_id: int):
         """Process outbound queue for server-initiated messages."""
@@ -140,7 +121,7 @@ class WebTransportHandler:
         except asyncio.CancelledError:
             pass
 
-    async def _handle_message(self, data: dict, connection: WebTransportConnection, connection_id: int, stream_id: int):
+    async def _handle_message(self, data: dict, connection: WebTransportConnection, stream: WebTransportStream):
         """Handle decoded JSON message."""
         msg_type = data.get('type')
         
@@ -151,11 +132,11 @@ class WebTransportHandler:
         try:
             with contextlib.redirect_stdout(stdout_capture):
                 if msg_type == 'init':
-                    await self._handle_init(data, connection, connection_id, stream_id)
+                    await self._handle_init(data, connection, stream)
                 elif msg_type == 'event':
-                    await self._handle_event(data, connection, connection_id, stream_id)
+                    await self._handle_event(data, connection, stream)
                 elif msg_type == 'relocate':
-                    await self._handle_relocate(data, connection, connection_id, stream_id)
+                    await self._handle_relocate(data, connection, stream)
                 else:
                     print(f"Unknown WebTransport message type: {msg_type}")
         except Exception:
@@ -163,9 +144,9 @@ class WebTransportHandler:
             print(error_capture)
             
         # Send console output
-        await self._send_console_message(connection, stream_id, stdout_capture.getvalue(), error_capture)
+        await self._send_console_message(connection, stream, stdout_capture.getvalue(), error_capture)
 
-    async def _handle_init(self, data: dict, connection: WebTransportConnection, connection_id: int, stream_id: int):
+    async def _handle_init(self, data: dict, connection: WebTransportConnection, stream: WebTransportStream):
         """Initialize page for this connection."""
         path = data.get('path', '/')
         
@@ -178,14 +159,14 @@ class WebTransportHandler:
         match = self.app.router.match(pathname)
         if not match:
             print(f"WebTransport init: No route found for path: {pathname}")
-            await self._send_response(connection, stream_id, {'type': 'error', 'error': 'Route not found'})
+            await self._send_response(connection, stream, {'type': 'error', 'error': 'Route not found'})
             return
             
         page_class, params, variant_name = match
         
         # Build request-like scope
         from starlette.requests import Request
-        scope = dict(connection.scope)
+        scope = dict(connection.session.scope)
         scope['type'] = 'http'
         scope['path'] = pathname
         scope['raw_path'] = pathname.encode('ascii')
@@ -230,12 +211,12 @@ class WebTransportHandler:
         # Send initial render
         response = await page.render()
         html = response.body.decode('utf-8')
-        await self._send_response(connection, stream_id, {'type': 'update', 'html': html})
+        await self._send_response(connection, stream, {'type': 'update', 'html': html})
 
-    async def _handle_event(self, data: dict, connection: WebTransportConnection, connection_id: int, stream_id: int):
+    async def _handle_event(self, data: dict, connection: WebTransportConnection, stream: WebTransportStream):
         """Handle client event."""
         if connection.page is None:
-            await self._send_response(connection, stream_id, {'type': 'error', 'error': 'Page not initialized'})
+            await self._send_response(connection, stream, {'type': 'error', 'error': 'Page not initialized'})
             return
             
         handler_name = data.get('handler')
@@ -257,22 +238,22 @@ class WebTransportHandler:
             response = await connection.page.handle_event(handler_name, event_data)
             html = response.body.decode('utf-8')
             
-            await self._send_response(connection, stream_id, {'type': 'update', 'html': html})
+            await self._send_response(connection, stream, {'type': 'update', 'html': html})
             print(f"DEBUG EVENT SUCCESS: {handler_name}")
             
         except Exception as e:
             print(f"DEBUG EVENT FAILED: {handler_name} with {e}")
-            await self._send_response(connection, stream_id, {'type': 'error', 'error': str(e)})
+            await self._send_response(connection, stream, {'type': 'error', 'error': str(e)})
             raise
 
-    async def _handle_relocate(self, data: dict, connection: WebTransportConnection, connection_id: int, stream_id: int):
+    async def _handle_relocate(self, data: dict, connection: WebTransportConnection, stream: WebTransportStream):
         """Handle SPA navigation between sibling paths."""
         path = data.get('path', '/')
         page = connection.page
         
         if not page:
             # No page yet - create one
-            await self._handle_init({'path': path}, connection, connection_id, stream_id)
+            await self._handle_init({'path': path}, connection, stream)
             return
         
         # Parse new URL
@@ -292,7 +273,7 @@ class WebTransportHandler:
         # Verify same page class
         if type(page) != page_class:
             print(f"Relocate: Page class mismatch, reinitializing")
-            await self._handle_init({'path': path}, connection, connection_id, stream_id)
+            await self._handle_init({'path': path}, connection, stream)
             return
         
         # Update params
@@ -307,7 +288,7 @@ class WebTransportHandler:
             
         # Update request
         from starlette.requests import Request
-        scope = dict(connection.scope)
+        scope = dict(connection.session.scope)
         scope['type'] = 'http'
         scope['path'] = pathname
         scope['raw_path'] = pathname.encode('ascii')
@@ -329,57 +310,58 @@ class WebTransportHandler:
         # Render and send
         response = await page.render()
         html = response.body.decode('utf-8')
-        await self._send_response(connection, stream_id, {'type': 'update', 'html': html})
+        await self._send_response(connection, stream, {'type': 'update', 'html': html})
 
-    async def _send_response(self, connection: WebTransportConnection, stream_id: int, data: dict):
+    async def _send_response(self, connection: WebTransportConnection, stream: WebTransportStream, data: dict):
         """Send response back on the same stream."""
+        # Note: In WebTransport, we typically echo back on the request stream (bidirectional)
+        pass  # We reuse the stream passed in
+        
         payload = json.dumps(data).encode('utf-8')
-        await connection.send({
-            'type': 'webtransport.stream.send',
-            'stream_id': stream_id,
-            'data': payload,
-            'finish': True
-        })
+        try:
+            await stream.send_bytes(payload)
+            # Typically close the stream after sending full response if it was a request/response pattern
+            await stream.close()
+        except Exception as e:
+            print(f"Error sending response on stream {stream.stream_id}: {e}")
 
     async def _send_server_message(self, connection: WebTransportConnection, data: dict):
-        """Send a server-initiated message by creating a new stream."""
-        # For server-initiated messages, we need to create a unidirectional stream
-        # or use datagrams. Hypercorn's webtransport implementation may vary.
-        # Fallback: Try to use the last stream or send via incoming stream response.
-        # 
-        # Note: The exact ASGI spec for server-initiated streams is experimental.
-        # For now, we'll try sending on a pseudo stream or datagram.
+        """Send a server-initiated message using datagrams."""
+        # Server-initiated messages (broadcasts) are best sent via Datagrams for minimal overhead
+        # or we would need to open a unidirectional stream (not supported yet).
         try:
             payload = json.dumps(data).encode('utf-8')
-            await connection.send({
-                'type': 'webtransport.datagram.send',
-                'data': payload
-            })
+            await connection.session.send_datagram(payload)
         except Exception as e:
             print(f"Failed to send server message: {e}")
 
-    async def _send_console_message(self, connection: WebTransportConnection, stream_id: int, output: str, error: str = None):
+    async def _send_console_message(self, connection: WebTransportConnection, stream: WebTransportStream, output: str, error: str = None):
         """Send captured stdout/stderr to client console."""
+        # For console logs, we might want to try to send on the stream if open,
+        # otherwise drop it or use datagrams. 
+        # Here we just try to use the stream, but catch errors if it's already closed.
         try:
             if output:
                 lines = output.strip().split('\n')
                 if lines:
-                    await self._send_response(connection, stream_id, {
+                    payload = json.dumps({
                         'type': 'console',
                         'level': 'info',
                         'lines': lines
-                    })
+                    }).encode('utf-8')
+                    await stream.send_bytes(payload)
             
             if error:
                 lines = error.strip().split('\n')
                 if lines:
-                    await self._send_response(connection, stream_id, {
+                    payload = json.dumps({
                         'type': 'console', 
                         'level': 'error',
                         'lines': lines
-                    })
+                    }).encode('utf-8')
+                    await stream.send_bytes(payload)
         except Exception:
-            # If stream is already closed (e.g. by previous response), we can't send console logs.
+            # If stream is already closed or failing, just ignore console logs
             pass
 
     async def broadcast_reload(self):
