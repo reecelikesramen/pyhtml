@@ -30,7 +30,7 @@ sys.modules['lxml.html'] = mock_lxml
 sys.modules['lxml.etree'] = mock_lxml
 
 from pathlib import Path
-from pyhtml.runtime.app import PyHTMLApp
+from pyhtml.runtime.app import PyHTML
 from pyhtml.runtime.router import Router
 
 # Mock base page for loader
@@ -61,7 +61,7 @@ class TestFileRouting(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.tmp_path = Path(self.test_dir)
         
-        self.app = PyHTMLApp(self.tmp_path)
+        self.app = PyHTML(str(self.tmp_path))
         self.app.loader = MockLoader()
         self.app.router = Router()
 

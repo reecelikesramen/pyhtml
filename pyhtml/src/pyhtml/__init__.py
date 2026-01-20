@@ -1,1 +1,1 @@
-from .config import PyHTMLConfig, config
+from .runtime.app import PyHTML

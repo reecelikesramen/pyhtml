@@ -1,8 +1,21 @@
 """Development server with hot reload."""
+import sys
+import os
 from pathlib import Path
+from typing import Optional
 
 import uvicorn
 
+def _import_app(app_str: str):
+    """Import application from string."""
+    module_name, app_name = app_str.split(":", 1)
+    # Ensure current directory is in path (should be from main.py, but safe to add)
+    if os.getcwd() not in sys.path:
+        sys.path.insert(0, os.getcwd())
+        
+    import importlib
+    module = importlib.import_module(module_name)
+    return getattr(module, app_name)
 
 
 def _generate_cert():
@@ -68,9 +81,14 @@ def _generate_cert():
     return cert_path, key_path, fingerprint
 
 
-async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
+async def run_dev_server(
+    app_str: str, 
+    host: str, 
+    port: int, 
+    ssl_keyfile: Optional[str] = None, 
+    ssl_certfile: Optional[str] = None
+):
     """Run development server with hot reload."""
-    from pyhtml.runtime.server import create_app
     import asyncio
     import signal
     import logging
@@ -79,6 +97,13 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
     # Configure logging to see Hypercorn/aioquic debug output
     logging.basicConfig(level=logging.INFO)  # Reduced from DEBUG to avoid spam
     logging.getLogger("hypercorn").setLevel(logging.INFO)
+    
+    # Load app to get config
+    pyhtml_app = _import_app(app_str)
+    pages_dir = pyhtml_app.pages_dir
+    
+    if not pages_dir.exists():
+        print(f"Warning: Pages directory '{pages_dir}' does not exist.")
     
     # Try to import Hypercorn for HTTP/3 support
     try:
@@ -110,9 +135,6 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
     except NotImplementedError:
         pass
 
-    # Create app instance
-    app = create_app(pages_dir, reload=reload)
-    
     # Watcher task
     async def watch_changes():
         try:
@@ -120,50 +142,42 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
             import pyhtml
             pyhtml_src_dir = Path(pyhtml.__file__).parent
             
-            # Watch both pages and source
-            async for changes in awatch(pages_dir, pyhtml_src_dir, stop_event=shutdown_event):
+            # Use pages_dir from app
+            print(f"PyHTML: Watching {pages_dir} for changes...")
+            
+            # Also watch the file defining the app if possible?
+            # app_str "main:app" -> main.py
+            app_module_path = Path(sys.modules[pyhtml_app.__module__].__file__) if hasattr(sys.modules.get(pyhtml_app.__module__), '__file__') else None
+            
+            files_to_watch = [pages_dir, pyhtml_src_dir]
+            if app_module_path:
+                files_to_watch.append(app_module_path.parent) # Watch the dir containing main.py? Or just the file? awatch takes paths.
+            
+            async for changes in awatch(*files_to_watch, stop_event=shutdown_event):
                 # Check what changed
                 library_changed = False
-                for change_type, file_path in changes:
-                    if str(file_path).startswith(str(pyhtml_src_dir)):
-                        library_changed = True
-                        break
+                app_config_changed = False
                 
-                if library_changed:
-                     print("PyHTML: Library code changed, restarting server...")
-                     # Signal shutdown to trigger restart (managed by outer loop in future, 
-                     # but for now we just exit so user can rely on tools like nodemon/watchdog or 
-                     # we can try to re-exec).
-                     # Since we are inside the app process, we can't easily re-exec self cleanly 
-                     # without losing the socket ownership if not careful.
-                     # BUT, users usually run this via `python -m pyhtml.cli` which might not have a watcher wrapper.
+                for change_type, file_path in changes:
+                    path_str = str(file_path)
+                    if path_str.startswith(str(pyhtml_src_dir)):
+                        library_changed = True
+                    if app_module_path and path_str == str(app_module_path):
+                        app_config_changed = True
+                
+                if library_changed or app_config_changed:
+                     print("PyHTML: Core/Config change detected. Please restart server manually.")
                      
-                     # Simple approach: Exit with a specific code or just print message?
-                     # Standard Uvicorn reload works by spawning a subprocess. We are running in-process here.
-                     
-                     # Check if we can just trigger a reload of modules? Unlikely to work well.
-                     
-                     # Wait, if we are running in `dev` command, we might be inside a reloader?
-                     # No, we disabled uvicorn reloader `config.use_reloader = False`.
-                     
-                     # If we want full reload on library changes, we should probably let Uvicorn manage it
-                     # or implement a re-exec.
-                     
-                     # For now, let's just create a marker file or print a loud message. 
-                     # Actually, if we just want to reload pages, we do that below. 
-                     # But for `page.py` changes (base class), we need a restart.
-                     
-                     print("!!! Library change detected. Please restart server manually for now (Ctrl+C and run again) until auto-restart is implemented. !!!")
-                     
-                # First, recompile changed pages
                 # First, recompile changed pages
                 should_reload = False
                 for change_type, file_path in changes:
                     if file_path.endswith('.pyhtml'):
                         should_reload = True
-                        if hasattr(app.state, 'pyhtml_app'):
+                        # Reload logic needs access to the *current* running app instance
+                        # We have pyhtml_app
+                        if hasattr(pyhtml_app, 'reload_page'):
                            try:
-                               app.state.pyhtml_app.reload_page(Path(file_path))
+                               pyhtml_app.reload_page(Path(file_path))
                            except Exception as e:
                                print(f"Error reloading page: {e}")
 
@@ -172,16 +186,16 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
                     print(f"PyHTML: Changes detected in {pages_dir}, reloading clients...")
                     
                     # Broadcast reload to WebSocket clients
-                    if hasattr(app.state, 'ws_handler'):
-                        await app.state.ws_handler.broadcast_reload()
+                    if hasattr(pyhtml_app, 'ws_handler'):
+                        await pyhtml_app.ws_handler.broadcast_reload()
                     
                     # Broadcast reload to HTTP polling clients
-                    if hasattr(app.state, 'http_handler'):
-                        app.state.http_handler.broadcast_reload()
+                    if hasattr(pyhtml_app, 'http_handler'):
+                        pyhtml_app.http_handler.broadcast_reload()
                     
                     # Broadcast to WebTransport clients
-                    if hasattr(app.state, 'web_transport_handler'):
-                        await app.state.web_transport_handler.broadcast_reload()
+                    if hasattr(pyhtml_app, 'web_transport_handler'):
+                        await pyhtml_app.web_transport_handler.broadcast_reload()
                         
         except Exception as e:
             if not shutdown_event.is_set():
@@ -189,68 +203,70 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
                 import traceback
                 traceback.print_exc()
 
+    # Certificate Discovery
+    # We do this for both Hypercorn (HTTP/3) and Uvicorn (HTTPS) to support local SSL
+    cert_path, key_path = ssl_certfile, ssl_keyfile
+    
+    if not cert_path or not key_path:
+        # Check for existing trusted certificates (e.g. from mkcert)
+        potential_certs = [
+            (Path("localhost+2.pem"), Path("localhost+2-key.pem")),
+            (Path("localhost.pem"), Path("localhost-key.pem")),
+            (Path("cert.pem"), Path("key.pem")),
+        ]
+        
+        found = False
+        for c_file, k_file in potential_certs:
+            if c_file.exists() and k_file.exists():
+                print(f"PyHTML: Found local certificates ({c_file}), using them.")
+                cert_path = str(c_file)
+                key_path = str(k_file)
+                 # Don't inject hash if using trusted certs
+                if hasattr(pyhtml_app.app.state, 'webtransport_cert_hash'):
+                     del pyhtml_app.app.state.webtransport_cert_hash
+                found = True
+                break
+        
+        # If not found, try to generate using mkcert if available
+        if not found:
+            import shutil
+            import subprocess
+            
+            if shutil.which('mkcert'):
+                print("PyHTML: 'mkcert' detected. Generating trusted local certificates...")
+                try:
+                    # Generate certs in current directory (standard matching default checks)
+                    # We check localhost.pem first
+                    subprocess.run(
+                        ['mkcert', '-key-file', 'localhost-key.pem', '-cert-file', 'localhost.pem', 'localhost', '127.0.0.1', '::1'],
+                        check=True,
+                        capture_output=True # Don't spam stdout unless error?
+                    )
+                    print("PyHTML: Certificates generated (localhost.pem).")
+                    print("PyHTML: Note: Run 'mkcert -install' once if your browser doesn't trust the certificate.")
+                    
+                    cert_path = "localhost.pem"
+                    key_path = "localhost-key.pem"
+                    # Cleare hash injection since we expect trust
+                    if hasattr(pyhtml_app.app.state, 'webtransport_cert_hash'):
+                        del pyhtml_app.app.state.webtransport_cert_hash
+                        
+                except subprocess.CalledProcessError as e:
+                    print(f"PyHTML: mkcert failed: {e}")
+                    # Fallback to ephemeral
+            else:
+                 # No mkcert, will fallback to ephemeral logic downstream
+                 print("PyHTML: Tip: Install 'mkcert' for trusted local HTTPS (e.g. 'brew install mkcert').")
+                 print("PyHTML: Using ephemeral self-signed certificates (browser will warn).")
+
     async with asyncio.TaskGroup() as tg:
         if HAS_HTTP3:
             try:
-                # Check for existing trusted certificates (e.g. from mkcert)
-                # mkcert localhost -> localhost.pem, localhost-key.pem
-                # Check for existing trusted certificates (e.g. from mkcert)
-                # mkcert localhost -> localhost.pem, localhost-key.pem
-                potential_certs = [
-                    (Path("localhost+2.pem"), Path("localhost+2-key.pem")),
-                    (Path("localhost.pem"), Path("localhost-key.pem")),
-                    (Path("cert.pem"), Path("key.pem")),
-                ]
-                
-                cert_path, key_path = None, None
-                for c_file, k_file in potential_certs:
-                    if c_file.exists() and k_file.exists():
-                        print(f"PyHTML: Found local certificates ({c_file}), using them.")
-                        
-                        # For QUIC/HTTP3, we need the full certificate chain
-                        # mkcert stores its CA at ~/Library/Application Support/mkcert/rootCA.pem (macOS)
-                        # or ~/.local/share/mkcert/rootCA.pem (Linux)
-                        import os
-                        import tempfile
-                        
-                        mkcert_ca_paths = [
-                            Path.home() / "Library" / "Application Support" / "mkcert" / "rootCA.pem",  # macOS
-                            Path.home() / ".local" / "share" / "mkcert" / "rootCA.pem",  # Linux
-                        ]
-                        
-                        ca_cert = None
-                        for ca_path in mkcert_ca_paths:
-                            if ca_path.exists():
-                                ca_cert = ca_path.read_text()
-                                print(f"PyHTML: Found mkcert CA, creating certificate chain for QUIC...")
-                                break
-                        
-                        if ca_cert:
-                            # Create a chain file: leaf cert + CA cert
-                            leaf_cert = c_file.read_text()
-                            chain_content = leaf_cert + "\n" + ca_cert
-                            
-                            # Write to temp file
-                            chain_dir = tempfile.mkdtemp()
-                            chain_path = os.path.join(chain_dir, "chain.pem")
-                            with open(chain_path, "w") as f:
-                                f.write(chain_content)
-                            
-                            cert_path = chain_path
-                        else:
-                            cert_path = str(c_file)
-                        
-                        key_path = str(k_file)
-                        # Don't inject hash if using trusted certs (expected validity > 14 days)
-                        if hasattr(app.state, 'webtransport_cert_hash'):
-                             del app.state.webtransport_cert_hash
-                        break
-                
-
-                if not cert_path:
-                    # Generate ephemeral self-signed certs
-                    cert_path, key_path, fingerprint = _generate_cert()
-                    app.state.webtransport_cert_hash = fingerprint
+                # If still no certs, generate ephemeral ones for WebTransport
+                final_cert, final_key = cert_path, key_path
+                if not final_cert:
+                    final_cert, final_key, fingerprint = _generate_cert()
+                    pyhtml_app.app.state.webtransport_cert_hash = fingerprint
 
                 config = Config()
                 config.loglevel = "INFO"
@@ -263,13 +279,15 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
                     config.bind = [f"{host}:{port}"]
                     config.quic_bind = [f"{host}:{port}"]
 
-                config.certfile = cert_path
-                config.keyfile = key_path
+                config.certfile = final_cert
+                config.keyfile = final_key
                 config.use_reloader = False
 
                 display_host = "localhost" if host == "127.0.0.1" else host
                 print(f"PyHTML: Running with Hypercorn (HTTP/3 + WebSocket) on https://{display_host}:{port}")
-                tg.create_task(serve(app, config, shutdown_trigger=shutdown_event.wait))
+                
+                # Serve the starlette app wrapped in PyHTML
+                tg.create_task(serve(pyhtml_app.app, config, shutdown_trigger=shutdown_event.wait))
             except Exception as e:
                 print(f"PyHTML: Failed to start Hypercorn: {e}")
                 import traceback
@@ -280,12 +298,20 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
         if not HAS_HTTP3:
             # Fallback to Uvicorn
             import uvicorn
+            
+            # If explicit SSL provided OR discovered
+            ssl_options = {}
+            if cert_path and key_path:
+                ssl_options['ssl_certfile'] = cert_path
+                ssl_options['ssl_keyfile'] = key_path
+            
             config = uvicorn.Config(
-                app,
+                pyhtml_app.app,
                 host=host,
                 port=port,
                 reload=False,
-                log_level="info"
+                log_level="info",
+                **ssl_options
             )
             server = uvicorn.Server(config)
             
@@ -296,9 +322,10 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
                 await shutdown_event.wait()
                 server.should_exit = True
             
-            print(f"PyHTML: Running with Uvicorn on http://{host}:{port}")
+            protocol = "https" if cert_path else "http"
+            print(f"PyHTML: Running with Uvicorn on {protocol}://{host}:{port}")
             tg.create_task(server.serve())
             tg.create_task(stop_uvicorn())
 
-        if reload:
-            tg.create_task(watch_changes())
+        # Start watcher
+        tg.create_task(watch_changes())
