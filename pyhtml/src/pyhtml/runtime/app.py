@@ -16,7 +16,6 @@ from pyhtml.runtime.loader import PageLoader
 from pyhtml.runtime.router import Router
 from pyhtml.runtime.websocket import WebSocketHandler
 from pyhtml.runtime.http_transport import HTTPTransportHandler
-from pyhtml.runtime.http_transport import HTTPTransportHandler
 from pyhtml.runtime.error_page import ErrorPage
 from pyhtml.runtime.upload_manager import upload_manager
 

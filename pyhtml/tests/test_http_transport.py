@@ -1,0 +1,109 @@
+import unittest
+import asyncio
+from unittest.mock import MagicMock, AsyncMock
+import msgpack
+from pyhtml.runtime.http_transport import HTTPTransportHandler, HTTPSession
+from pyhtml.runtime.page import BasePage
+from starlette.requests import Request
+
+class MockRequest:
+    @staticmethod
+    def create(body_data=None, query_params=None, headers=None, path='/'):
+        body = msgpack.packb(body_data) if body_data is not None else b''
+        scope = {
+            'type': 'http',
+            'path': path,
+            'query_string': b'',
+            'headers': [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+            'client': ['127.0.0.1', 1234],
+            'method': 'POST'
+        }
+        if query_params:
+            from urllib.parse import urlencode
+            scope['query_string'] = urlencode(query_params).encode()
+            
+        async def receive():
+            return {'type': 'http.request', 'body': body, 'more_body': False}
+            
+        return Request(scope, receive=receive)
+
+class TestPage(BasePage):
+    async def _render_template(self):
+        return "<div>HTTP Page</div>"
+    
+    async def handle_event(self, name, data):
+        return await self.render()
+
+class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        import pyhtml.runtime.http_transport as ht
+        import msgpack
+        print(f"\nDEBUG: ht module: {ht.__file__}")
+        print(f"DEBUG: msgpack module: {msgpack.__file__}")
+        self.app = MagicMock()
+        self.app.router = MagicMock()
+        self.handler = HTTPTransportHandler(self.app)
+
+    async def test_create_session(self):
+        self.app.router.match.return_value = (TestPage, {}, 'main')
+        request = MockRequest.create(body_data={'path': '/test'})
+        
+        response = await self.handler.create_session(request)
+        data = msgpack.unpackb(response.body, raw=False)
+        
+        self.assertIn('sessionId', data)
+        session_id = data['sessionId']
+        self.assertIn(session_id, self.handler.sessions)
+        self.assertEqual(self.handler.sessions[session_id].path, '/test')
+        self.assertIsInstance(self.handler.sessions[session_id].page, TestPage)
+
+    async def test_poll_timeout(self):
+        session_id = 'test-session'
+        session = HTTPSession(session_id=session_id, path='/')
+        self.handler.sessions[session_id] = session
+        
+        request = MockRequest.create(query_params={'session': session_id})
+        
+        # Patch timeout to be very short for test
+        with unittest.mock.patch('asyncio.wait_for', side_effect=asyncio.TimeoutError):
+            response = await self.handler.poll(request)
+            data = msgpack.unpackb(response.body, raw=False)
+            self.assertEqual(data, [])
+
+    async def test_poll_with_updates(self):
+        session_id = 'test-session'
+        session = HTTPSession(session_id=session_id, path='/')
+        self.handler.sessions[session_id] = session
+        
+        # Queue an update
+        self.handler.queue_update(session_id, {'type': 'update', 'html': 'foo'})
+        
+        request = MockRequest.create(query_params={'session': session_id})
+        response = await self.handler.poll(request)
+        data = msgpack.unpackb(response.body, raw=False)
+        
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['type'], 'update')
+        self.assertEqual(data[0]['html'], 'foo')
+
+    async def test_handle_event(self):
+        session_id = 'test-session'
+        session = HTTPSession(session_id=session_id, path='/')
+        # Create a real request for the page to avoid scope issues
+        request = MockRequest.create()
+        session.page = TestPage(request, {}, {})
+        self.handler.sessions[session_id] = session
+        
+        request = MockRequest.create(
+            body_data={'handler': 'click', 'data': {}},
+            headers={'X-PyHTML-Session': session_id}
+        )
+        
+        response = await self.handler.handle_event(request)
+        data = msgpack.unpackb(response.body, raw=False)
+        
+        self.assertEqual(data['type'], 'update')
+        self.assertEqual(data['html'], '<div>HTTP Page</div>')
+
+if __name__ == "__main__":
+    unittest.main()

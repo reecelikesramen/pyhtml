@@ -101,6 +101,13 @@ class HTTPTransportHandler:
             
             if hasattr(self.app, 'get_user'):
                 session.page.user = self.app.get_user(request)
+            
+            # Run load hook
+            if hasattr(session.page, 'on_load'):
+                if asyncio.iscoroutinefunction(session.page.on_load):
+                    await session.page.on_load()
+                else:
+                    session.page.on_load()
         
         self.sessions[session_id] = session
         self.start_cleanup_task()
@@ -181,6 +188,13 @@ class HTTPTransportHandler:
                      url_helper = URLHelper(page_class.__routes__)
                 
                 session.page = page_class(request, params, query, path=path_info, url=url_helper)
+                
+                # Run load hook
+                if hasattr(session.page, 'on_load'):
+                    if asyncio.iscoroutinefunction(session.page.on_load):
+                        await session.page.on_load()
+                    else:
+                        session.page.on_load()
             
             # Dispatch event
             response = await session.page.handle_event(handler_name, event_data)

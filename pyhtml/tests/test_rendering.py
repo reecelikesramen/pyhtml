@@ -1,36 +1,63 @@
-
 import unittest
 import asyncio
 from unittest.mock import MagicMock
 import sys
 
-# Mocks
-mock_starlette = MagicMock()
-sys.modules['starlette'] = mock_starlette
-sys.modules['starlette.requests'] = mock_starlette
-sys.modules['starlette.responses'] = mock_starlette
-sys.modules['starlette.routing'] = mock_starlette
-sys.modules['starlette.staticfiles'] = mock_starlette
-sys.modules['starlette.applications'] = mock_starlette
-sys.modules['starlette.websockets'] = mock_starlette
-sys.modules['starlette.datastructures'] = mock_starlette
-sys.modules['starlette.types'] = mock_starlette
-sys.modules['starlette.exceptions'] = mock_starlette
-sys.modules['starlette.middleware'] = mock_starlette
+# Helper to mock modules for tests
+def mock_modules(mapping):
+    original_modules = {}
+    for name, mock in mapping.items():
+        if name in sys.modules:
+            original_modules[name] = sys.modules[name]
+        sys.modules[name] = mock
+    return original_modules
 
-# Mock Jinja2
-mock_jinja = MagicMock()
-sys.modules['jinja2'] = mock_jinja
-
-# Mock lxml
-mock_lxml = MagicMock()
-sys.modules['lxml'] = mock_lxml
-sys.modules['lxml.html'] = mock_lxml
-sys.modules['lxml.etree'] = mock_lxml
-
-from pyhtml.runtime.page import BasePage
+def restore_modules(original_modules, mapping):
+    for name in mapping:
+        if name in original_modules:
+            sys.modules[name] = original_modules[name]
+        else:
+            del sys.modules[name]
 
 class TestPageRendering(unittest.TestCase):
+    def setUp(self):
+        self.mock_starlette = MagicMock()
+        self.mocks = {
+            'starlette': self.mock_starlette,
+            'starlette.requests': self.mock_starlette,
+            'starlette.responses': self.mock_starlette,
+            'starlette.routing': self.mock_starlette,
+            'starlette.staticfiles': self.mock_starlette,
+            'starlette.applications': self.mock_starlette,
+            'starlette.websockets': self.mock_starlette,
+            'starlette.datastructures': self.mock_starlette,
+            'starlette.types': self.mock_starlette,
+            'starlette.exceptions': self.mock_starlette,
+            'starlette.middleware': self.mock_starlette,
+            'jinja2': MagicMock(),
+            'lxml': MagicMock(),
+            'lxml.html': MagicMock(),
+            'lxml.etree': MagicMock(),
+        }
+        self.original_modules = mock_modules(self.mocks)
+        
+        # Import BasePage after mocking
+        global BasePage
+        import pyhtml.runtime.page as page_mod
+        import pyhtml.runtime.loader as loader_mod
+        import importlib
+        importlib.reload(page_mod)
+        importlib.reload(loader_mod)
+        BasePage = page_mod.BasePage
+
+    def tearDown(self):
+        import importlib
+        import pyhtml.runtime.page as page_mod
+        import pyhtml.runtime.loader as loader_mod
+        restore_modules(self.original_modules, self.mocks)
+        importlib.reload(page_mod)
+        importlib.reload(loader_mod)
+
     def test_params_as_attributes(self):
         """Verify params are exposed as attributes."""
         request = MagicMock()
@@ -97,26 +124,6 @@ class TestPageRendering(unittest.TestCase):
         asyncio.set_event_loop(loop)
         try:
              # BasePage.render() calls self._render_template().
-             # LeafPage inherits SubLayout (which has no _render_template in real CodeGen, 
-             # wait, SubLayout DOES NOT have _render_template if generated as layout).
-             # It only has slot fillers.
-             # So LeafPage inherits RootLayout's _render_template!
-             
-             # In my mock above:
-             # SubLayout DOES have _render_template defined... wait.
-             # If SubLayout is generated as a LAYOUT, it SHOULD NOT have _render_template.
-             # Only the ROOT has _render_template (or the one without !layout).
-             
-             # So I should REMOVE _render_template from SubLayout to match CodeGen behavior.
-             # Actually, since I didn't define it in SubLayout above, it's already inherited.
-             # So I don't need to delete anything.
-             pass
-             
-             # But SubLayout class definition above inherits RootLayout.
-             # RootLayout HAS _render_template.
-             # LeafPage inherits SubLayout -> RootLayout.
-             # So LeafPage has _render_template from RootLayout.
-             
              content = loop.run_until_complete(page._render_template())
              self.assertEqual(content, "ROOT_START|SUB_START|LEAF_CONTENT|SUB_END|ROOT_END")
         finally:

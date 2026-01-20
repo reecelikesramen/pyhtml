@@ -50,24 +50,7 @@ class Route:
         # Let's use a tokenizing approach for robustness, 
         # or a series of regex replacements that don't conflict.
         
-        # Regex for :name:type or :name
-        # Group 1: name, Group 2: :type (optional)
-        param_regex = r':(\w+)(:(\w+))?'
-        
-        def replace_param(match):
-            name = match.group(1)
-            type_name = match.group(3) or 'str'
-            regex = get_type_regex(type_name)
-            return f'(?P<{name}>{regex})'
-
-        # Regex for {name:type} or {name}
-        # Group 1: name, Group 2: :type (optional)
-        brace_regex = r'\\{(\w+)(:(\w+))?\\}' # regex escaped braces from re.escape
-        
-        # Unescape the pattern first so we can parse braces easily? 
-        # No, re.escape escapes everything non-alphanumeric.
-        
-        # Re-implementation:
+        # Tokenizing approach for robustness
         # 1. Split by '/'
         # 2. Process segments
         # 3. Join
@@ -174,29 +157,29 @@ class URLTemplate:
         # Needs to handle :param syntax conversion to {param} for format, 
         # or custom formatter.
         
-        # Replace :name:type or :name with {name}
-        # and {name:type} with {name}
+        # Regex to find params in pattern:
+        # 1. {name:type} or {name}
+        # 2. :name:type or :name
+        # Note: We must be careful not to match the :type part of {name:type} as a :name.
+        # We can do this by matching the more specific {name:type} first in an OR,
+        # or by using a single regex for both.
         
-        # Normalize pattern for formatting
-        def replace_param(match):
-            return f"{{{match.group(1)}}}"
+        pattern = r'\{(\w+)(?::\w+)?\}|:(\w+)(?::\w+)?'
+        
+        def replace_match(match):
+            # Group 1 is from {}, Group 2 is from :
+            name = match.group(1) or match.group(2)
+            return f"{{{name}}}"
             
-        # Regex to find params in pattern
-        # :name(:type)?
-        cleaned = re.sub(r':(\w+)(:\w+)?', replace_param, url)
-        # {name(:type)?} -> {name}
-        cleaned = re.sub(r'\{(\w+)(:\w+)?\}', replace_param, cleaned)
-        
-        return cleaned.format(**kwargs)
+        return re.sub(pattern, replace_match, url).format(**kwargs)
     
     def __str__(self):
         # Return normalized pattern with {param} instead of :param
-        def replace_param(match):
-            return f"{{{match.group(1)}}}"
-        
-        cleaned = re.sub(r':(\w+)(:\w+)?', replace_param, self.pattern)
-        cleaned = re.sub(r'\{(\w+)(:\w+)?\}', replace_param, cleaned)
-        return cleaned
+        pattern = r'\{(\w+)(?::\w+)?\}|:(\w+)(?::\w+)?'
+        def replace_match(match):
+            name = match.group(1) or match.group(2)
+            return f"{{{name}}}"
+        return re.sub(pattern, replace_match, self.pattern)
 
 
 class Router:

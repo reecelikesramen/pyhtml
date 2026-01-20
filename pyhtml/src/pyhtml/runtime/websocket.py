@@ -168,11 +168,11 @@ class WebSocketHandler:
                     self.connection_pages[websocket] = page
                     
                     # Run load hook
-                    if hasattr(page, '__on_load'):
-                        if asyncio.iscoroutinefunction(page.__on_load):
-                            await page.__on_load()
+                    if hasattr(page, 'on_load'):
+                        if asyncio.iscoroutinefunction(page.on_load):
+                            await page.on_load()
                         else:
-                            page.__on_load()
+                            page.on_load()
                 else:
                     page = self.connection_pages[websocket]
 
@@ -282,12 +282,12 @@ class WebSocketHandler:
             
             self.connection_pages[websocket] = page
             
-            # Run __on_load lifecycle hook
-            if hasattr(page, '__on_load'):
-                if asyncio.iscoroutinefunction(page.__on_load):
-                    await page.__on_load()
+            # Run on_load lifecycle hook
+            if hasattr(page, 'on_load'):
+                if asyncio.iscoroutinefunction(page.on_load):
+                    await page.on_load()
                 else:
-                    page.__on_load()
+                    page.on_load()
             
             # Render and send initial HTML
             response = await page.render()
@@ -377,11 +377,11 @@ class WebSocketHandler:
         
         try:
             with contextlib.redirect_stdout(stdout_capture):
-                if hasattr(new_page, '__on_load'):
-                    if asyncio.iscoroutinefunction(new_page.__on_load):
-                        await new_page.__on_load()
+                if hasattr(new_page, 'on_load'):
+                    if asyncio.iscoroutinefunction(new_page.on_load):
+                        await new_page.on_load()
                     else:
-                        new_page.__on_load()
+                        new_page.on_load()
                 
                 # Render and send HTML
                 response = await new_page.render()

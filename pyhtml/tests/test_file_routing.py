@@ -5,33 +5,25 @@ import shutil
 import sys
 from unittest.mock import MagicMock
 
-# Mock starlette
-mock_starlette = MagicMock()
-sys.modules['starlette'] = mock_starlette
-sys.modules['starlette.requests'] = mock_starlette
-sys.modules['starlette.responses'] = mock_starlette
-sys.modules['starlette.routing'] = mock_starlette
-sys.modules['starlette.staticfiles'] = mock_starlette
-sys.modules['starlette.applications'] = mock_starlette
-sys.modules['starlette.websockets'] = mock_starlette
-sys.modules['starlette.datastructures'] = mock_starlette
-sys.modules['starlette.types'] = mock_starlette
-sys.modules['starlette.exceptions'] = mock_starlette
-sys.modules['starlette.middleware'] = mock_starlette
+# Helper to mock modules for tests
+import importlib
 
-# Mock jinja2
-mock_jinja2 = MagicMock()
-sys.modules['jinja2'] = mock_jinja2
+def mock_modules(mapping):
+    original_modules = {}
+    for name, mock in mapping.items():
+        if name in sys.modules:
+            original_modules[name] = sys.modules[name]
+        sys.modules[name] = mock
+    return original_modules
 
-# Mock lxml (parser uses it)
-mock_lxml = MagicMock()
-sys.modules['lxml'] = mock_lxml
-sys.modules['lxml.html'] = mock_lxml
-sys.modules['lxml.etree'] = mock_lxml
+def restore_modules(original_modules, mapping):
+    for name in mapping:
+        if name in original_modules:
+            sys.modules[name] = original_modules[name]
+        else:
+            del sys.modules[name]
 
 from pathlib import Path
-from pyhtml.runtime.app import PyHTMLApp
-from pyhtml.runtime.router import Router
 
 # Mock base page for loader
 class MockPage:
@@ -58,6 +50,33 @@ class MockLoader:
 
 class TestFileRouting(unittest.TestCase):
     def setUp(self):
+        # Setup mocks
+        self.mock_starlette = MagicMock()
+        self.mock_jinja2 = MagicMock()
+        self.mock_lxml = MagicMock()
+        
+        self.mocks = {
+            'starlette': self.mock_starlette,
+            'starlette.requests': self.mock_starlette,
+            'starlette.responses': self.mock_starlette,
+            'starlette.routing': self.mock_starlette,
+            'starlette.staticfiles': self.mock_starlette,
+            'starlette.applications': self.mock_starlette,
+            'starlette.websockets': self.mock_starlette,
+            'starlette.datastructures': self.mock_starlette,
+            'starlette.types': self.mock_starlette,
+            'starlette.exceptions': self.mock_starlette,
+            'starlette.middleware': self.mock_starlette,
+            'jinja2': self.mock_jinja2,
+            'lxml': self.mock_lxml,
+            'lxml.html': self.mock_lxml,
+            'lxml.etree': self.mock_lxml,
+        }
+        self.original_modules = mock_modules(self.mocks)
+        
+        from pyhtml.runtime.app import PyHTMLApp
+        from pyhtml.runtime.router import Router
+        
         self.test_dir = tempfile.mkdtemp()
         self.tmp_path = Path(self.test_dir)
         
@@ -66,7 +85,13 @@ class TestFileRouting(unittest.TestCase):
         self.app.router = Router()
 
     def tearDown(self):
+        import importlib
+        from pyhtml.runtime import app as app_mod, router as router_mod, loader as loader_mod
         shutil.rmtree(self.test_dir)
+        restore_modules(self.original_modules, self.mocks)
+        importlib.reload(app_mod)
+        importlib.reload(router_mod)
+        importlib.reload(loader_mod)
 
     def test_scan_simple_structure(self):
         """Test standard file structure scanning."""

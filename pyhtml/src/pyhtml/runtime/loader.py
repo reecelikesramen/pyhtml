@@ -60,15 +60,18 @@ class PageLoader:
         exec(code, module.__dict__)
         
         # Find Page class (skip _LayoutBase which is imported from layout)
+        import pyhtml.runtime.page as page_mod
+        CurrentBasePage = page_mod.BasePage
+        
         for name, obj in module.__dict__.items():
-            if (isinstance(obj, type) and
-                issubclass(obj, BasePage) and
-                obj is not BasePage and
-                name != '_LayoutBase'):
-                # Cache the compiled class
-                self._cache[path_key] = obj
-                return obj
-                
+            if name.startswith('__'): continue
+            if isinstance(obj, type):
+                if (issubclass(obj, CurrentBasePage) and
+                    obj is not CurrentBasePage and
+                    name != '_LayoutBase'):
+                    # Cache the compiled class
+                    self._cache[path_key] = obj
+                    return obj
         raise ValueError(f"No page class found in {pyhtml_file}")
 
     def invalidate_cache(self, path: Path = None):

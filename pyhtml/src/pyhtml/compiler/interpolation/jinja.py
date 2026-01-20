@@ -76,20 +76,12 @@ class JinjaInterpolationParser(InterpolationParser):
         if not text:
             return ['']
 
-        result = []
-        
-        # Simple brace-matching parser for expressions
-        import re
-        
+        tokens: List[Union[str, InterpolationNode]] = []
         i = 0
         last_end = 0
         
         while i < len(text):
             if text[i] == '{':
-                # Add any text before this brace
-                if i > last_end:
-                    result.append(text[last_end:i])
-                
                 # Find matching closing brace
                 brace_count = 1
                 j = i + 1
@@ -102,31 +94,58 @@ class JinjaInterpolationParser(InterpolationParser):
                 
                 if brace_count == 0:
                     # Found matching brace
+                    # Add any text before this brace
+                    if i > last_end:
+                        tokens.append(text[last_end:i])
+                        
                     expr = text[i+1:j-1]  # Extract expression without braces
                     
                     if self._is_valid_python(expr):
-                        result.append(InterpolationNode(
+                        tokens.append(InterpolationNode(
                             expression=expr,
                             line=line,
                             column=col + i
                         ))
                     else:
                         # Treat as literal
-                        result.append(text[i:j])
+                        tokens.append(text[i:j])
                         
                     last_end = j
                     i = j
                 else:
-                    # Unmatched brace, treat as literal
+                    # Unmatched brace
                     i += 1
             else:
                 i += 1
         
         # Add any remaining text
         if last_end < len(text):
-            result.append(text[last_end:])
+            tokens.append(text[last_end:])
 
-        return result if result else [text]
+        # Post-process to merge adjacent strings
+        if not tokens:
+            return [text]
+            
+        result = []
+        current_str = []
+        
+        for token in tokens:
+            if isinstance(token, str):
+                current_str.append(token)
+            else:
+                if current_str:
+                    merged = "".join(current_str)
+                    if merged:
+                        result.append(merged)
+                    current_str = []
+                result.append(token)
+        
+        if current_str:
+            merged = "".join(current_str)
+            if merged:
+                result.append(merged)
+            
+        return result if result else [""]
 
     def compile(self, text: str) -> str:
         """

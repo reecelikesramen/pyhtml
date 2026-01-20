@@ -98,13 +98,13 @@ class TestFormValidation(unittest.TestCase):
         
         # Invalid data
         data = {'username': 'ab', 'email': 'invalid'}
-        errors = validator.validate_form(data, schema)
+        cleaned_data, errors = validator.validate_form(data, schema, state_getter=lambda x: None)
         self.assertIn('username', errors)
         self.assertIn('email', errors)
         
         # Valid data
         data = {'username': 'john', 'email': 'john@example.com'}
-        errors = validator.validate_form(data, schema)
+        cleaned_data, errors = validator.validate_form(data, schema, state_getter=lambda x: None)
         self.assertEqual(errors, {})
     
     def test_nested_data_parsing(self):
