@@ -80,20 +80,16 @@ class WebTransportHandler:
 
     async def _handle_stream(self, stream: WebTransportStream, connection: WebTransportConnection):
         """Read full message from a stream and process it."""
-        print(f"DEBUG: Handling stream {stream.stream_id}")
         try:
             payload = bytearray()
             while True:
                 try:
                     chunk = await stream.receive_bytes()
-                    print(f"DEBUG: Stream {stream.stream_id} received chunk: {len(chunk)} bytes")
                     payload.extend(chunk)
                 except WebTransportDisconnect:
                     # Stream closed naturally (FIN received)
-                    print(f"DEBUG: Stream {stream.stream_id} disconnected (FIN)")
                     break
             
-            print(f"DEBUG: Stream {stream.stream_id} payload complete: {len(payload)} bytes")
             if payload:
                 try:
                     data = json.loads(payload.decode('utf-8'))
