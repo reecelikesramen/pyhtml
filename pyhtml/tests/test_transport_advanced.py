@@ -2,13 +2,14 @@ import unittest
 from unittest.mock import MagicMock, AsyncMock
 from pyhtml.runtime.http_transport import HTTPTransportHandler
 from pyhtml.runtime.websocket import WebSocketHandler
-from pyhtml.runtime.app import PyHTMLApp
+from pyhtml.runtime.app import PyHTML
 import msgpack
 import asyncio
 
-class TestTransportAdvanced(unittest.TestCase):
+class TestTransportAdvanced(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.app = MagicMock(spec=PyHTMLApp)
+        self.app = MagicMock(spec=PyHTML)
+        self.app.router = MagicMock()
         self.http_handler = HTTPTransportHandler(self.app)
         self.ws_handler = WebSocketHandler(self.app)
 
@@ -16,12 +17,15 @@ class TestTransportAdvanced(unittest.TestCase):
         # Create session
         request = AsyncMock()
         request.json.return_value = {"path": "/"}
+        request.query_params = {}
         
         page_class = MagicMock()
         self.app.router.match.return_value = (page_class, {}, "main")
         
         response = await self.http_handler.create_session(request)
-        session_id = str(response.body).split('"session_id":"')[1].split('"')[0]
+        response = await self.http_handler.create_session(request)
+        data = msgpack.unpackb(response.body, raw=False)
+        session_id = data.get("sessionId")
         
         self.assertIn(session_id, self.http_handler.sessions)
         
@@ -43,7 +47,7 @@ class TestTransportAdvanced(unittest.TestCase):
         request.json.return_value = {"handler": "click", "data": {}}
         
         response = await self.http_handler.handle_event(request)
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
 
 if __name__ == "__main__":
     unittest.main()

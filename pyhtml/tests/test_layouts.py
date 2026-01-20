@@ -6,12 +6,22 @@ import asyncio
 from pathlib import Path
 from pyhtml.runtime.loader import PageLoader
 from pyhtml.runtime.page import BasePage
+from unittest.mock import MagicMock
 
 @pytest.fixture
 def loader():
     return PageLoader()
 
-def test_simple_layout(loader):
+@pytest.fixture
+def mock_app():
+    from unittest.mock import MagicMock
+    app = MagicMock()
+    app.state = MagicMock()
+    app.state.webtransport_cert_hash = None
+    app.state.enable_pjax = False
+    return app
+
+def test_simple_layout(loader, mock_app):
     """Test basic layout with default and named slots."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -49,7 +59,9 @@ def test_simple_layout(loader):
             PageClass = loader.load(tmp_path / "page.pyhtml")
             assert issubclass(PageClass, BasePage)
             
-            page = PageClass(None, {}, {}, {}, None)
+            request = MagicMock()
+            request.app = mock_app
+            page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
 
             assert '<div id="layout">' in html
@@ -62,7 +74,7 @@ def test_simple_layout(loader):
             os.chdir(original_cwd)
 
 
-def test_head_slot_accumulation(loader):
+def test_head_slot_accumulation(loader, mock_app):
     """Test that <head> content from child pages is appended to $head slot."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -112,7 +124,9 @@ def test_head_slot_accumulation(loader):
         os.chdir(tmpdir)
         try:
             PageClass = loader.load(tmp_path / "page.pyhtml")
-            page = PageClass(None, {}, {}, {}, None)
+            request = MagicMock()
+            request.app = mock_app
+            page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
             
             # Verify head content is accumulated

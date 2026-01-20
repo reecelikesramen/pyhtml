@@ -1,11 +1,11 @@
 import unittest
 from unittest.mock import MagicMock, AsyncMock, patch
-from pyhtml.runtime.app import PyHTMLApp
+from pyhtml.runtime.app import PyHTML
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse
 from pathlib import Path
 
-class TestAppAdvanced(unittest.TestCase):
+class TestAppAdvanced(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.pages_dir = Path("/tmp/empty_pages")
         self.pages_dir.mkdir(exist_ok=True)
@@ -14,7 +14,8 @@ class TestAppAdvanced(unittest.TestCase):
              patch('pyhtml.runtime.app.HTTPTransportHandler'), \
              patch('pyhtml.runtime.app.WebSocketHandler'), \
              patch('pyhtml.runtime.webtransport_handler.WebTransportHandler'):
-            self.app = PyHTMLApp(self.pages_dir)
+            self.app = PyHTML(self.pages_dir)
+            self.app.router = MagicMock()
 
     async def test_handle_request_post_event(self):
         # Mocking a POST request with X-PyHTML-Event header

@@ -27,7 +27,7 @@ class MockRequest:
             
         return Request(scope, receive=receive)
 
-class TestPage(BasePage):
+class MockPage(BasePage):
     async def _render_template(self):
         return "<div>HTTP Page</div>"
     
@@ -45,7 +45,7 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         self.handler = HTTPTransportHandler(self.app)
 
     async def test_create_session(self):
-        self.app.router.match.return_value = (TestPage, {}, 'main')
+        self.app.router.match.return_value = (MockPage, {}, 'main')
         request = MockRequest.create(body_data={'path': '/test'})
         
         response = await self.handler.create_session(request)
@@ -55,7 +55,7 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         session_id = data['sessionId']
         self.assertIn(session_id, self.handler.sessions)
         self.assertEqual(self.handler.sessions[session_id].path, '/test')
-        self.assertIsInstance(self.handler.sessions[session_id].page, TestPage)
+        self.assertIsInstance(self.handler.sessions[session_id].page, MockPage)
 
     async def test_poll_timeout(self):
         session_id = 'test-session'
@@ -65,7 +65,11 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         request = MockRequest.create(query_params={'session': session_id})
         
         # Patch timeout to be very short for test
-        with unittest.mock.patch('asyncio.wait_for', side_effect=asyncio.TimeoutError):
+        def timeout_side_effect(coro, timeout):
+            coro.close()
+            raise asyncio.TimeoutError
+
+        with unittest.mock.patch('asyncio.wait_for', side_effect=timeout_side_effect):
             response = await self.handler.poll(request)
             data = msgpack.unpackb(response.body, raw=False)
             self.assertEqual(data, [])
@@ -91,7 +95,7 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         session = HTTPSession(session_id=session_id, path='/')
         # Create a real request for the page to avoid scope issues
         request = MockRequest.create()
-        session.page = TestPage(request, {}, {})
+        session.page = MockPage(request, {}, {})
         self.handler.sessions[session_id] = session
         
         request = MockRequest.create(

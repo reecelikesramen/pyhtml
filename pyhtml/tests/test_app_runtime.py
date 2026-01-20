@@ -3,11 +3,11 @@ from pathlib import Path
 import tempfile
 import shutil
 from unittest.mock import MagicMock, patch, AsyncMock
-from pyhtml.runtime.app import PyHTMLApp
+from pyhtml.runtime.app import PyHTML
 from starlette.requests import Request
 from starlette.responses import Response
 
-class TestAppRuntime(unittest.TestCase):
+class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
         self.pages_dir = Path(self.test_dir)
@@ -17,7 +17,7 @@ class TestAppRuntime(unittest.TestCase):
              patch('pyhtml.runtime.app.HTTPTransportHandler'), \
              patch('pyhtml.runtime.app.WebSocketHandler'), \
              patch('pyhtml.runtime.webtransport_handler.WebTransportHandler'):
-            self.app = PyHTMLApp(self.pages_dir)
+            self.app = PyHTML(self.pages_dir)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
@@ -67,7 +67,8 @@ class TestAppRuntime(unittest.TestCase):
         # Mock form data
         mock_file = MagicMock()
         mock_file.filename = "test.txt"
-        request.form.return_value = {"file": mock_file}
+        # request.form must be an async method returning the dict
+        request.form = AsyncMock(return_value={"file": mock_file})
         
         response = await self.app._handle_upload(request)
         self.assertEqual(response.status_code, 200)

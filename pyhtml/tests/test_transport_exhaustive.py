@@ -113,7 +113,11 @@ class TestTransportExhaustive(unittest.TestCase):
         request = MagicMock(spec=Request)
         request.query_params = {'session': 's1'}
         
-        with patch('asyncio.wait_for', side_effect=asyncio.TimeoutError):
+        def timeout_side_effect(coro, timeout):
+            coro.close()
+            raise asyncio.TimeoutError
+
+        with patch('asyncio.wait_for', side_effect=timeout_side_effect):
             response = asyncio.run(self.handler.poll(request))
             self.assertEqual(response.status_code, 200)
             data = msgpack.unpackb(response.body, raw=False)

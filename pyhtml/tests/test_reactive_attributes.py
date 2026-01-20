@@ -6,12 +6,22 @@ import asyncio
 from pathlib import Path
 from pyhtml.runtime.loader import PageLoader
 from pyhtml.runtime.page import BasePage
+from unittest.mock import MagicMock
 
 @pytest.fixture
 def loader():
     return PageLoader()
 
-def test_variable_binding(loader):
+@pytest.fixture
+def mock_app():
+    from unittest.mock import MagicMock
+    app = MagicMock()
+    app.state = MagicMock()
+    app.state.webtransport_cert_hash = None
+    app.state.enable_pjax = False
+    return app
+
+def test_variable_binding(loader, mock_app):
     """Test :attr="var" binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -27,7 +37,9 @@ my_class = "btn"
         os.chdir(tmpdir)
         try:
             PageClass = loader.load(tmp_path / "page.pyhtml")
-            page = PageClass(None, {}, {}, {}, None)
+            request = MagicMock()
+            request.app = mock_app
+            page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
             
             assert 'id="dynamic-id"' in html
@@ -35,7 +47,7 @@ my_class = "btn"
         finally:
             os.chdir(orig_cwd)
 
-def test_method_binding_paramless(loader):
+def test_method_binding_paramless(loader, mock_app):
     """Test :attr="method" auto-call binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -51,14 +63,16 @@ def get_title():
         os.chdir(tmpdir)
         try:
             PageClass = loader.load(tmp_path / "page.pyhtml")
-            page = PageClass(None, {}, {}, {}, None)
+            request = MagicMock()
+            request.app = mock_app
+            page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
             
             assert 'title="My Title"' in html
         finally:
             os.chdir(orig_cwd)
 
-def test_expression_binding(loader):
+def test_expression_binding(loader, mock_app):
     """Test :attr="expr" binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -73,14 +87,16 @@ is_error = True
         os.chdir(tmpdir)
         try:
             PageClass = loader.load(tmp_path / "page.pyhtml")
-            page = PageClass(None, {}, {}, {}, None)
+            request = MagicMock()
+            request.app = mock_app
+            page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
             
             assert 'class="error"' in html
         finally:
             os.chdir(orig_cwd)
 
-def test_boolean_attributes(loader):
+def test_boolean_attributes(loader, mock_app):
     """Test boolean attribute behavior."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -97,7 +113,9 @@ is_readonly = None
         os.chdir(tmpdir)
         try:
             PageClass = loader.load(tmp_path / "page.pyhtml")
-            page = PageClass(None, {}, {}, {}, None)
+            request = MagicMock()
+            request.app = mock_app
+            page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
             
             # checked="True" -> checked=""
@@ -109,7 +127,7 @@ is_readonly = None
         finally:
             os.chdir(orig_cwd)
 
-def test_async_binding(loader):
+def test_async_binding(loader, mock_app):
     """Test :attr="await async_call()" binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -125,7 +143,9 @@ async def get_data():
         os.chdir(tmpdir)
         try:
             PageClass = loader.load(tmp_path / "page.pyhtml")
-            page = PageClass(None, {}, {}, {}, None)
+            request = MagicMock()
+            request.app = mock_app
+            page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
             
             assert 'data-val="async-data"' in html
@@ -133,7 +153,7 @@ async def get_data():
             os.chdir(orig_cwd)
 
 
-def test_aria_boolean_attributes(loader):
+def test_aria_boolean_attributes(loader, mock_app):
     """Test ARIA boolean attributes (true/false strings)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -149,7 +169,9 @@ is_expanded = False
         os.chdir(tmpdir)
         try:
             PageClass = loader.load(tmp_path / "page.pyhtml")
-            page = PageClass(None, {}, {}, {}, None)
+            request = MagicMock()
+            request.app = mock_app
+            page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
             
             # aria-busy="true"

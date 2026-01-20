@@ -32,7 +32,7 @@ class MockWebSocket:
     async def close(self, code=1000):
         self.closed = True
 
-class TestPage(BasePage):
+class MockPage(BasePage):
     def __init__(self, request, params, query, path=None, url=None):
         super().__init__(request, params, query, path, url)
         self.event_called = False
@@ -60,7 +60,7 @@ class TestWebSocketHandler(unittest.IsolatedAsyncioTestCase):
         scope = dict(ws.scope)
         scope['type'] = 'http'
         request = Request(scope=scope)
-        page = TestPage(request, {}, {})
+        page = MockPage(request, {}, {})
         self.handler.connection_pages[ws] = page
         
         data = {
@@ -85,7 +85,8 @@ class TestWebSocketHandler(unittest.IsolatedAsyncioTestCase):
         ws = MockWebSocket()
         
         # Setup router mock
-        self.app.router.match.return_value = (TestPage, {'id': '123'}, 'main')
+        # match returns (PageClass, params, match_type)
+        self.app.router.match.return_value = (MockPage, {'id': '123'}, 'main')
         
         data = {
             'type': 'relocate',
@@ -96,7 +97,7 @@ class TestWebSocketHandler(unittest.IsolatedAsyncioTestCase):
         
         self.assertIn(ws, self.handler.connection_pages)
         page = self.handler.connection_pages[ws]
-        self.assertIsInstance(page, TestPage)
+        self.assertIsInstance(page, MockPage)
         self.assertEqual(page.params, {'id': '123'})
         self.assertEqual(ws.sent_messages[0]['type'], 'update')
 

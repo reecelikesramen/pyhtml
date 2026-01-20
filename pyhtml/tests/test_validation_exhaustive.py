@@ -200,10 +200,11 @@ class TestValidationExhaustive(unittest.TestCase):
     def test_pydantic_prefix_removal(self):
         # Trigger a pydantic error that might have "Value error, " prefix
         # Pydantic v2 often has this.
-        from pydantic import validator
+        from pydantic import field_validator
         class PrefixModel(BaseModel):
             val: int
-            @validator('val')
+            @field_validator('val')
+            @classmethod
             def check_val(cls, v):
                 if v < 0:
                     raise ValueError("Must be positive")
