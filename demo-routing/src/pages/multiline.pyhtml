@@ -1,0 +1,62 @@
+<h1>Multiline Handler Demo</h1>
+
+<p>This page demonstrates the new triple-quoted event handler syntax.</p>
+
+<div class="card">
+    <h3>Complex Logic</h3>
+    <p>The button below uses a python dictionary inside the handler without escaping quotes.</p>
+    
+    <p>Current Status: <strong>{status}</strong></p>
+    <p>Last Update: {last_update}</p>
+    
+    <button @click="""
+        # We can write full Python here with standard quotes!
+        import datetime
+        
+        info = {
+            "status": "Active",
+            "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+        }
+        
+        # Update state
+        status = info["status"]
+        last_update = info["timestamp"]
+        
+        print(f"Updated status to {status} at {last_update}")
+    """>
+        Update Status
+    </button>
+</div>
+
+<div class="card">
+    <h3>Loop with Multiline Syntax</h3>
+    <ul>
+        <li $for="""
+            item in [
+                {"id": 1, "label": "First Item"},
+                {"id": 2, "label": "Second Item"},
+                {"id": 3, "label": "Third Item"}
+            ]
+        """>
+            {item['id']}: {item['label']}
+        </li>
+    </ul>
+</div>
+
+---
+status = "Inactive"
+last_update = "Never"
+
+# We can write full Python here with standard quotes!
+import datetime
+
+info = {
+    "status": "Active",
+    "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+}
+
+# Update state
+status = info["status"]
+last_update = info["timestamp"]
+
+print(f"Updated status to {status} at {last_update}")

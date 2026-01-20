@@ -1,5 +1,6 @@
 """Main PyHTML parser orchestrator."""
 import ast
+import re
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any, Union
 
@@ -49,6 +50,29 @@ class PyHTMLParser:
 
         # Interpolation parser (pluggable)
         self.interpolation_parser = JinjaInterpolationParser()
+        
+        # Regex for triple-quoted attributes (compiled once)
+        self._triple_quote_pattern = re.compile(
+            r'([@$:]?\w+)\s*=\s*"""(.*?)"""',
+            re.DOTALL
+        )
+
+    def _preprocess_triple_quotes(self, html_content: str) -> str:
+        """
+        Normalize triple-quoted attributes to standard double-quoted attributes.
+        
+        Finds patterns like @click=\"\"\"...\"\"\" or $for=\"\"\"...\"\"\",
+        escapes any inner double quotes as &quot;, then replaces the triple
+        quotes with standard double quotes so lxml can parse them.
+        """
+        def replacer(match: re.Match) -> str:
+            attr_name = match.group(1)
+            content = match.group(2)
+            # Escape inner double quotes for HTML attribute compatibility
+            escaped = content.replace('"', '&quot;')
+            return f'{attr_name}="{escaped}"'
+        
+        return self._triple_quote_pattern.sub(replacer, html_content)
 
     def parse_file(self, file_path: Path) -> ParsedPyHTML:
         """Parse a .pyhtml file."""
@@ -138,6 +162,10 @@ class PyHTMLParser:
         template_nodes = []
         
         if template_html.strip():
+            # Pre-process: Normalize triple-quoted attributes to standard quotes
+            # This allows @click="""...""" syntax with embedded quotes
+            template_html = self._preprocess_triple_quotes(template_html)
+            
             # Pre-process: Replace <head> with <pyhtml-head> to preserve it
             # lxml strips standalone <head> tags in fragment mode
             import re

@@ -1,5 +1,5 @@
-"""Main code generator orchestrator."""
 import ast
+import textwrap
 from typing import Dict, List, Type, Tuple, Set, Optional
 
 from pyhtml.compiler.ast_nodes import (
@@ -407,6 +407,18 @@ class CodeGenerator:
     def _transform_inline_code(self, code: str, known_methods: Set[str] = None, async_methods: Set[str] = None) -> Tuple[List[ast.stmt], List[str]]:
         """Transform inline code: lift arguments and prefix globals with self."""
         import builtins
+        
+        # Handle dedent edge case: if first line has content but no indentation (e.g. comment),
+        # textwrap.dedent treats common indentation as 0. Dedent subsequent lines independently.
+        if code and not code[0].isspace():
+            lines = code.splitlines(keepends=True)
+            if len(lines) > 1:
+                # Dedent everything after the first line
+                code = lines[0] + textwrap.dedent("".join(lines[1:]))
+            else:
+                code = textwrap.dedent(code)
+        else:
+            code = textwrap.dedent(code)
         
         tree = ast.parse(code)
         extracted_args = []

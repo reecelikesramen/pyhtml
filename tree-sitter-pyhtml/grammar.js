@@ -79,9 +79,24 @@ module.exports = grammar({
         ),
 
         attribute_value: $ => choice(
+            // Triple-quoted Python block
+            $._triple_quoted_value,
+            // Standard quoted values
             seq('"', alias(/[^"]*/, $.attribute_content), '"'),
             seq("'", alias(/[^']*/, $.attribute_content), "'")
         ),
+
+        _triple_quoted_value: $ => seq(
+            '"""',
+            optional(alias($._triple_quoted_content, $.python_code)),
+            '"""'
+        ),
+
+        // Match content that doesn't contain """.
+        // Strategy: Match non-quotes, OR quote followed by non-quote, OR two quotes followed by non-quote.
+        // This implicitly means the content cannot END with a quote (must be followed by newline/space/etc).
+        // This is a reasonable limitation for multiline code blocks which usually end with newline.
+        _triple_quoted_content: $ => /([^"]|"[^"]|""[^"])+/,
 
         interpolation: $ => seq(
             '{',

@@ -314,6 +314,10 @@
       "type": "CHOICE",
       "members": [
         {
+          "type": "SYMBOL",
+          "name": "_triple_quoted_value"
+        },
+        {
           "type": "SEQ",
           "members": [
             {
@@ -358,6 +362,40 @@
           ]
         }
       ]
+    },
+    "_triple_quoted_value": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "\"\"\""
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "ALIAS",
+              "content": {
+                "type": "SYMBOL",
+                "name": "_triple_quoted_content"
+              },
+              "named": true,
+              "value": "python_code"
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "STRING",
+          "value": "\"\"\""
+        }
+      ]
+    },
+    "_triple_quoted_content": {
+      "type": "PATTERN",
+      "value": "([^\"]|\"[^\"]|\"\"[^\"])+"
     },
     "interpolation": {
       "type": "SEQ",

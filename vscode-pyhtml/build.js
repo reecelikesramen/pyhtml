@@ -14,6 +14,13 @@ async function main() {
     platform: "node",
     outfile: "out/extension.js",
     external: ["vscode"],
+    // Inject import_meta polyfill for web-tree-sitter which uses import.meta.url
+    banner: {
+      js: "var import_meta = { url: require('url').pathToFileURL(__filename).href };",
+    },
+    define: {
+      "import.meta.url": "import_meta.url",
+    },
     logLevel: "warning",
     plugins: [
       {

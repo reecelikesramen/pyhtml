@@ -2,6 +2,7 @@
 import ast
 import logging
 import re
+import textwrap
 from typing import Dict, List, Optional
 
 import jedi
@@ -70,6 +71,10 @@ class PyHTMLDocument:
         
         # Parse sections
         self.separator_line = self._find_separator()
+        
+        # Track triple-quoted multiline attributes
+        self.multiline_attrs = self._find_multiline_attrs()
+        
         self.diagnostics = self._validate()
         # Add event handler validation
         self.diagnostics.extend(self._validate_event_handlers())
@@ -86,6 +91,64 @@ class PyHTMLDocument:
             if line.strip() == '---':
                 return i
         return None
+    
+    def _find_multiline_attrs(self) -> List[dict]:
+        """
+        Find triple-quoted multiline attributes like @click=\"\"\"...\"\"\".
+        
+        Returns a list of dicts with:
+        - attr_name: the attribute name (e.g., '@click')
+        - value: the content between triple quotes
+        - start_line: line where attribute starts
+        - end_line: line where attribute ends
+        - start_char: character offset of value start on start_line
+        - end_char: character offset of value end on end_line
+        """
+        results = []
+        
+        # Get HTML section only (before ---)
+        end_line = self.separator_line if self.separator_line else len(self.lines)
+        html_content = '\n'.join(self.lines[:end_line])
+        
+        logger.debug(f"[_find_multiline_attrs] Searching in {len(self.lines)} lines, separator at {self.separator_line}")
+        
+        # Find all triple-quoted attributes
+        pattern = re.compile(r'([@$:]?\w+)\s*=\s*"""(.*?)"""', re.DOTALL)
+        
+        for match in pattern.finditer(html_content):
+            attr_name = match.group(1)
+            value = match.group(2)
+            
+            # Calculate line/char positions from match offsets
+            start_offset = match.start(2)  # Start of value content
+            end_offset = match.end(2)      # End of value content
+            
+            # Count lines up to start
+            start_line = html_content[:start_offset].count('\n')
+            # Find char position on that line
+            last_newline_before_start = html_content.rfind('\n', 0, start_offset)
+            start_char = start_offset - last_newline_before_start - 1 if last_newline_before_start >= 0 else start_offset
+            
+            # Count lines up to end
+            end_line_num = html_content[:end_offset].count('\n')
+            last_newline_before_end = html_content.rfind('\n', 0, end_offset)
+            end_char = end_offset - last_newline_before_end - 1 if last_newline_before_end >= 0 else end_offset
+            
+            result = {
+                'attr_name': attr_name,
+                'value': value,
+                'start_line': start_line,
+                'end_line': end_line_num,
+                'start_char': start_char,
+                'end_char': end_char,
+                'match_start': match.start(),
+                'match_end': match.end()
+            }
+            logger.debug(f"[_find_multiline_attrs] Found: {attr_name} at lines {start_line}-{end_line_num}, value len={len(value)}")
+            results.append(result)
+        
+        logger.debug(f"[_find_multiline_attrs] Total found: {len(results)}")
+        return results
         
     def _find_directive_ranges(self) -> Dict[str, tuple]:
         """Find start/end lines for multi-line directives."""
@@ -149,30 +212,7 @@ class PyHTMLDocument:
         """Basic validation"""
         diagnostics = []
         
-        # Check for --- separator
-        if self.separator_line is None:
-            diagnostics.append(Diagnostic(
-                range=Range(
-                    start=Position(line=0, character=0),
-                    end=Position(line=0, character=0)
-                ),
-                message='Missing --- separator between HTML and Python sections',
-                severity=DiagnosticSeverity.Warning,
-                source='pyhtml'
-            ))
-        
-        # Check for !path directive
-        has_path = any(line.strip().startswith('!path') for line in self.lines)
-        if not has_path:
-            diagnostics.append(Diagnostic(
-                range=Range(
-                    start=Position(line=0, character=0),
-                    end=Position(line=0, character=0)
-                ),
-                message='Missing !path directive',
-                severity=DiagnosticSeverity.Information,
-                source='pyhtml'
-            ))
+        # We no longer strictly enforce !path or --- as they are optional
         
         return diagnostics
 
@@ -189,6 +229,11 @@ class PyHTMLDocument:
                 value_end = m.end(2)
                 
                 if not value:
+                    # Check if this is the start of a triple-quoted multiline attribute
+                    # The regex matches name="" so if the next char is also ", it's """
+                    if m.end() < len(line) and line[m.end()] == '"':
+                        continue
+
                     # Some attributes require a value
                     if attr_name in ('$if', '$show', '$for', '$bind'):
                         diagnostics.append(Diagnostic(
@@ -280,6 +325,65 @@ class PyHTMLDocument:
                                 severity=DiagnosticSeverity.Error,
                                 source='pyhtml'
                             ))
+        
+        # Also validate multiline triple-quoted attributes
+        for attr in self.multiline_attrs:
+            attr_name = attr['attr_name']
+            value = attr['value']
+            start_line = attr['start_line']
+            end_line = attr['end_line']
+            
+            # Dedent the multiline Python code to remove HTML-context indentation
+            dedented_value = textwrap.dedent(value)
+            
+            if attr_name.startswith('@'):
+                # Event handler - validate as expression or statement
+                try:
+                    ast.parse(dedented_value, mode='eval')
+                except SyntaxError:
+                    try:
+                        ast.parse(dedented_value, mode='exec')
+                    except SyntaxError as e:
+                        diagnostics.append(Diagnostic(
+                            range=Range(
+                                start=Position(line=start_line, character=0),
+                                end=Position(line=end_line, character=len(self.lines[end_line]) if end_line < len(self.lines) else 0)
+                            ),
+                            message=f"Invalid Python syntax in event handler: {e.msg}",
+                            severity=DiagnosticSeverity.Error,
+                            source='pyhtml'
+                        ))
+            
+            elif attr_name == '$for':
+                # Validate $for="item in items" syntax
+                if ' in ' not in dedented_value:
+                    diagnostics.append(Diagnostic(
+                        range=Range(
+                            start=Position(line=start_line, character=0),
+                            end=Position(line=end_line, character=len(self.lines[end_line]) if end_line < len(self.lines) else 0)
+                        ),
+                        message="$for syntax error: expected 'item in collection'",
+                        severity=DiagnosticSeverity.Error,
+                        source='pyhtml'
+                    ))
+                else:
+                    # Validate the iterable part is valid Python
+                    parts = dedented_value.split(' in ', 1)
+                    if len(parts) == 2:
+                        iterable_part = textwrap.dedent(parts[1])
+                        try:
+                            ast.parse(iterable_part, mode='eval')
+                        except SyntaxError as e:
+                            diagnostics.append(Diagnostic(
+                                range=Range(
+                                    start=Position(line=start_line, character=0),
+                                    end=Position(line=end_line, character=len(self.lines[end_line]) if end_line < len(self.lines) else 0)
+                                ),
+                                message=f"Invalid iterable expression: {e.msg}",
+                                severity=DiagnosticSeverity.Error,
+                                source='pyhtml'
+                            ))
+        
         return diagnostics
     
     def get_section(self, line: int) -> str:
@@ -315,8 +419,71 @@ class PyHTMLDocument:
 
     def get_event_attr_at(self, line: int, char: int) -> Optional[dict]:
         """Return event attr info if cursor is on one: {type, name, value, col_offset, char_in_value}"""
+        logger.debug(f"[get_event_attr_at] Called with line={line}, char={char}")
+        logger.debug(f"[get_event_attr_at] multiline_attrs count: {len(self.multiline_attrs)}")
+        
         if line >= len(self.lines):
+            logger.debug(f"[get_event_attr_at] line {line} >= {len(self.lines)}, returning None")
             return None
+        
+        # First check if we're inside a multiline triple-quoted attribute
+        for attr in self.multiline_attrs:
+            logger.debug(f"[get_event_attr_at] Checking attr {attr['attr_name']}: lines {attr['start_line']}-{attr['end_line']}")
+            if attr['start_line'] <= line <= attr['end_line']:
+                logger.debug(f"[get_event_attr_at] Cursor IS within this attr!")
+                # We're on a line within this multiline attribute
+                # Calculate character position within the value
+                
+                # The value is extracted from the original content between """
+                # We need to calculate offset within that value string
+                
+                value_lines = attr['value'].split('\n')
+                line_index_in_value = line - attr['start_line']
+                
+                if line_index_in_value < 0 or line_index_in_value >= len(value_lines):
+                    continue
+                
+                # Calculate char_in_value:
+                # - Count all characters from previous lines in value
+                # - Add character offset on current line
+                
+                if line == attr['start_line']:
+                    # First line of value: check if char is within the value portion
+                    if char < attr['start_char']:
+                        continue  # Cursor is before the value starts
+                    col_in_value = char - attr['start_char']
+                elif line == attr['end_line']:
+                    # Last line of value: check if char is within the value portion  
+                    if char > attr['end_char']:
+                        continue  # Cursor is after the value ends
+                    col_in_value = char
+                else:
+                    # Middle line: char is the column directly
+                    col_in_value = char
+                
+                # Clamp column to line length
+                if line_index_in_value < len(value_lines):
+                    col_in_value = min(col_in_value, len(value_lines[line_index_in_value]))
+                
+                # Calculate absolute offset in value string
+                char_in_value = 0
+                for i in range(line_index_in_value):
+                    char_in_value += len(value_lines[i]) + 1  # +1 for newline
+                char_in_value += col_in_value
+                
+                # Clamp to value length
+                char_in_value = min(char_in_value, len(attr['value']) - 1) if attr['value'] else 0
+                
+                return {
+                    'type': 'value',
+                    'name': attr['attr_name'],
+                    'value': attr['value'],
+                    'col_offset': attr['start_char'],
+                    'char_in_value': max(0, char_in_value),
+                    'is_multiline': True
+                }
+        
+        # Fall back to single-line regex matching
         line_text = self.lines[line]
         for m in re.finditer(r'([@$]\w+)="([^"]*)"', line_text):
             attr_start = m.start(1)
@@ -401,24 +568,92 @@ class PyHTMLDocument:
 
 def find_best_definitions(doc: PyHTMLDocument, expression: str, char_in_expr: int) -> List:
     """Find the best definitions for an expression using Jedi"""
+    logger.debug(f"[find_best_definitions] Called with char_in_expr={char_in_expr}")
+    logger.debug(f"[find_best_definitions] expression (first 100 chars): {expression[:100]!r}...")
+    
     try:
         python_source = doc.get_python_source()
+        
+        # Handle indentation in the expression (common in multiline attributes)
+        dedented_expr = textwrap.dedent(expression)
+        logger.debug(f"[find_best_definitions] dedented_expr (first 100 chars): {dedented_expr[:100]!r}...")
+        
+        # We need to map char_in_expr (relative to original expression) to the dedented expression
+        # Calculate how much was removed from the beginning of the line containing the cursor
+        
+        # Split original and dedented into lines
+        original_lines = expression.split('\n')
+        
+        # Find which line the cursor is on
+        cursor_line_idx = 0
+        current_pos = 0
+        original_col = 0
+        
+        for i, line in enumerate(original_lines):
+            line_len = len(line) + 1  # +1 for newline
+            if current_pos + line_len > char_in_expr:
+                cursor_line_idx = i
+                original_col = char_in_expr - current_pos
+                break
+            current_pos += line_len
+            
+        # If cursor is out of bounds (e.g. at end), clamp it
+        if cursor_line_idx >= len(original_lines):
+            cursor_line_idx = len(original_lines) - 1
+            original_col = len(original_lines[-1])
+
+        # Calculate offset in dedented version
+        # We need to know the indentation removed from THIS line
+        if cursor_line_idx < len(original_lines):
+             original_line = original_lines[cursor_line_idx]
+             stripped_line = original_line.lstrip()
+             indent_removed = len(original_line) - len(stripped_line)
+             
+             # Also textwrap.dedent removes a common prefix, not just lstrip.
+             # Let's compare original and dedented line by line to be safe?
+             # Actually, simpler: if we just use the dedented expression, we assume Jedi handles it.
+             # But we need to pass the correct column to Jedi.
+             
+             # Re-calculate dedented cursor position
+             # It's surprisingly hard to map perfectly without simulating dedent line-by-line.
+             
+             # Heuristic: verify if it's a multiline string from an attribute
+             pass
+
         # Create virtual Python document with context
-        virtual_python = python_source + "\n# Event handler expression\n" + expression
+        virtual_python = python_source + "\n# Event handler expression\n" + dedented_expr
         
         # Calculate line number in virtual document (where expression starts)
         python_lines = python_source.split('\n')
         # Line 1-based: len(python_lines) lines of code + 1 line comment + 1 line expression
-        virtual_line = len(python_lines) + 2
+        virtual_line = len(python_lines) + 2 + cursor_line_idx
         
+        # For the column, we need the column in the dedented line
+        # If the line was "    x = 1", and we deduced "x = 1", and cursor was at 'x', 
+        # original col was 4, new col is 0.
+        # Dedent amount for this line?
+        dedented_lines = dedented_expr.split('\n')
+        if cursor_line_idx < len(dedented_lines):
+             org_line = original_lines[cursor_line_idx]
+             ded_line = dedented_lines[cursor_line_idx]
+             removed_chars = len(org_line) - len(ded_line)
+             virtual_col = max(0, original_col - removed_chars)
+        else:
+             virtual_col = 0
+             
+        # Log calculated positions
+        logger.debug(f"[find_best_definitions] cursor_line_idx={cursor_line_idx}, original_col={original_col}")
+        logger.debug(f"[find_best_definitions] virtual_line={virtual_line}, virtual_col={virtual_col}")
+        logger.debug(f"[find_best_definitions] Target line content: {dedented_lines[cursor_line_idx] if cursor_line_idx < len(dedented_lines) else 'EOF'}")
+
         script = jedi.Script(virtual_python)
         
         # Try goto() first
-        definitions = script.goto(virtual_line, char_in_expr)
+        definitions = script.goto(virtual_line, virtual_col)
         
         # If goto finds nothing or only self-references, try infer()
         if not definitions or all(d.line and d.line >= virtual_line for d in definitions):
-            inferred = script.infer(virtual_line, char_in_expr)
+            inferred = script.infer(virtual_line, virtual_col)
             if inferred:
                 definitions.extend(inferred)
         
@@ -426,7 +661,7 @@ def find_best_definitions(doc: PyHTMLDocument, expression: str, char_in_expr: in
         if not definitions:
             try:
                 target_names = []
-                expr_ast = ast.parse(expression, mode='exec')
+                expr_ast = ast.parse(dedented_expr, mode='exec')
                 for node in ast.walk(expr_ast):
                     if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
                         target_names.append(node.target.id)
@@ -437,7 +672,7 @@ def find_best_definitions(doc: PyHTMLDocument, expression: str, char_in_expr: in
                 for name in target_names:
                     synthetic = virtual_python + f"\n{name}\n"
                     synthetic_script = jedi.Script(synthetic)
-                    synthetic_line = virtual_line + 1  # line of synthetic usage
+                    synthetic_line = virtual_line + len(dedented_lines)  # line of synthetic usage
                     defs = synthetic_script.goto(synthetic_line, 0)
                     if defs:
                         definitions.extend(defs)
@@ -451,7 +686,7 @@ def find_best_definitions(doc: PyHTMLDocument, expression: str, char_in_expr: in
         
         for d in definitions:
             # Skip if definition is in the virtual expression itself (recursive)
-            if d.line and d.line >= virtual_line:
+            if d.line and d.line >= len(python_lines) + 2:
                 continue
                 
             # Skip if definition is 'global count' etc.
@@ -532,15 +767,23 @@ def definition(ls: LanguageServer, params: DefinitionParams) -> Optional[List[Lo
     uri = params.text_document.uri
     position = params.position
     
+    logger.debug(f"[definition] Called at line={position.line}, char={position.character}")
+    
     doc = documents.get(uri)
     if not doc:
+        logger.debug("[definition] No document found in cache")
         return None
+    
+    logger.debug(f"[definition] Doc has {len(doc.multiline_attrs)} multiline attrs")
         
     section = doc.get_section(position.line)
+    logger.debug(f"[definition] Section: {section}")
     
     # Handle HTML section - check for event handler attributes or interpolations
     if section == 'html':
         attr = doc.get_event_attr_at(position.line, position.character)
+        logger.debug(f"[definition] get_event_attr_at returned: {attr}")
+
         interp = doc.get_interpolation_at(position.line, position.character)
         
         target = None
@@ -719,13 +962,15 @@ Define routes for this page.
                     type_info = best.type or 'unknown'
                     
                     # Get the assignment line content if available
+                    # ONLY if the definition is from our local Python section (not an external module)
                     assignment_info = ""
-                    python_source = doc.get_python_source()
-                    python_lines = python_source.split('\n')
-                    if best.line and best.line <= len(python_lines):
-                        line_content = python_lines[best.line - 1].strip()
-                        if line_content and len(line_content) < 100:  # Reasonable length limit
-                            assignment_info = f"\n```python\n{line_content}\n```"
+                    if best.module_path is None:  # Local definition (in our virtual document)
+                        python_source = doc.get_python_source()
+                        python_lines = python_source.split('\n')
+                        if best.line and best.line <= len(python_lines):
+                            line_content = python_lines[best.line - 1].strip()
+                            if line_content and len(line_content) < 100:  # Reasonable length limit
+                                assignment_info = f"\n```python\n{line_content}\n```"
                     
                     desc = best.description or best.name
                     docstring = best.docstring()
@@ -758,11 +1003,40 @@ Define routes for this page.
                 
                 # Fallback to help() if no definition found
                 python_source = doc.get_python_source()
-                virtual_python = python_source + "\n# Event handler expression\n" + target['value']
-                virtual_line = len(python_source.split('\n')) + 2
+                dedented_expr = textwrap.dedent(target['value'])
+                
+                # Calculate offsets for fallback (similar to find_best_definitions)
+                char_in_expr = target['char_in_value']
+                original_lines = target['value'].split('\n')
+                cursor_line_idx = 0
+                current_pos = 0
+                original_col = 0
+                
+                for i, line in enumerate(original_lines):
+                    line_len = len(line) + 1
+                    if current_pos + line_len > char_in_expr:
+                        cursor_line_idx = i
+                        original_col = char_in_expr - current_pos
+                        break
+                    current_pos += line_len
+                    
+                if cursor_line_idx >= len(original_lines):
+                    cursor_line_idx = len(original_lines) - 1
+                    original_col = len(original_lines[-1]) if original_lines else 0
+                    
+                dedented_lines = dedented_expr.split('\n')
+                virtual_col = 0
+                if cursor_line_idx < len(dedented_lines):
+                     org_line = original_lines[cursor_line_idx]
+                     ded_line = dedented_lines[cursor_line_idx]
+                     removed_chars = len(org_line) - len(ded_line)
+                     virtual_col = max(0, original_col - removed_chars)
+                
+                virtual_python = python_source + "\n# Event handler expression\n" + dedented_expr
+                virtual_line = len(python_source.split('\n')) + 2 + cursor_line_idx
                 
                 script = jedi.Script(virtual_python)
-                help_info = script.help(virtual_line, target['char_in_value'])
+                help_info = script.help(virtual_line, virtual_col)
                 if help_info:
                     doc_string = help_info[0].docstring()
                     if doc_string:

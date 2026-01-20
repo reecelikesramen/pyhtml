@@ -13,6 +13,36 @@
       "include": "#html-content"
     }
   ],
+  "injections": {
+    "L:meta.tag.structure - (meta.embedded | source.python)": {
+      "patterns": [
+        {
+          "include": "#triple-quoted-attr"
+        }
+      ]
+    },
+    "L:meta.tag.inline - (meta.embedded | source.python)": {
+      "patterns": [
+        {
+          "include": "#triple-quoted-attr"
+        }
+      ]
+    },
+    "L:meta.tag.block - (meta.embedded | source.python)": {
+      "patterns": [
+        {
+          "include": "#triple-quoted-attr"
+        }
+      ]
+    },
+    "L:meta.tag.other - (meta.embedded | source.python)": {
+      "patterns": [
+        {
+          "include": "#triple-quoted-attr"
+        }
+      ]
+    }
+  },
   "repository": {
     "directives": {
       "match": "^\\s*(!\\w+)",
@@ -25,7 +55,7 @@
           "name": "punctuation.separator.pyhtml"
         }
       },
-      "end": "$^",
+      "end": "\\z",
       "contentName": "meta.embedded.block.python",
       "patterns": [
         {
@@ -36,10 +66,40 @@
     "html-content": {
       "patterns": [
         {
+          "include": "#triple-quoted-attr"
+        },
+        {
           "include": "#interpolation"
         },
         {
           "include": "text.html.basic"
+        }
+      ]
+    },
+    "triple-quoted-attr": {
+      "begin": "([@$:]?\\w+)(\\s*)(=)(\\s*)(\"\"\")\\s*",
+      "end": "\"\"\"(?=\\s*>)",
+      "applyEndPatternLast": 0,
+      "beginCaptures": {
+        "1": {
+          "name": "entity.other.attribute-name.pyhtml"
+        },
+        "3": {
+          "name": "punctuation.separator.key-value.html"
+        },
+        "5": {
+          "name": "punctuation.definition.string.begin.pyhtml"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.pyhtml"
+        }
+      },
+      "contentName": "meta.embedded.block.python",
+      "patterns": [
+        {
+          "include": "source.python"
         }
       ]
     },
