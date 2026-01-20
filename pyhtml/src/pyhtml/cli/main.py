@@ -15,8 +15,39 @@ def cli():
 @click.option('--port', default=3000, type=int, help='Port to bind to')
 @click.option('--reload', is_flag=True, help='Enable auto-reload')
 @click.option('--pages-dir', default='pages', help='Directory containing .pyhtml files')
-def dev(host, port, reload, pages_dir):
+@click.option('--webtransport/--no-webtransport', default=None, help='Enable/disable WebTransport (HTTP/3)')
+@click.pass_context
+def dev(ctx, host, port, reload, pages_dir, webtransport):
     """Start development server."""
+    # Check if defaults are being used, and if so, check config file
+    from pyhtml.config import load_config
+    
+    # Check context.parameter_source to see if args were provided via CLI
+    # If not provided via CLI, check config file
+    config_defaults = load_config()
+    
+    if config_defaults:
+        # We only want to apply config defaults if the value is currently the default
+        # AND the user didn't explicitly provide it via CLI.
+        # However, click validation happens before this.
+        # A clearer way is to update defaults before parsing? No, too late.
+        
+        # Click's recommended way: context.default_map
+        # But we are already inside the command.
+        # We can just check parameter source.
+        
+        for param in ctx.command.params:
+             name = param.name
+             if name in config_defaults:
+                 # Check if user provided this arg
+                 if ctx.get_parameter_source(name) == click.core.ParameterSource.DEFAULT:
+                     # Modify local variable for the function execution
+                     if name == 'host': host = config_defaults[name]
+                     if name == 'port': port = config_defaults[name]
+                     if name == 'reload': reload = config_defaults[name]
+                     if name == 'pages_dir': pages_dir = config_defaults[name]
+                     if name == 'webtransport': webtransport = config_defaults[name]
+    
     import asyncio
     from pyhtml.runtime.dev_server import run_dev_server
 
@@ -26,7 +57,8 @@ def dev(host, port, reload, pages_dir):
         host=host,
         port=port,
         reload=reload,
-        pages_dir=Path(pages_dir)
+        pages_dir=Path(pages_dir),
+        enable_webtransport=webtransport
     ))
 
 

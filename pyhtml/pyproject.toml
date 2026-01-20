@@ -28,12 +28,14 @@ dev = [
 ]
 webtransport = [
     "aioquic>=0.9.0",
-    "hypercorn>=0.14.0",
+    "hypercorn @ git+https://github.com/reecelikesramen/hypercorn.git",
+    "starlette @ git+https://github.com/reecelikesramen/starlette.git",
 ]
 # Alias for backwards compatibility
 http3 = [
     "aioquic>=0.9.0",
-    "hypercorn>=0.14.0",
+    "hypercorn @ git+https://github.com/reecelikesramen/hypercorn.git",
+    "starlette @ git+https://github.com/reecelikesramen/starlette.git",
 ]
 
 [project.scripts]

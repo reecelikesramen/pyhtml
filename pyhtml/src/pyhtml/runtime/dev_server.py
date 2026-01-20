@@ -68,7 +68,7 @@ def _generate_cert():
     return cert_path, key_path, fingerprint
 
 
-async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
+async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path, enable_webtransport: bool | None = None):
     """Run development server with hot reload."""
     from pyhtml.runtime.server import create_app
     import asyncio
@@ -80,18 +80,33 @@ async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
     logging.basicConfig(level=logging.INFO)  # Reduced from DEBUG to avoid spam
     logging.getLogger("hypercorn").setLevel(logging.INFO)
     
-    # Try to import Hypercorn for HTTP/3 support
-    try:
-        from hypercorn.asyncio import serve
-        from hypercorn.config import Config
-        import aioquic
-        HAS_HTTP3 = True
-    except ImportError:
-        HAS_HTTP3 = False
+    HAS_HTTP3 = False
+    if enable_webtransport is not False:
+        # Try to import Hypercorn for HTTP/3 support
+        try:
+            from hypercorn.asyncio import serve
+            from hypercorn.config import Config
+            import aioquic
+            HAS_HTTP3 = True
+        except ImportError:
+            if enable_webtransport is True:
+                # Explicitly requested but missing deps
+                print("Error: WebTransport requested but dependencies are missing.")
+                print("Run `pip install 'pyhtml[webtransport]'` to enable HTTP/3 support.")
+                return
+            # Auto-mode: just fallback silently (or with info log)
+            HAS_HTTP3 = False
     
-    
+    if not HAS_HTTP3 and enable_webtransport is True:
+        # Should have been caught above, but safety check
+        return
+
     if not HAS_HTTP3:
-        print("PyHTML: HTTP/3 (WebTransport) disabled. Install 'aioquic' and 'hypercorn' to enable.")
+        if enable_webtransport is None:
+             # Only print if we checked and failed/disabled
+             print("PyHTML: HTTP/3 (WebTransport) disabled. Install 'aioquic' and 'hypercorn' to enable.")
+        else:
+             print("PyHTML: HTTP/3 (WebTransport) explicitly disabled.")
 
     # Create shutdown event
     shutdown_event = asyncio.Event()
