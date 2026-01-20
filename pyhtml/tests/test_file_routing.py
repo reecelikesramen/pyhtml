@@ -179,5 +179,51 @@ class TestFileRouting(unittest.TestCase):
         # Sub page should have sub layout
         self.assertIn(( norm(sub / "page.pyhtml"), norm(sub_layout) ), loaded_normalized)
 
+    def test_disable_path_based_routing(self):
+        """Test that path_based_routing=False ignores implicit routes but keeps explicit ones."""
+        # Re-init app with path_based_routing=False
+        from pyhtml.runtime.app import PyHTML
+        self.app = PyHTML(str(self.tmp_path), path_based_routing=False)
+        self.app.loader = MockLoader()
+        
+        # 1. Implicit page (should be IGNORED)
+        (self.tmp_path / "implicit.pyhtml").touch()
+        
+        # 2. Explicit page (should be KEPT)
+        explicit = self.tmp_path / "explicit.pyhtml"
+        explicit.touch()
+        
+        # We need MockLoader to return a class with __routes__ for the explicit one
+        # This requires a bit of mocking magic since MockLoader is simple
+        original_load = self.app.loader.load
+        
+        def mock_load(path, **kwargs):
+            cls = original_load(path, **kwargs)
+            if path.name == "explicit.pyhtml":
+                cls.__routes__ = {"main": "/explicit"}
+            return cls
+            
+        self.app.loader.load = mock_load
+        
+        self.app._scan_directory(self.tmp_path)
+        
+        routes = {r.pattern for r in self.app.router.routes}
+        self.assertNotIn("/implicit", routes)
+        self.assertIn("/explicit", routes)
+
+    def test_enable_path_based_routing(self):
+        """Test that path_based_routing=True (default) enables implicit routes."""
+        # Re-init app with path_based_routing=True
+        from pyhtml.runtime.app import PyHTML
+        self.app = PyHTML(str(self.tmp_path), path_based_routing=True)
+        self.app.loader = MockLoader()
+        
+        (self.tmp_path / "implicit.pyhtml").touch()
+        
+        self.app._scan_directory(self.tmp_path)
+        
+        routes = {r.pattern for r in self.app.router.routes}
+        self.assertIn("/implicit", routes)
+
 if __name__ == '__main__':
     unittest.main()
