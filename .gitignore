@@ -32,6 +32,7 @@ Thumbs.db
 chatbot.db
 .coverage
 htmlcov/
+*.pem
 
 # Demo app
 demo-app/.pyhtml_cache/
@@ -40,3 +41,5 @@ demo-app/.pyhtml_cache/
 node_modules/
 
 out/
+
+notes/

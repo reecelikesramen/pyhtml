@@ -1202,10 +1202,9 @@ class CodeGenerator:
             spa_meta = f'''
     # Inject SPA navigation metadata
     import json
-    # Use global config if available, otherwise default
-    from pyhtml.config import config
     
-    pjax_enabled = getattr(config, 'enable_pjax', False)
+    # Check app state for global config
+    pjax_enabled = getattr(self.request.app.state, 'enable_pjax', False)
     
     if getattr(self, "__spa_enabled__", False) or pjax_enabled:
         sibling_paths = getattr(self, "__sibling_paths__", [])

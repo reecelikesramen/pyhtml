@@ -20,12 +20,42 @@ from pyhtml.runtime.error_page import ErrorPage
 from pyhtml.runtime.upload_manager import upload_manager
 
 
-class PyHTMLApp:
-    """Main ASGI application."""
+class PyHTML:
+    """Main ASGI application and configuration."""
 
-    def __init__(self, pages_dir: Path, reload: bool = False):
-        self.reload = reload
-        self.pages_dir = Path(pages_dir)
+    def __init__(
+        self, 
+        pages_dir: Optional[str] = None, 
+        path_based_routing: bool = True,
+        enable_pjax: bool = True,
+        debug: bool = False,
+        enable_webtransport: bool = False
+    ):
+        if pages_dir is None:
+            # Auto-discovery
+            cwd = Path.cwd()
+            potential_paths = [
+                cwd / "pages",
+                cwd / "src" / "pages"
+            ]
+            
+            discovered = False
+            for path in potential_paths:
+                if path.exists() and path.is_dir():
+                    self.pages_dir = path
+                    discovered = True
+                    break
+            
+            if not discovered:
+                # Default to 'pages' and let it fail/warn later if missing
+                self.pages_dir = Path("pages")
+        else:
+            self.pages_dir = Path(pages_dir)
+        self.path_based_routing = path_based_routing
+        self.enable_pjax = enable_pjax
+        self.debug = debug
+        self.enable_webtransport = enable_webtransport
+        
         self.router = Router()
         
         from pyhtml.runtime.loader import get_loader
@@ -64,6 +94,10 @@ class PyHTMLApp:
             # Default page handler
             Route('/{path:path}', self._handle_request, methods=['GET', 'POST'])
         ])
+        
+        # Store configuration in app state for runtime access (e.g. by pages)
+        self.app.state.enable_pjax = self.enable_pjax
+        self.app.state.debug = self.debug
     
     async def _handle_capabilities(self, request: Request) -> JSONResponse:
         """Return server transport capabilities for client negotiation."""
@@ -113,9 +147,6 @@ class PyHTMLApp:
 
     def _load_pages(self):
         """Discover and compile all .pyhtml files."""
-        # Config options (e.g. trailing slash) could be used here
-        from pyhtml.config import config
-        
         # Scan pages directory
         # We need to sort files to ensure deterministic order but scanning is recursive
         self._scan_directory(self.pages_dir)
@@ -205,8 +236,8 @@ class PyHTMLApp:
                     elif hasattr(page_class, '__route__') and page_class.__route__:
                          # Should not happen as __route__ is derived from __routes__ usually
                          self.router.add_page(page_class)
-                    else:
-                         # No explicit !path, use file-based route
+                    elif self.path_based_routing:
+                         # No explicit !path, use file-based route ONLY if enabled
                          self.router.add_route(route_path, page_class)
                          
                 except Exception as e:

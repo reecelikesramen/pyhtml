@@ -74,13 +74,13 @@ class TestFileRouting(unittest.TestCase):
         }
         self.original_modules = mock_modules(self.mocks)
         
-        from pyhtml.runtime.app import PyHTMLApp
+        from pyhtml.runtime.app import PyHTML
         from pyhtml.runtime.router import Router
         
         self.test_dir = tempfile.mkdtemp()
         self.tmp_path = Path(self.test_dir)
         
-        self.app = PyHTMLApp(self.tmp_path)
+        self.app = PyHTML(str(self.tmp_path))
         self.app.loader = MockLoader()
         self.app.router = Router()
 
