@@ -1,8 +1,11 @@
 - [ ] MessagePack or Protobuf
-- [ ] Disable WebTransport initial handshake, make it a python feature and need to make it work
+- [x] Disable WebTransport initial handshake, make it a python feature and need to make it work
 - [x] Treesitter language definition > TextMate language
-- [ ] Form handling
-- [ ] Path-based routing option over path dict routing
+- [x] Form handling
+  - [ ] LSP support 
+- [x] Path-based routing option over path dict routing
+  - [x] PJAX for path-based routing
+  - [ ] LSP support
 - [ ] SPA prevent changing URL if cannot connect to server
 - [ ] Make sure HTTP fallback is LongPolling protocol
 - [ ] More lifecycle than on_load

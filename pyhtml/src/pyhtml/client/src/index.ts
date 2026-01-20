@@ -24,6 +24,7 @@ export class PyHTMLApp {
     private config: PyHTMLConfig;
     private siblingPaths: string[] = [];
     private pathRegexes: RegExp[] = [];
+    private pjaxEnabled = false;
 
     constructor(config: Partial<PyHTMLConfig> = {}) {
         this.config = { ...DEFAULT_CONFIG, ...config };
@@ -55,7 +56,7 @@ export class PyHTMLApp {
         // Setup event interception
         this.setupEventInterceptors();
 
-        console.log(`PyHTML: Initialized (transport: ${this.transport.getActiveTransport()}, spa_paths: ${this.siblingPaths.length})`);
+        console.log(`PyHTML: Initialized (transport: ${this.transport.getActiveTransport()}, spa_paths: ${this.siblingPaths.length}, pjax: ${this.pjaxEnabled})`);
     }
 
     /**
@@ -67,6 +68,7 @@ export class PyHTMLApp {
             try {
                 const meta = JSON.parse(metaScript.textContent || '{}');
                 this.siblingPaths = meta.sibling_paths || [];
+                this.pjaxEnabled = !!meta.enable_pjax;
                 // Convert path patterns to regexes for matching
                 this.pathRegexes = this.siblingPaths.map(p => this.patternToRegex(p));
             } catch (e) {
@@ -99,7 +101,7 @@ export class PyHTMLApp {
      * Setup SPA navigation for sibling paths.
      */
     private setupSPANavigation(): void {
-        if (this.siblingPaths.length === 0) return;
+        if (this.siblingPaths.length === 0 && !this.pjaxEnabled) return;
 
         // Intercept link clicks
         document.addEventListener('click', (e) => {
@@ -109,8 +111,22 @@ export class PyHTMLApp {
             // Only intercept same-origin links
             if (link.origin !== window.location.origin) return;
 
-            // Check if the path matches a sibling path
-            if (this.isSiblingPath(link.pathname)) {
+            // Ignore special links
+            if (link.hasAttribute('download') || link.target === '_blank') return;
+
+            // Check if matches criteria
+            let shouldIntercept = false;
+
+            if (this.pjaxEnabled) {
+                // If PJAX enabled, intercept all internal paths (unless manually opted out maybe?)
+                // For now, intercept everything same-origin
+                shouldIntercept = true;
+            } else if (this.isSiblingPath(link.pathname)) {
+                // Sibling path logic
+                shouldIntercept = true;
+            }
+
+            if (shouldIntercept) {
                 e.preventDefault();
                 this.navigateTo(link.pathname + link.search);
             }

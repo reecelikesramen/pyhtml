@@ -211,6 +211,17 @@ class CodeGenerator:
 
         # Determine base class
         base_id = 'BasePage'
+        layout_id_hash = None
+        if parsed.file_path:
+            import hashlib
+            layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
+            
+            # Add LAYOUT_ID class attribute
+            class_body.append(ast.Assign(
+                 targets=[ast.Name(id='LAYOUT_ID', ctx=ast.Store())],
+                 value=ast.Constant(value=layout_id_hash)
+            ))
+            
         if parsed.get_directive_by_type(LayoutDirective):
             base_id = '_LayoutBase'
 
@@ -1052,7 +1063,17 @@ class CodeGenerator:
             # 1. Generate slot fillers with unique names based on file path
             # self.template_codegen.generate_slot_methods returns (dict[slot_name: str], list[str])
             file_id = parsed.file_path or ""
-            slot_funcs_methods, aux_funcs = self.template_codegen.generate_slot_methods(parsed.template, file_id=file_id, known_globals=known_globals)
+            
+            # Ensure layout_id is generated for intermediate layouts
+            import hashlib
+            layout_id = hashlib.md5(str(parsed.file_path).encode()).hexdigest() if parsed.file_path else None
+            
+            slot_funcs_methods, aux_funcs = self.template_codegen.generate_slot_methods(
+                parsed.template, 
+                file_id=file_id, 
+                known_globals=known_globals,
+                layout_id=layout_id
+            )
             
             # Generate file hash matching template.py
             import hashlib
@@ -1085,9 +1106,12 @@ class CodeGenerator:
             else:
                 parent_layout_path = str(Path(parent_layout_path).resolve())
             
-            # Use compile-time constant for parent layout ID
+            # Use compile-time constant for parent layout ID (HASHED)
             def make_parent_layout_id():
-                return ast.Constant(value=parent_layout_path)
+                import hashlib
+                # Ensure we hash the absolute string path exactly as the parent would have
+                parent_hash = hashlib.md5(parent_layout_path.encode()).hexdigest()
+                return ast.Constant(value=parent_hash)
 
             for slot_name in slot_funcs_methods.keys():
                 # Sanitize slot name for valid Python identifier (match template.py)
@@ -1155,7 +1179,9 @@ class CodeGenerator:
             
         else:
             # === Standard Mode ===
-            layout_id = str(parsed.file_path) if parsed.file_path else None
+            import hashlib
+            layout_id = hashlib.md5(str(parsed.file_path).encode()).hexdigest() if parsed.file_path else None
+            
             render_str, aux_funcs = self.template_codegen.generate_render_method(parsed.template, layout_id=layout_id,
                                                                                known_methods=known_methods, known_globals=known_globals, async_methods=async_methods)
 
@@ -1176,10 +1202,15 @@ class CodeGenerator:
             spa_meta = f'''
     # Inject SPA navigation metadata
     import json
-    if getattr(self, "__spa_enabled__", False):
+    # Use global config if available, otherwise default
+    from pyhtml.config import config
+    
+    pjax_enabled = getattr(config, 'enable_pjax', False)
+    
+    if getattr(self, "__spa_enabled__", False) or pjax_enabled:
         sibling_paths = getattr(self, "__sibling_paths__", [])
         parts.append('<script id="_pyhtml_spa_meta" type="application/json">')
-        parts.append(json.dumps({{"sibling_paths": sibling_paths}}))
+        parts.append(json.dumps({{"sibling_paths": sibling_paths, "enable_pjax": pjax_enabled}}))
         parts.append('</script>')
 '''
             

@@ -46,7 +46,7 @@ class TemplateCodegen:
                                           known_methods=known_methods, known_globals=known_globals, async_methods=async_methods)
         return main_func, self.auxiliary_functions
 
-    def generate_slot_methods(self, template_nodes: List[TemplateNode], file_id: str = "", known_globals: Set[str] = None) -> Tuple[Dict[str, str], List[str]]:
+    def generate_slot_methods(self, template_nodes: List[TemplateNode], file_id: str = "", known_globals: Set[str] = None, layout_id: str = None) -> Tuple[Dict[str, str], List[str]]:
         """
         Generate slot filler methods for child pages.
         Returns: ({slot_name: function_code}, list_of_auxiliary_function_strs)
@@ -87,7 +87,7 @@ class TemplateCodegen:
             safe_name = slot_name.replace('$', '_head_').replace('-', '_') if slot_name.startswith('$') else slot_name.replace('-', '_')
             # Include file hash to prevent method override in inheritance
             func_name = f'_render_slot_fill_{safe_name}_{file_hash}' if file_hash else f'_render_slot_fill_{safe_name}'
-            slot_funcs[slot_name] = self._generate_function(nodes, func_name, is_async=True, known_globals=known_globals)
+            slot_funcs[slot_name] = self._generate_function(nodes, func_name, is_async=True, known_globals=known_globals, layout_id=layout_id)
             
         return slot_funcs, self.auxiliary_functions
 

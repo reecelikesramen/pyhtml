@@ -1,0 +1,5 @@
+<article>
+    <h3>User Profile</h3>
+    <p>Profile ID: <mark>{id}</mark></p>
+    <p>This route is handled by <code>users/[id].pyhtml</code>.</p>
+</article>

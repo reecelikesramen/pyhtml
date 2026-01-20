@@ -18,23 +18,38 @@ class PageLoader:
         self.codegen = CodeGenerator()
         self._cache: Dict[str, Type[BasePage]] = {}  # path -> compiled class
 
-    def load(self, pyhtml_file: Path, use_cache: bool = True) -> Type[BasePage]:
+    def load(self, pyhtml_file: Path, use_cache: bool = True, implicit_layout: Optional[str] = None) -> Type[BasePage]:
         """Load and compile a .pyhtml file into a page class."""
         # Normalize path
         pyhtml_file = pyhtml_file.resolve()
         path_key = str(pyhtml_file)
         
-        # Check cache first
+        # Check cache first (incorporate layout into key if needed? No, file content + layout dep determines it)
+        # Actually if implicit layout changes, we might need to recompile, but for now assume strict mapping
         if use_cache and path_key in self._cache:
             return self._cache[path_key]
         
         # Parse
         parsed = self.parser.parse_file(pyhtml_file)
 
+        # Inject implicit layout if no explicit layout present
+        if implicit_layout:
+             from pyhtml.compiler.ast_nodes import LayoutDirective
+             if not parsed.get_directive_by_type(LayoutDirective):
+                 # Create directive
+                 # We need to ensure implicit_layout is relative or absolute?
+                 # content relies on load_layout taking a path.
+                 parsed.directives.append(LayoutDirective(
+                     name='layout',
+                     line=0,
+                     column=0,
+                     layout_path=implicit_layout
+                 ))
+
         # Generate code
         module_ast = self.codegen.generate(parsed)
         ast.fix_missing_locations(module_ast)
-
+            
         # Compile and load
         code = compile(module_ast, str(pyhtml_file), 'exec')
         module = type(sys)('pyhtml_page')
@@ -50,8 +65,6 @@ class PageLoader:
                 issubclass(obj, BasePage) and
                 obj is not BasePage and
                 name != '_LayoutBase'):
-                # Assign LAYOUT_ID for identification
-                obj.LAYOUT_ID = str(pyhtml_file)
                 # Cache the compiled class
                 self._cache[path_key] = obj
                 return obj
@@ -85,6 +98,10 @@ class PageLoader:
 
 # Global instance for generated code to use
 _loader_instance = PageLoader()
+
+def get_loader() -> PageLoader:
+    """Get global loader instance."""
+    return _loader_instance
 
 def load_layout(path: str, base_path: str = None) -> Type[BasePage]:
     """Helper for generated code to load layouts."""

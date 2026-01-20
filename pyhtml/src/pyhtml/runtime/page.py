@@ -34,6 +34,10 @@ class BasePage:
         self.url = url
         self.user = None  # Set by middleware
 
+        # Expose params as attributes for easy access in templates
+        for k, v in self.params.items():
+            setattr(self, k, v)
+
         # Framework-managed state
         self.errors: Dict[str, str] = {}
         self.loading: Dict[str, bool] = {}

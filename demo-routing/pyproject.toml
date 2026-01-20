@@ -1,0 +1,15 @@
+[project]
+name = "demo-routing"
+authors = [
+    { name="Reece Holmdahl", email="reecelikesramen@duck.com" },
+]
+version = "0.0.1"
+requires-python = ">=3.11"
+dependencies = [
+    "pyhtml",
+]
+
+[project.scripts]
+demo-app = "main:main"
+
+# This is not a distributable package, just for dependency management

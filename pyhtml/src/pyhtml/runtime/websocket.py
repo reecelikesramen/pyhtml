@@ -310,50 +310,79 @@ class WebSocketHandler:
         
         page_class, params, variant_name = match
         
-        # Verify this is the same page class (sanity check)
-        if type(page) != page_class:
-            print(f"Relocate: Page class mismatch, expected {type(page)}, got {page_class}")
-            return
+        # Always re-instantiate the page on navigation to ensure __init__ runs
+        # with new params/query. This ensures state like self.id (unpacked from params)
+        # is correct for the new route.
+        # Note: We intentionally discard the old page instance and its state.
         
-        # Update params
-        page.params = params
+        # Verify route match (sanity check)
+        if hasattr(page_class, '__routes__'):
+             pass # Route logic handled by match result
+
+        print(f"Relocate: Loading page {page_class.__name__} for {pathname}")
         
-        # Update query
-        if query_string:
-            parsed = parse_qs(query_string)
-            page.query = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
-        else:
-            page.query = {}
-            
-        # Update request object to reflect new path (critical for hot reload)
-        # We need to create a new Request because it's immutable-ish
+        # Create request object
         from starlette.requests import Request
         scope = dict(websocket.scope)
         scope['type'] = 'http'
         scope['path'] = pathname
         scope['raw_path'] = pathname.encode('ascii')
         scope['query_string'] = query_string.encode('ascii') if query_string else b''
-        page.request = Request(scope)
+        request = Request(scope)
         
-        # Update path info dict
+        # Parse query
+        if query_string:
+            parsed = parse_qs(query_string)
+            query = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
+        else:
+            query = {}
+
+        # Build path info
+        path_info = {}
         if hasattr(page_class, '__routes__'):
             for name in page_class.__routes__.keys():
-                page.path[name] = (name == variant_name)
+                path_info[name] = (name == variant_name)
         
-        # Call __on_relocate__ lifecycle hook if it exists
+        # Build URL helper
+        from pyhtml.runtime.router import URLHelper
+        url_helper = None
+        if hasattr(page_class, '__routes__'):
+                url_helper = URLHelper(page_class.__routes__)
+
+        # Instantiate new page
+        new_page = page_class(request, params, query, path=path_info, url=url_helper)
+        
+        # Migrate persistent user state if needed (e.g. auth user)
+        # We don't copy component state because this is a navigation
+        new_page.user = getattr(page, 'user', None)
+        
+        # Replace page instance
+        self.connection_pages[websocket] = new_page
+        
+        # Set update hook
+        async def broadcast_update():
+                up_response = await new_page.render(init=False)
+                up_html = up_response.body.decode('utf-8')
+                await websocket.send_json({
+                    'type': 'update',
+                    'html': up_html
+                })
+        new_page._on_update = broadcast_update
+
+        # Run __on_load lifecycle hook
         stdout_capture = io.StringIO()
         error_capture = None
-
+        
         try:
             with contextlib.redirect_stdout(stdout_capture):
-                if hasattr(page, '__on_relocate__'):
-                    if asyncio.iscoroutinefunction(page.__on_relocate__):
-                        await page.__on_relocate__()
+                if hasattr(new_page, '__on_load'):
+                    if asyncio.iscoroutinefunction(new_page.__on_load):
+                        await new_page.__on_load()
                     else:
-                        page.__on_relocate__()
+                        new_page.__on_load()
                 
-                # Re-render and send update
-                response = await page.render()
+                # Render and send HTML
+                response = await new_page.render()
                 html = response.body.decode('utf-8')
                 
                 await websocket.send_json({
@@ -363,7 +392,7 @@ class WebSocketHandler:
         except Exception:
             error_capture = traceback.format_exc()
             print(error_capture)
-
+            
         # Send captured output
         await self._send_console_message(websocket, stdout_capture.getvalue(), error_capture)
 

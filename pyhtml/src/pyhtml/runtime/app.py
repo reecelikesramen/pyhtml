@@ -28,7 +28,10 @@ class PyHTMLApp:
         self.reload = reload
         self.pages_dir = Path(pages_dir)
         self.router = Router()
-        self.loader = PageLoader()
+        
+        from pyhtml.runtime.loader import get_loader
+        self.loader = get_loader()
+        
         self.ws_handler = WebSocketHandler(self)
         self.http_handler = HTTPTransportHandler(self)
         
@@ -111,15 +114,106 @@ class PyHTMLApp:
 
     def _load_pages(self):
         """Discover and compile all .pyhtml files."""
-        # Find all .pyhtml files
-        for pyhtml_file in self.pages_dir.rglob('*.pyhtml'):
+        # Config options (e.g. trailing slash) could be used here
+        from pyhtml.config import config
+        
+        # Scan pages directory
+        # We need to sort files to ensure deterministic order but scanning is recursive
+        self._scan_directory(self.pages_dir)
+
+    def _scan_directory(self, dir_path: Path, layout_path: Optional[str] = None, url_prefix: str = ""):
+        """Recursively scan directory for pages and layouts."""
+        # 1. Check for layout.pyhtml in this directory
+        current_layout = layout_path
+        potential_layout = dir_path / "layout.pyhtml"
+        if potential_layout.exists():
+            # Compile layout first (it might use the parent layout!)
             try:
-                page_class = self.loader.load(pyhtml_file)
-                self.router.add_page(page_class)
+                # Layouts can inherit from parent layouts too
+                self.loader.load(potential_layout, implicit_layout=layout_path)
+                current_layout = str(potential_layout.resolve())
             except Exception as e:
-                print(f"Failed to load page {pyhtml_file}: {e}")
+                print(f"Failed to load layout {potential_layout}: {e}")
                 traceback.print_exc()
-                self._register_error_page(pyhtml_file, e)
+
+        # 2. Iterate identifiers
+        # Sort to ensure index processed or consistent order
+        try:
+            entries = sorted(list(dir_path.iterdir()))
+        except FileNotFoundError:
+            return
+
+        for entry in entries:
+            if entry.name.startswith('_') or entry.name.startswith('.'):
+                continue
+                
+            if entry.is_dir():
+                # Determine new prefix
+                # Check if it's a param directory [param]
+                name = entry.name
+                new_segment = name
+                
+                # Check for [param] syntax
+                param_match = re.match(r'^\[(.*?)\]$', name)
+                if param_match:
+                     param_name = param_match.group(1)
+                     # Convert to routing syntax :{name} (or whatever Router supports)
+                     # Router supports :name or {name}
+                     new_segment = f"{{{param_name}}}"
+                
+                new_prefix = (url_prefix + "/" + new_segment).replace('//', '/')
+                self._scan_directory(entry, current_layout, new_prefix)
+                
+            elif entry.is_file() and entry.suffix == '.pyhtml':
+                if entry.name == 'layout.pyhtml':
+                    continue # Already handled
+                
+                # Determine route path
+                name = entry.stem # filename without .pyhtml
+                
+                route_segment = name
+                if name == 'index':
+                    route_segment = ""
+                else:
+                    # Check for [param] in filename
+                    param_match = re.match(r'^\[(.*?)\]$', name)
+                    if param_match:
+                         param_name = param_match.group(1)
+                         route_segment = f"{{{param_name}}}"
+                
+                route_path = (url_prefix + "/" + route_segment).replace('//', '/')
+                
+                # Strip trailing slash for index pages (unless root)
+                if route_path != "/" and route_path.endswith('/'):
+                    route_path = route_path.rstrip('/')
+                
+                if not route_path:
+                    route_path = "/"
+                
+                try:
+                    # Load page with implicit layout
+                    page_class = self.loader.load(entry, implicit_layout=current_layout)
+                    
+                    # Register routes
+                    # 1. explicit !path overrides implicit routing?
+                    # Generally yes. If !path exists, we might add those IN ADDITION or INSTEAD.
+                    # Current logic in add_page inspects __routes__ (from !path).
+                    # If present, use that. If not, use implicit route_path.
+                    
+                    if hasattr(page_class, '__routes__') and page_class.__routes__:
+                         # User specified explicit paths
+                         self.router.add_page(page_class)
+                    elif hasattr(page_class, '__route__') and page_class.__route__:
+                         # Should not happen as __route__ is derived from __routes__ usually
+                         self.router.add_page(page_class)
+                    else:
+                         # No explicit !path, use file-based route
+                         self.router.add_route(route_path, page_class)
+                         
+                except Exception as e:
+                    print(f"Failed to load page {entry}: {e}")
+                    traceback.print_exc()
+                    self._register_error_page(entry, e)
 
     def _register_error_page(self, file_path: Path, error: Exception):
         """Register an error page for a failed file."""
