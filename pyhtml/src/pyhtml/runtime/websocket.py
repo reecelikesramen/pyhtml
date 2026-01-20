@@ -2,6 +2,7 @@
 import asyncio
 from typing import Dict, Any, Set
 from starlette.websockets import WebSocket, WebSocketDisconnect
+import msgpack
 
 from pyhtml.runtime.page import BasePage
 import io
@@ -41,7 +42,8 @@ class WebSocketHandler:
             # For this MVP, we'll instantiate the page when an event arrives.
             
             while True:
-                data = await websocket.receive_json()
+                data_bytes = await websocket.receive_bytes()
+                data = msgpack.unpackb(data_bytes, raw=False)
                 await self._process_message(websocket, data)
 
         except WebSocketDisconnect:
@@ -76,20 +78,20 @@ class WebSocketHandler:
         if output:
             lines = output.strip().split('\n')
             if lines:
-                await websocket.send_json({
+                await websocket.send_bytes(msgpack.packb({
                     'type': 'console',
                     'level': 'info',
                     'lines': lines
-                })
+                }))
         
         if error:
             lines = error.strip().split('\n')
             if lines:
-                await websocket.send_json({
+                await websocket.send_bytes(msgpack.packb({
                     'type': 'console',
                     'level': 'error',
                     'lines': lines
-                })
+                }))
 
     async def _handle_event(self, websocket: WebSocket, data: Dict[str, Any]):
         """Handle client event."""
@@ -180,10 +182,10 @@ class WebSocketHandler:
                     # Note: We use init=False to avoid re-running init hooks
                     up_response = await page.render(init=False)
                     up_html = up_response.body.decode('utf-8')
-                    await websocket.send_json({
+                    await websocket.send_bytes(msgpack.packb({
                         'type': 'update',
                         'html': up_html
-                    })
+                    }))
 
                 # Inject update hook
                 page._on_update = broadcast_update
@@ -203,10 +205,10 @@ class WebSocketHandler:
                 html = response.body.decode('utf-8')
 
                 # Send update
-                await websocket.send_json({
+                await websocket.send_bytes(msgpack.packb({
                     'type': 'update',
                     'html': html
-                })
+                }))
 
         except Exception:
             # Capture exception trace
@@ -290,10 +292,10 @@ class WebSocketHandler:
             # Render and send initial HTML
             response = await page.render()
             html = response.body.decode('utf-8')
-            await websocket.send_json({
+            await websocket.send_bytes(msgpack.packb({
                 'type': 'update',
                 'html': html
-            })
+            }))
             return
         
         # Parse new URL
@@ -363,10 +365,10 @@ class WebSocketHandler:
         async def broadcast_update():
                 up_response = await new_page.render(init=False)
                 up_html = up_response.body.decode('utf-8')
-                await websocket.send_json({
+                await websocket.send_bytes(msgpack.packb({
                     'type': 'update',
                     'html': up_html
-                })
+                }))
         new_page._on_update = broadcast_update
 
         # Run __on_load lifecycle hook
@@ -385,10 +387,10 @@ class WebSocketHandler:
                 response = await new_page.render()
                 html = response.body.decode('utf-8')
                 
-                await websocket.send_json({
+                await websocket.send_bytes(msgpack.packb({
                     'type': 'update',
                     'html': html
-                })
+                }))
         except Exception:
             error_capture = traceback.format_exc()
             print(error_capture)
@@ -453,10 +455,10 @@ class WebSocketHandler:
                         # Render with new code but preserved state
                         response = await new_page.render()
                         html = response.body.decode('utf-8')
-                        await connection.send_json({
+                        await connection.send_bytes(msgpack.packb({
                             'type': 'update',
                             'html': html
-                        })
+                        }))
                         print(f"PyHTML: Hot reload (state preserved) for {type(new_page).__name__}")
                         
                     except Exception as e:
@@ -464,10 +466,11 @@ class WebSocketHandler:
                         print(f"PyHTML: Hot reload failed, falling back to hard reload: {e}")
                         import traceback
                         traceback.print_exc()
-                        await connection.send_json({'type': 'reload'})
+                        message_bytes = msgpack.packb({'type': 'reload'})
+                        await connection.send_bytes(message_bytes)
                 else:
                     # No page instance, do hard reload
-                    await connection.send_json({'type': 'reload'})
+                    await connection.send_bytes(msgpack.packb({'type': 'reload'}))
             except Exception:
                 disconnected.add(connection)
         

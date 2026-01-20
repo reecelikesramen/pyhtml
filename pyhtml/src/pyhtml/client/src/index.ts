@@ -25,6 +25,8 @@ export class PyHTMLApp {
     private siblingPaths: string[] = [];
     private pathRegexes: RegExp[] = [];
     private pjaxEnabled = false;
+    private statusOverlay: HTMLElement | null = null;
+    private isConnected = false;
 
     constructor(config: Partial<PyHTMLConfig> = {}) {
         this.config = { ...DEFAULT_CONFIG, ...config };
@@ -41,6 +43,11 @@ export class PyHTMLApp {
 
         // Setup message handling
         this.transport.onMessage((msg) => this.handleMessage(msg));
+        this.transport.onStatusChange((connected) => this.handleStatusChange(connected));
+
+        // Create UI
+        this.createStatusOverlay();
+        this.handleStatusChange(false); // Initial state
 
         // Connect transport with fallback
         try {
@@ -73,6 +80,38 @@ export class PyHTMLApp {
                 this.pathRegexes = this.siblingPaths.map(p => this.patternToRegex(p));
             } catch (e) {
                 console.warn('PyHTML: Failed to parse SPA metadata', e);
+            }
+        }
+    }
+
+    private createStatusOverlay(): void {
+        this.statusOverlay = document.createElement('div');
+        this.statusOverlay.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 14px;
+            z-index: 10000;
+            display: none;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        `;
+        document.body.appendChild(this.statusOverlay);
+    }
+
+    private handleStatusChange(connected: boolean): void {
+        this.isConnected = connected;
+        if (this.statusOverlay) {
+            if (connected) {
+                this.statusOverlay.style.display = 'none';
+            } else {
+                this.statusOverlay.textContent = 'Connection Lost - Reconnecting...';
+                this.statusOverlay.style.display = 'block';
             }
         }
     }
@@ -142,6 +181,20 @@ export class PyHTMLApp {
      * Navigate to a sibling path using SPA navigation.
      */
     navigateTo(path: string): void {
+        if (!this.isConnected) {
+            console.warn('PyHTML: Navigation blocked - Offline');
+            // Flash the overlay or show specific alert?
+            if (this.statusOverlay) {
+                this.statusOverlay.style.backgroundColor = 'rgba(200, 0, 0, 0.9)';
+                this.statusOverlay.textContent = 'Cannot navigate - Offline';
+                setTimeout(() => {
+                    this.handleStatusChange(this.isConnected); // Reset style
+                    if (this.statusOverlay) this.statusOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+                }, 1500);
+            }
+            return;
+        }
+
         history.pushState({}, '', path);
         this.sendRelocate(path);
     }

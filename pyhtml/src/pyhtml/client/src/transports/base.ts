@@ -11,6 +11,9 @@ export interface Transport {
     /** Register a message handler */
     onMessage(handler: MessageHandler): void;
 
+    /** Register a status change handler */
+    onStatusChange(handler: (connected: boolean) => void): void;
+
     /** Disconnect from the server */
     disconnect(): void;
 
@@ -65,6 +68,7 @@ export interface EventData {
  */
 export abstract class BaseTransport implements Transport {
     protected messageHandlers: MessageHandler[] = [];
+    protected statusHandlers: ((connected: boolean) => void)[] = [];
     protected connected = false;
 
     abstract readonly name: string;
@@ -74,6 +78,10 @@ export abstract class BaseTransport implements Transport {
 
     onMessage(handler: MessageHandler): void {
         this.messageHandlers.push(handler);
+    }
+
+    onStatusChange(handler: (connected: boolean) => void): void {
+        this.statusHandlers.push(handler);
     }
 
     isConnected(): boolean {
@@ -86,6 +94,18 @@ export abstract class BaseTransport implements Transport {
                 handler(message);
             } catch (e) {
                 console.error('PyHTML: Error in message handler', e);
+            }
+        }
+    }
+
+    protected notifyStatus(connected: boolean): void {
+        if (this.connected === connected) return;
+        this.connected = connected;
+        for (const handler of this.statusHandlers) {
+            try {
+                handler(connected);
+            } catch (e) {
+                console.error('PyHTML: Error in status handler', e);
             }
         }
     }

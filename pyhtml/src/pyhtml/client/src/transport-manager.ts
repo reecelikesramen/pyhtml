@@ -32,6 +32,7 @@ export class TransportManager {
     private transport: Transport | null = null;
     private config: TransportConfig;
     private messageHandlers: ((msg: ServerMessage) => void)[] = [];
+    private statusHandlers: ((connected: boolean) => void)[] = [];
 
     constructor(config: Partial<TransportConfig> = {}) {
         this.config = { ...DEFAULT_CONFIG, ...config };
@@ -52,6 +53,11 @@ export class TransportManager {
                 for (const handler of this.messageHandlers) {
                     this.transport.onMessage(handler);
                 }
+
+                // Forward status changes
+                this.transport.onStatusChange((connected) => {
+                    this.notifyStatusHandlers(connected);
+                });
 
                 await this.transport.connect();
                 console.log(`PyHTML: Connected via ${this.transport.name}`);
@@ -115,12 +121,26 @@ export class TransportManager {
     }
 
     /**
+     * Register a connection status change handler.
+     */
+    onStatusChange(handler: (connected: boolean) => void): void {
+        this.statusHandlers.push(handler);
+    }
+
+    private notifyStatusHandlers(connected: boolean): void {
+        for (const handler of this.statusHandlers) {
+            handler(connected);
+        }
+    }
+
+    /**
      * Disconnect the active transport.
      */
     disconnect(): void {
         if (this.transport) {
             this.transport.disconnect();
             this.transport = null;
+            this.notifyStatusHandlers(false);
         }
     }
 

@@ -6,7 +6,9 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
+import msgpack
+import asyncio
 
 from pyhtml.runtime.page import BasePage
 
@@ -20,6 +22,7 @@ class HTTPSession:
     pending_updates: List[Dict[str, Any]] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     last_poll: datetime = field(default_factory=datetime.now)
+    update_event: asyncio.Event = field(default_factory=asyncio.Event)
     
     def is_expired(self, timeout_seconds: int = 300) -> bool:
         """Check if session has expired."""
@@ -52,10 +55,21 @@ class HTTPTransportHandler:
             if expired:
                 print(f"PyHTML: Cleaned up {len(expired)} expired HTTP sessions")
     
-    async def create_session(self, request: Request) -> JSONResponse:
+    async def create_session(self, request: Request) -> Response:
         """Create a new HTTP polling session."""
         try:
-            data = await request.json()
+            body = await request.body()
+            if not body:
+                # Allow empty body for initial connect
+                data = {}
+            else:
+                try:
+                    data = msgpack.unpackb(body, raw=False)
+                except Exception:
+                    # Fallback to JSON for compatibility if needed, or error
+                    import json
+                    data = json.loads(body)
+
             path = data.get('path', '/')
         except Exception:
             path = '/'
@@ -91,45 +105,55 @@ class HTTPTransportHandler:
         self.sessions[session_id] = session
         self.start_cleanup_task()
         
-        return JSONResponse({'sessionId': session_id})
+        return Response(
+            msgpack.packb({'sessionId': session_id}), 
+            media_type='application/x-msgpack'
+        )
     
-    async def poll(self, request: Request) -> JSONResponse:
+    async def poll(self, request: Request) -> Response:
         """Long-poll for updates."""
         session_id = request.query_params.get('session')
         
         if not session_id or session_id not in self.sessions:
-            return JSONResponse({'error': 'Session not found'}, status_code=404)
+            return Response(msgpack.packb({'error': 'Session not found'}), status_code=404, media_type='application/x-msgpack')
         
         session = self.sessions[session_id]
         session.last_poll = datetime.now()
         
+        # Check if updates already pending
+        if session.pending_updates:
+            updates = session.pending_updates.copy()
+            session.pending_updates.clear()
+            session.update_event.clear()
+            return Response(msgpack.packb(updates), media_type='application/x-msgpack')
+        
         # Wait for updates with timeout
-        timeout = 30  # seconds
-        start = datetime.now()
-        
-        while (datetime.now() - start).seconds < timeout:
-            if session.pending_updates:
-                updates = session.pending_updates.copy()
-                session.pending_updates.clear()
-                return JSONResponse(updates)
+        try:
+            await asyncio.wait_for(session.update_event.wait(), timeout=30.0)
             
-            await asyncio.sleep(0.5)
-        
-        # Return empty array on timeout (no updates)
-        return JSONResponse([])
+            # Event set, get updates
+            updates = session.pending_updates.copy()
+            session.pending_updates.clear()
+            session.update_event.clear()
+            return Response(msgpack.packb(updates), media_type='application/x-msgpack')
+            
+        except asyncio.TimeoutError:
+            # Return empty array on timeout
+            return Response(msgpack.packb([]), media_type='application/x-msgpack')
     
-    async def handle_event(self, request: Request) -> JSONResponse:
+    async def handle_event(self, request: Request) -> Response:
         """Handle an event from an HTTP client."""
         session_id = request.headers.get('X-PyHTML-Session')
         
         if not session_id or session_id not in self.sessions:
-            return JSONResponse({'error': 'Session not found'}, status_code=404)
+            return Response(msgpack.packb({'error': 'Session not found'}), status_code=404, media_type='application/x-msgpack')
         
         session = self.sessions[session_id]
         session.last_poll = datetime.now()
         
         try:
-            data = await request.json()
+            body = await request.body()
+            data = msgpack.unpackb(body, raw=False)
             handler_name = data.get('handler')
             event_data = data.get('data', {})
             
@@ -137,7 +161,7 @@ class HTTPTransportHandler:
                 # Recreate page if needed
                 match = self.app.router.match(session.path)
                 if not match:
-                    return JSONResponse({'error': 'Page not found'}, status_code=404)
+                    return Response(msgpack.packb({'error': 'Page not found'}), status_code=404, media_type='application/x-msgpack')
                 
                 page_class, params, variant_name = match
                 query = dict(request.query_params)
@@ -164,20 +188,22 @@ class HTTPTransportHandler:
             # Get updated HTML
             html = response.body.decode('utf-8')
             
-            return JSONResponse({
+            return Response(msgpack.packb({
                 'type': 'update',
                 'html': html
-            })
+            }), media_type='application/x-msgpack')
             
         except Exception as e:
-            return JSONResponse({'type': 'error', 'error': str(e)}, status_code=500)
+            return Response(msgpack.packb({'type': 'error', 'error': str(e)}), status_code=500, media_type='application/x-msgpack')
     
     def queue_update(self, session_id: str, update: Dict[str, Any]):
         """Queue an update to be sent to a specific session."""
         if session_id in self.sessions:
             self.sessions[session_id].pending_updates.append(update)
+            self.sessions[session_id].update_event.set()
     
     def broadcast_reload(self):
         """Queue reload message to all sessions."""
         for session in self.sessions.values():
             session.pending_updates.append({'type': 'reload'})
+            session.update_event.set()

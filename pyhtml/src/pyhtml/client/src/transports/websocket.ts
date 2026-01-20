@@ -1,4 +1,5 @@
 import { BaseTransport, ServerMessage } from './base';
+import { encode, decode } from '@msgpack/msgpack';
 
 /**
  * WebSocket transport implementation.
@@ -26,17 +27,18 @@ export class WebSocketTransport extends BaseTransport {
         return new Promise((resolve, reject) => {
             try {
                 this.socket = new WebSocket(this.url);
+                this.socket.binaryType = 'arraybuffer';
 
                 this.socket.onopen = () => {
                     console.log('PyHTML: WebSocket connected');
-                    this.connected = true;
+                    this.notifyStatus(true);
                     this.reconnectAttempts = 0;
                     resolve();
                 };
 
                 this.socket.onmessage = (event: MessageEvent) => {
                     try {
-                        const msg = JSON.parse(event.data) as ServerMessage;
+                        const msg = decode(event.data) as ServerMessage;
                         this.notifyHandlers(msg);
                     } catch (e) {
                         console.error('PyHTML: Error parsing WebSocket message', e);
@@ -45,7 +47,7 @@ export class WebSocketTransport extends BaseTransport {
 
                 this.socket.onclose = () => {
                     console.log('PyHTML: WebSocket disconnected');
-                    this.connected = false;
+                    this.notifyStatus(false);
                     if (this.shouldReconnect) {
                         this.scheduleReconnect();
                     }
@@ -65,7 +67,7 @@ export class WebSocketTransport extends BaseTransport {
 
     send(message: object): void {
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify(message));
+            this.socket.send(encode(message));
         } else {
             console.warn('PyHTML: Cannot send message, WebSocket not open');
         }
@@ -77,7 +79,7 @@ export class WebSocketTransport extends BaseTransport {
             this.socket.close();
             this.socket = null;
         }
-        this.connected = false;
+        this.notifyStatus(false);
     }
 
     private scheduleReconnect(): void {

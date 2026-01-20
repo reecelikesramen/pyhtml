@@ -1,4 +1,5 @@
 import { BaseTransport, ServerMessage } from './base';
+import { encode, decode } from '@msgpack/msgpack';
 
 /**
  * HTTP polling transport as a fallback when WebTransport and WebSocket are unavailable.
@@ -22,19 +23,23 @@ export class HTTPTransport extends BaseTransport {
             // Initialize session with the server
             const response = await fetch(`${this.baseUrl}/session`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: window.location.pathname + window.location.search })  // Include query string
+                headers: {
+                    'Content-Type': 'application/x-msgpack',
+                    'Accept': 'application/x-msgpack'
+                },
+                body: encode({ path: window.location.pathname + window.location.search })
             });
 
             if (!response.ok) {
                 throw new Error(`HTTP session init failed: ${response.status}`);
             }
 
-            const data = await response.json();
+            const buffer = await response.arrayBuffer();
+            const data = decode(buffer) as { sessionId: string };
             this.sessionId = data.sessionId;
 
             console.log('PyHTML: HTTP transport connected');
-            this.connected = true;
+            this.notifyStatus(true);
 
             // Start polling for updates
             this.startPolling();
@@ -57,7 +62,7 @@ export class HTTPTransport extends BaseTransport {
                     method: 'GET',
                     signal: this.pollAbortController.signal,
                     headers: {
-                        'Accept': 'application/json'
+                        'Accept': 'application/x-msgpack'
                     }
                 });
 
@@ -65,14 +70,15 @@ export class HTTPTransport extends BaseTransport {
                     if (response.status === 404) {
                         // Session expired, try to reconnect
                         console.warn('PyHTML: HTTP session expired, reconnecting...');
-                        this.connected = false;
+                        this.notifyStatus(false);
                         await this.connect();
                         return;
                     }
                     throw new Error(`Poll failed: ${response.status}`);
                 }
 
-                const messages = await response.json() as ServerMessage[];
+                const buffer = await response.arrayBuffer();
+                const messages = decode(buffer) as ServerMessage[];
 
                 for (const msg of messages) {
                     this.notifyHandlers(msg);
@@ -100,10 +106,11 @@ export class HTTPTransport extends BaseTransport {
             const response = await fetch(`${this.baseUrl}/event`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/x-msgpack',
+                    'Accept': 'application/x-msgpack',
                     'X-PyHTML-Session': this.sessionId
                 },
-                body: JSON.stringify(message)
+                body: encode(message)
             });
 
             if (!response.ok) {
@@ -111,7 +118,8 @@ export class HTTPTransport extends BaseTransport {
             }
 
             // The response contains the updated HTML
-            const result = await response.json() as ServerMessage;
+            const buffer = await response.arrayBuffer();
+            const result = decode(buffer) as ServerMessage;
             this.notifyHandlers(result);
 
         } catch (e) {
@@ -121,7 +129,7 @@ export class HTTPTransport extends BaseTransport {
 
     disconnect(): void {
         this.polling = false;
-        this.connected = false;
+        this.notifyStatus(false);
 
         if (this.pollAbortController) {
             this.pollAbortController.abort();
