@@ -183,9 +183,7 @@ class BasePage:
                 else:
                     handler(**bound_kwargs)
             except Exception as e:
-                print(f"ERROR in handle_event for {handler_name}: {e}")
-                import traceback
-                traceback.print_exc()
+                # Let the runtime handle logging and reporting
                 raise e
 
 

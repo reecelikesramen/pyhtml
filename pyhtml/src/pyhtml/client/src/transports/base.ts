@@ -26,12 +26,22 @@ export interface Transport {
 
 export type MessageHandler = (message: ServerMessage) => void;
 
+export interface StackFrame {
+    filename: string;
+    lineno: number;
+    name: string;
+    line: string;
+    colno?: number;     // Python 3.11+ column start
+    end_colno?: number; // Python 3.11+ column end
+}
+
 export interface ServerMessage {
-    type: 'update' | 'reload' | 'error' | 'console';
+    type: 'update' | 'reload' | 'error' | 'console' | 'error_trace';
     html?: string;
     error?: string;
     level?: 'info' | 'warn' | 'error';
     lines?: string[];
+    trace?: StackFrame[];
 }
 
 export interface ConsoleMessage {

@@ -101,10 +101,26 @@ class JinjaInterpolationParser(InterpolationParser):
                     expr = text[i+1:j-1]  # Extract expression without braces
                     
                     if self._is_valid_python(expr):
+                        # Calculate accurate line/col
+                        # Count newlines before this position (relative to start of text)
+                        prefix = text[:i]
+                        newlines = prefix.count('\n')
+                        current_line = line + newlines
+                        
+                        last_nl_index = prefix.rfind('\n')
+                        if last_nl_index != -1:
+                            # Column is offset from last newline
+                            current_column = i - last_nl_index - 1 # 0-indexed column? 
+                            # If text lines are 0-indexed column wise? 
+                            # Standard is 0-indexed usually for AST col_offset.
+                        else:
+                            # No newline, add to start col
+                            current_column = col + i
+
                         tokens.append(InterpolationNode(
                             expression=expr,
-                            line=line,
-                            column=col + i
+                            line=current_line,
+                            column=current_column
                         ))
                     else:
                         # Treat as literal

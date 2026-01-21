@@ -123,7 +123,12 @@ class TestWebSocketExhaustive(unittest.TestCase):
 
     def test_send_console_message(self):
         ws = self.create_mock_ws()
-        asyncio.run(self.handler._send_console_message(ws, "Hello\nWorld", "Error\nOccurred"))
+        # Test standard message
+        asyncio.run(self.handler._send_console_message(ws, "Hello\nWorld"))
+        self.assertEqual(ws.send_bytes.call_count, 1)
+        
+        # Test error message
+        asyncio.run(self.handler._send_console_message(ws, "Error\nOccurred", level='error'))
         self.assertEqual(ws.send_bytes.call_count, 2)
         
     def test_handle_event_with_output(self):

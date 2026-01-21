@@ -1,0 +1,7 @@
+<div style="text-align: center; margin-top: 50px; font-family: system-ui, sans-serif;">
+    <h1 style="font-size: 3rem; color: #ef4444;">500</h1>
+    <h2>Server Error</h2>
+    <p>Something went wrong on our end.</p>
+    <p><small>{error_detail}</small></p>
+    <a href="/" style="color: #6366f1; text-decoration: none;">&larr; Go Home</a>
+</div>

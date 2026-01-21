@@ -63,26 +63,43 @@ class PyHTMLParser:
         
         # Split into sections: directives/template and Python code
         python_start = -1
+        python_end = -1
+        
         for i, line in enumerate(lines):
             if line.strip() == '---':
-                python_start = i
-                break
-
-        # Parse directives (before ---)
-        directives = []
-        template_lines = []
+                if python_start == -1:
+                    python_start = i
+                else:
+                    python_end = i
+                    break
         
-        if python_start >= 0:
+        python_section = ""
+        template_tail = []
+        
+        if python_start >= 0 and python_end > python_start:
+            # Valid block: --- ... ---
+            directive_section = '\n'.join(lines[:python_start])
+            python_section = '\n'.join(lines[python_start + 1 : python_end])
+            template_tail = lines[python_end + 1:]
+        elif python_start >= 0:
+            # Unclosed block - treat everything after as Python? 
+            # Or error? Let's assume everything after is Python (legacy behavior somewhat)
+            # But this swallows template. 
+            # For now, let's keep it consistent: everything before is directives.
             directive_section = '\n'.join(lines[:python_start])
             python_section = '\n'.join(lines[python_start + 1:])
         else:
+            # No block
             directive_section = content
             python_section = ""
 
         # Parse directives (handles multiline directives by accumulating lines)
+        directives = []
+        template_lines = []
         directive_lines = directive_section.split('\n')
         i = 0
         while i < len(directive_lines):
+            old_i = i
             line = directive_lines[i]
             line_stripped = line.strip()
             line_num = i + 1
@@ -128,10 +145,22 @@ class PyHTMLParser:
                         i += 1
                     break
             
-            if not found_directive:
+            if found_directive:
+                # Add blank lines to template_lines to preserve line numbers
+                # We skipped from old_i to i.
+                # old_i was the line where we started looking.
+                # i is now the next line to process.
+                # So lines [old_i : i] were directives.
+                for _ in range(i - old_i):
+                    template_lines.append("")
+            else:
                 # Not a directive, part of template
                 template_lines.append(line)
                 i += 1
+
+        # Append template content that followed the Python block
+        if template_tail:
+            template_lines.extend(template_tail)
 
         # Parse template HTML using lxml
         template_html = '\n'.join(template_lines)
@@ -159,7 +188,10 @@ class PyHTMLParser:
                 for frag in fragments:
                     if isinstance(frag, str):
                         # Top-level text
-                        text_nodes = self._parse_text(frag)
+                        # Approximation: assume it starts at line 1 if first, or...
+                        # lxml doesn't give line specific info for string fragments.
+                        # We'll use 0 or try to track line count (hard without full context).
+                        text_nodes = self._parse_text(frag, start_line=0)
                         if text_nodes:
                             template_nodes.extend(text_nodes)
                     else:
@@ -185,7 +217,10 @@ class PyHTMLParser:
                              # The tail is attached to 'a'.
                              # So we DO need to handle tail here.
                              
-                             tail_nodes = self._parse_text(frag.tail)
+                             # Tail starts after element processing.
+                             # Simple approximation: uses element.sourceline.
+                             # For better accuracy we'd count lines in element+children.
+                             tail_nodes = self._parse_text(frag.tail, start_line=getattr(frag, 'sourceline', 0))
                              if tail_nodes:
                                  template_nodes.extend(tail_nodes)
 
@@ -199,10 +234,8 @@ class PyHTMLParser:
         # Parse Python code
         python_ast = None
         if python_section.strip():
-            try:
-                python_ast = ast.parse(python_section)
-            except SyntaxError:
-                pass  # Will be caught later
+            # Don't silence SyntaxError - let it bubble up so user knows their code is invalid
+            python_ast = ast.parse(python_section)
 
         if python_ast:
             # Shift line numbers to match original file
@@ -221,12 +254,12 @@ class PyHTMLParser:
             file_path=file_path
         )
 
-    def _parse_text(self, text: str) -> List[TemplateNode]:
+    def _parse_text(self, text: str, start_line: int = 0) -> List[TemplateNode]:
         """Helper to parse text string into list of text/interpolation nodes."""
         if not text:
             return []
             
-        parts = self.interpolation_parser.parse(text, line=0, col=0)
+        parts = self.interpolation_parser.parse(text, line=start_line, col=0)
         nodes = []
         for part in parts:
             if isinstance(part, str):
@@ -238,7 +271,7 @@ class PyHTMLParser:
                    nodes.append(TemplateNode(
                        tag=None,
                        text_content=part,
-                       line=0, column=0
+                       line=start_line, column=0
                    ))
             else:
                  node = TemplateNode(
@@ -265,7 +298,7 @@ class PyHTMLParser:
         
         # Handle inner text (before first child)
         if element.text:
-            text_nodes = self._parse_text(element.text)
+            text_nodes = self._parse_text(element.text, start_line=getattr(element, 'sourceline', 0))
             if text_nodes:
                 node.children.extend(text_nodes)
                 
@@ -284,7 +317,7 @@ class PyHTMLParser:
             
             # 2. Handle child's tail (text immediately after child, before next sibling)
             if child.tail:
-                tail_nodes = self._parse_text(child.tail)
+                tail_nodes = self._parse_text(child.tail, start_line=getattr(child, 'sourceline', 0))
                 if tail_nodes:
                     node.children.extend(tail_nodes)
         

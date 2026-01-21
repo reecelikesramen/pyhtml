@@ -1,0 +1,6 @@
+<div style="text-align: center; margin-top: 50px; font-family: system-ui, sans-serif;">
+    <h1 style="font-size: 3rem; color: #6366f1;">404</h1>
+    <h2>Page Not Found</h2>
+    <p>Oops! The page you're looking for doesn't exist.</p>
+    <a href="/" style="color: #6366f1; text-decoration: none;">&larr; Go Home</a>
+</div>

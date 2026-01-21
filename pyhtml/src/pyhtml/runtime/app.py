@@ -77,8 +77,13 @@ class PyHTML:
         # Static files
         static_dir = Path(__file__).parent.parent / 'static'
         
-        # Create Starlette app with all transport routes
-        self.app = Starlette(routes=[
+        # Prepare exception handlers
+        exception_handlers = {}
+        if not self.debug:
+            exception_handlers[500] = self._handle_500
+
+        # Build routes list
+        routes = [
             # Capabilities endpoint for transport negotiation
             Route('/_pyhtml/capabilities', self._handle_capabilities, methods=['GET']),
             # WebSocket transport
@@ -91,9 +96,21 @@ class PyHTML:
             Route('/_pyhtml/upload', self._handle_upload, methods=['POST']),
             # Static files
             Mount('/_pyhtml/static', app=StaticFiles(directory=str(static_dir)), name='static'),
-            # Default page handler
-            Route('/{path:path}', self._handle_request, methods=['GET', 'POST'])
-        ])
+        ]
+        
+        # Debug endpoints (must be before catch-all)
+        if self.debug:
+            routes.append(Route('/_pyhtml/source', self._handle_source, methods=['GET']))
+            routes.append(Route('/_pyhtml/file/{encoded:path}', self._handle_file, methods=['GET']))
+            # Chrome DevTools automatic workspace folders (M-135+)
+            routes.append(Route('/.well-known/appspecific/com.chrome.devtools.json', 
+                               self._handle_devtools_json, methods=['GET']))
+        
+        # Default page handler (catch-all, must be last)
+        routes.append(Route('/{path:path}', self._handle_request, methods=['GET', 'POST']))
+        
+        # Create Starlette app with all transport routes
+        self.app = Starlette(routes=routes, exception_handlers=exception_handlers)
         
         # Store configuration in app state for runtime access (e.g. by pages)
         self.app.state.enable_pjax = self.enable_pjax
@@ -144,6 +161,91 @@ class PyHTML:
         except Exception as e:
             traceback.print_exc()
             return JSONResponse({'error': str(e)}, status_code=500)
+
+    async def _handle_source(self, request: Request) -> Response:
+        """Serve source code for debugging."""
+        print(f"DEBUG: _handle_source called, debug={self.debug}")
+        if not self.debug:
+            print("DEBUG: _handle_source returning 404 because debug=False")
+            return Response("Not Found", status_code=404)
+            
+        path_str = request.query_params.get('path')
+        print(f"DEBUG: _handle_source path={path_str}")
+        if not path_str:
+            return Response("Missing path", status_code=400)
+            
+        try:
+            path = Path(path_str).resolve()
+            print(f"DEBUG: _handle_source resolved path={path}, exists={path.exists()}, is_file={path.is_file()}")
+            # Security check: Ensure we are only serving files from allowed directories?
+            # For a dev tool, we might want to allow viewing any file in the traceback which might include library files.
+            # But normally we want to restrict to project and maybe venv.
+            # Let's just check it exists and is a file for now.
+            if not path.is_file():
+                return Response("File not found", status_code=404)
+                
+            content = path.read_text(encoding='utf-8')
+            return Response(content, media_type='text/plain')
+        except Exception as e:
+            print(f"DEBUG: _handle_source exception: {e}")
+            return Response(str(e), status_code=500)
+
+    async def _handle_file(self, request: Request) -> Response:
+        """Serve source file by base64-encoded path (for DevTools source mapping)."""
+        if not self.debug:
+            return Response("Not Found", status_code=404)
+            
+        import base64
+        import base64
+        encoded_path = request.path_params.get('encoded', '')
+        
+        # If the path contains a slash, it means we appended the filename for Chrome's benefit
+        # e.g., "BASE64STRING/my_file.py"
+        # We only care about the first part
+        if '/' in encoded_path:
+            encoded = encoded_path.split('/')[0]
+        else:
+            encoded = encoded_path
+
+        try:
+            # Decode the base64 path (URL-safe variant)
+            # Restore padding
+            padding = 4 - (len(encoded) % 4)
+            if padding != 4:
+                encoded += '=' * padding
+            # Restore standard base64 chars
+            encoded = encoded.replace('-', '+').replace('_', '/')
+            path_str = base64.b64decode(encoded).decode('utf-8')
+            
+            path = Path(path_str).resolve()
+            if not path.is_file():
+                return Response("File not found", status_code=404)
+                
+            content = path.read_text(encoding='utf-8')
+            # Return as JavaScript so browser DevTools can parse it
+            return Response(content, media_type='text/plain')
+        except Exception as e:
+            print(f"DEBUG: _handle_file exception: {e}")
+            return Response(str(e), status_code=500)
+
+    async def _handle_devtools_json(self, request: Request) -> JSONResponse:
+        """Serve Chrome DevTools project settings for automatic workspace folders."""
+        import uuid
+        import hashlib
+        
+        # Use current working directory as project root
+        project_root = Path.cwd()
+        
+        # Generate a consistent UUID from the project path
+        path_hash = hashlib.md5(str(project_root).encode()).hexdigest()
+        project_uuid = str(uuid.UUID(path_hash[:32]))
+        
+        return JSONResponse({
+            "workspace": {
+                "root": str(project_root.resolve()),
+                "uuid": project_uuid
+            }
+        })
 
     def _load_pages(self):
         """Discover and compile all .pyhtml files."""
@@ -328,12 +430,65 @@ class PyHTML:
             # Re-raise so dev_server knows it failed
             raise e
 
+    async def _handle_500(self, request: Request, exc: Exception) -> Response:
+        """Handle 500 errors with custom page if available."""
+        # Try to find /500 page
+        match = self.router.match("/500")
+        if match:
+            try:
+                page_class, params, variant_name = match
+                # Minimal context
+                page = page_class(request, params, {}, path={'main': True}, url=None)
+                response = await page.render()
+                # Force 500 status
+                response.status_code = 500
+                return response
+            except Exception:
+                # If 500 page fails, fall back
+                pass
+        
+        return PlainTextResponse("Internal Server Error", status_code=500)
+
     async def _handle_request(self, request: Request) -> Response:
         """Handle HTTP request."""
-        # ... (simplified context)
+        # Check for uploads first
+        # (This was handled in Route declarations, but uploads go to /_pyhtml/upload)
+        
         path = request.url.path
         match = self.router.match(path)
         if not match:
+             # Try custom 404
+             match_404 = self.router.match("/404")
+             if match_404:
+                 page_class, params, variant_name = match_404
+                 # Render 404 page
+                 # Note: We pass original request so URL is preserved?
+                 # Yes, user checking request.url on 404 page might want to know what failed.
+                 
+                 # Construct params/query
+                 query = dict(request.query_params)
+                 
+                 # Path info
+                 path_info = {}
+                 if hasattr(page_class, '__routes__'):
+                     for name in page_class.__routes__.keys():
+                         path_info[name] = (name == variant_name)
+                 elif hasattr(page_class, '__route__'):
+                     path_info['main'] = True
+
+                 from pyhtml.runtime.router import URLHelper
+                 url_helper = None
+                 if hasattr(page_class, '__routes__'):
+                      url_helper = URLHelper(page_class.__routes__)
+                 
+                 try:
+                     page = page_class(request, {}, query, path=path_info, url=url_helper)
+                     response = await page.render()
+                     response.status_code = 404
+                     return response
+                 except Exception:
+                     pass # Fallback
+                     
              return Response("404 Not Found", status_code=404)
         
         page_class, params, variant_name = match

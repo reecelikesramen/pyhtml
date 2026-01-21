@@ -1,6 +1,8 @@
 import { TransportManager, TransportConfig } from './transport-manager';
 import { DOMUpdater } from './dom-updater';
-import { ServerMessage, ClientMessage, EventData, RelocateMessage } from './transports';
+import { ServerMessage, ClientMessage, EventData, RelocateMessage, StackFrame } from './transports';
+
+
 
 export interface PyHTMLConfig extends TransportConfig {
     /** Auto-initialize on DOMContentLoaded */
@@ -140,6 +142,12 @@ export class PyHTMLApp {
      * Setup SPA navigation for sibling paths.
      */
     private setupSPANavigation(): void {
+        // Handle browser back/forward - establish this ALWAYS to support navigating
+        // back to a valid SPA page from a 404 or other page.
+        window.addEventListener('popstate', () => {
+            this.sendRelocate(window.location.pathname + window.location.search);
+        });
+
         if (this.siblingPaths.length === 0 && !this.pjaxEnabled) return;
 
         // Intercept link clicks
@@ -169,11 +177,6 @@ export class PyHTMLApp {
                 e.preventDefault();
                 this.navigateTo(link.pathname + link.search);
             }
-        });
-
-        // Handle browser back/forward
-        window.addEventListener('popstate', () => {
-            this.sendRelocate(window.location.pathname + window.location.search);
         });
     }
 
@@ -463,7 +466,92 @@ export class PyHTMLApp {
     /**
      * Handle incoming server message.
      */
-    private handleMessage(msg: ServerMessage): void {
+    private loadedSources = new Set<string>();
+
+    private getVirtualUrl(filename: string): string {
+        // Generate a consistent virtual URL for a filename
+        // Must include origin to ensure Chrome treats it as a full URL for linking
+        const encoded = btoa(filename).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        // Append clean filename to URL so Chrome displays it in stack trace
+        const cleanName = filename.split(/[/\\]/).pop() || 'unknown';
+        return `${window.location.origin}/_pyhtml/file/${encoded}/${cleanName}`;
+    }
+
+    private async handleErrorTrace(errorMessage: string, trace: StackFrame[]) {
+        // Load sources for frames
+        const filesToLoad = new Set<string>();
+        for (const frame of trace) {
+            if (!this.loadedSources.has(frame.filename)) {
+                filesToLoad.add(frame.filename);
+            }
+        }
+
+
+        await Promise.all(Array.from(filesToLoad).map(async (filename) => {
+            try {
+                const virtualUrl = this.getVirtualUrl(filename);
+
+                // Fetch content
+                const url = `/_pyhtml/source?path=${encodeURIComponent(filename)}`;
+                const resp = await fetch(url);
+                if (resp.ok) {
+                    const content = await resp.text();
+
+                    // Inject the raw Python/PyHTML source with sourceURL only
+                    // The script has "syntax errors" (it's Python, not JS) but
+                    // DevTools will display the raw source and our explicit
+                    // column numbers will work.
+                    const script = document.createElement('script');
+                    script.textContent = `${content}\n//# sourceURL=${virtualUrl}`;
+
+                    // HACK: Suppress syntax errors from Python code being parsed as JS
+                    // We want the script to be loaded for DevTools, but not to clutter console.
+                    const handler = (e: ErrorEvent) => {
+                        if (e.target === window || e.target === script) {
+                            e.preventDefault();
+                            e.stopImmediatePropagation();
+                        }
+                    };
+                    window.addEventListener('error', handler, true); // Capture phase
+                    try {
+                        document.head.appendChild(script);
+                    } finally {
+                        // Remove handler immediately after synchronous execution attempt
+                        window.removeEventListener('error', handler, true);
+                    }
+
+                    this.loadedSources.add(filename);
+                }
+
+                this.loadedSources.add(filename);
+            } catch (e) {
+                console.warn('PyHTML: Failed to load source', filename, e);
+            }
+        }));
+
+        // Construct Error with stack pointing to absolute virtual URLs
+        const err = new Error(errorMessage);
+        const stackLines = [`${err.name}: ${err.message}`];
+
+        for (const frame of trace) {
+            const fn = frame.name || '<module>';
+            const virtualUrl = this.getVirtualUrl(frame.filename);
+            // Format: at functionName (url:line:col)
+            // Use colno from Python 3.11+ if available, otherwise default to 1
+            const col = frame.colno ?? 1;
+            stackLines.push(`    at ${fn} (${virtualUrl}:${frame.lineno}:${col})`);
+        }
+
+        err.stack = stackLines.join('\n');
+
+        // Log just the stack string to avoid Chrome appending its own call stack
+        console.error(err.stack);
+    }
+
+    /**
+     * Handle incoming server message.
+     */
+    private async handleMessage(msg: ServerMessage): Promise<void> {
         switch (msg.type) {
             case 'update':
                 if (msg.html) {
@@ -480,16 +568,32 @@ export class PyHTMLApp {
                 console.error('PyHTML: Server error:', msg.error);
                 break;
 
+            case 'error_trace':
+                if (msg.trace) {
+                    await this.handleErrorTrace(msg.error || 'Unknown Error', msg.trace);
+                }
+                break;
+
             case 'console':
-                if (msg.lines) {
+                if (msg.lines && msg.lines.length > 0) {
                     const prefix = 'PyHTML Server:';
-                    const lines = msg.lines;
+                    const joined = msg.lines.join('\n');
                     if (msg.level === 'error') {
-                        console.error(prefix, ...lines);
+                        console.group(prefix + ' Error');
+                        console.error(joined);
+                        console.groupEnd();
                     } else if (msg.level === 'warn') {
-                        console.warn(prefix, ...lines);
+                        console.groupCollapsed(prefix + ' Warning');
+                        console.warn(joined);
+                        console.groupEnd();
                     } else {
-                        console.log(prefix, ...lines);
+                        if (msg.lines.length === 1) {
+                            console.log(prefix, joined);
+                        } else {
+                            console.groupCollapsed(prefix + ' Log');
+                            console.log(joined);
+                            console.groupEnd();
+                        }
                     }
                 }
                 break;

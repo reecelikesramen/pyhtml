@@ -32,6 +32,8 @@
     <a href="/form-test">Form</a>
     <br>
     <a href="/new-attributes">New Attributes</a>
+    <br>
+    <a href="/dx_demo"><strong>DX Demo</strong> (Error Handling & Logging)</a>
 </div>
 
 ---

@@ -118,7 +118,7 @@ class WebTransportHandler:
                         await self._send_response(send, stream_id, response_data)
                         
                 except Exception as e:
-                    print(f"Error handling event: {e}")
+                    # Send error response (no print - response is sufficient)
                     await self._send_response(send, stream_id, {'type': 'error', 'error': str(e)})
                     
         elif msg_type == 'init':

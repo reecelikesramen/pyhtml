@@ -101,6 +101,10 @@ async def run_dev_server(
     # Load app to get config
     pyhtml_app = _import_app(app_str)
     pages_dir = pyhtml_app.pages_dir
+
+    # Enable Dev Error Middleware
+    from pyhtml.runtime.debug import DevErrorMiddleware
+    pyhtml_app.app = DevErrorMiddleware(pyhtml_app.app)
     
     if not pages_dir.exists():
         print(f"Warning: Pages directory '{pages_dir}' does not exist.")
@@ -141,6 +145,10 @@ async def run_dev_server(
             # Determine pyhtml source directory
             import pyhtml
             pyhtml_src_dir = Path(pyhtml.__file__).parent
+            
+            # Install logging interceptor for print capture
+            from pyhtml.runtime.logging import install_logging_interceptor
+            install_logging_interceptor()
             
             # Use pages_dir from app
             print(f"PyHTML: Watching {pages_dir} for changes...")

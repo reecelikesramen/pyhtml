@@ -511,22 +511,16 @@ class CodeGenerator:
     
     def _generate_form_schema_literal(self, schema: FormValidationSchema, schema_name: str, known_globals: Set[str]) -> List[ast.stmt]:
         """Generate validation schema as a class attribute."""
-        # Generate code like:
-        # _form_schema_0 = {
-        #     'username': FieldRules(required=True, pattern='[A-Za-z0-9]+', minlength=3),
-        #     'email': FieldRules(required=True, input_type='email'),
-        # }
-        
         field_items = []
         for field_name, rules in schema.fields.items():
-            # Build FieldRules constructor call
             keywords = []
             
             if rules.required:
                 keywords.append(ast.keyword(arg='required', value=ast.Constant(value=True)))
             if rules.required_expr:
-                expr = self.template_codegen._transform_expr(rules.required_expr, set(), known_globals)
-                keywords.append(ast.keyword(arg='required_expr', value=ast.Constant(value=expr)))
+                expr_ast = self.template_codegen._transform_expr(rules.required_expr, set(), known_globals)
+                expr_str = ast.unparse(expr_ast)
+                keywords.append(ast.keyword(arg='required_expr', value=ast.Constant(value=expr_str)))
             if rules.pattern:
                 keywords.append(ast.keyword(arg='pattern', value=ast.Constant(value=rules.pattern)))
             if rules.minlength is not None:
@@ -536,13 +530,15 @@ class CodeGenerator:
             if rules.min_value:
                 keywords.append(ast.keyword(arg='min_value', value=ast.Constant(value=rules.min_value)))
             if rules.min_expr:
-                expr = self.template_codegen._transform_expr(rules.min_expr, set(), known_globals)
-                keywords.append(ast.keyword(arg='min_expr', value=ast.Constant(value=expr)))
+                expr_ast = self.template_codegen._transform_expr(rules.min_expr, set(), known_globals)
+                expr_str = ast.unparse(expr_ast)
+                keywords.append(ast.keyword(arg='min_expr', value=ast.Constant(value=expr_str)))
             if rules.max_value:
                 keywords.append(ast.keyword(arg='max_value', value=ast.Constant(value=rules.max_value)))
             if rules.max_expr:
-                expr = self.template_codegen._transform_expr(rules.max_expr, set(), known_globals)
-                keywords.append(ast.keyword(arg='max_expr', value=ast.Constant(value=expr)))
+                expr_ast = self.template_codegen._transform_expr(rules.max_expr, set(), known_globals)
+                expr_str = ast.unparse(expr_ast)
+                keywords.append(ast.keyword(arg='max_expr', value=ast.Constant(value=expr_str)))
             if rules.step:
                 keywords.append(ast.keyword(arg='step', value=ast.Constant(value=rules.step)))
             if rules.input_type != 'text':
@@ -568,13 +564,11 @@ class CodeGenerator:
             
             field_items.append((ast.Constant(value=field_name), field_rules_call))
         
-        # Create dict literal
         schema_dict = ast.Dict(
             keys=[k for k, v in field_items],
             values=[v for k, v in field_items]
         )
         
-        # Instantiate FormValidationSchema(fields=..., model_name=...)
         schema_call = ast.Call(
             func=ast.Name(id='FormValidationSchema', ctx=ast.Load()),
             args=[],
@@ -1060,8 +1054,6 @@ class CodeGenerator:
         
         if layout_directive:
             # === Layout Mode ===
-            # 1. Generate slot fillers with unique names based on file path
-            # self.template_codegen.generate_slot_methods returns (dict[slot_name: str], list[str])
             file_id = parsed.file_path or ""
             
             # Ensure layout_id is generated for intermediate layouts
@@ -1075,29 +1067,18 @@ class CodeGenerator:
                 layout_id=layout_id
             )
             
-            # Generate file hash matching template.py
-            import hashlib
             file_hash = hashlib.md5(file_id.encode()).hexdigest()[:8] if file_id else ""
             
-            # Parse slot funcs and add to binding_funcs (as they are methods)
-            for slot_name, func_code in slot_funcs_methods.items():
-                if func_code.strip():
-                    ast_mod = ast.parse(func_code)
-                    if ast_mod.body:
-                         binding_funcs.append(ast_mod.body[0])
+            # Add slot methods directly (they are ASTs now)
+            for slot_name, func_ast in slot_funcs_methods.items():
+                binding_funcs.append(func_ast)
             
-            # Parse aux funcs
-            for func_code in aux_funcs:
-                if func_code.strip():
-                    ast_mod = ast.parse(func_code)
-                    if ast_mod.body:
-                        binding_funcs.append(ast_mod.body[0])
+            # Add aux funcs
+            binding_funcs.extend(aux_funcs)
 
-            # 2. Generate _init_slots method
-            init_slots_body = []
+            # Generate _init_slots
             
-            # Resolve parent layout path at compile time
-            # This is the LAYOUT_ID that this page's slots should register to
+            # Resolve parent layout path
             from pathlib import Path
             parent_layout_path = layout_directive.layout_path
             if not Path(parent_layout_path).is_absolute():
@@ -1106,54 +1087,14 @@ class CodeGenerator:
             else:
                 parent_layout_path = str(Path(parent_layout_path).resolve())
             
-            # Use compile-time constant for parent layout ID (HASHED)
             def make_parent_layout_id():
                 import hashlib
-                # Ensure we hash the absolute string path exactly as the parent would have
                 parent_hash = hashlib.md5(parent_layout_path.encode()).hexdigest()
                 return ast.Constant(value=parent_hash)
 
-            for slot_name in slot_funcs_methods.keys():
-                # Sanitize slot name for valid Python identifier (match template.py)
-                safe_name = slot_name.replace('$', '_head_') if slot_name.startswith('$') else slot_name
-                # Include file hash to match the generated method name
-                func_name = f'_render_slot_fill_{safe_name}_{file_hash}' if file_hash else f'_render_slot_fill_{safe_name}'
-                
-                # Special handling for $head slot (append semantics)
-                if slot_name == '$head':
-                    reg_call = ast.Expr(value=ast.Call(
-                        func=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='register_head_slot', ctx=ast.Load()),
-                        args=[
-                             make_parent_layout_id(),
-                             ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=func_name, ctx=ast.Load())
-                        ],
-                        keywords=[]
-                    ))
-                else:
-                    reg_call = ast.Expr(value=ast.Call(
-                        func=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='register_slot', ctx=ast.Load()),
-                        args=[
-                             make_parent_layout_id(),
-                             ast.Constant(value=slot_name),
-                             ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=func_name, ctx=ast.Load())
-                        ],
-                        keywords=[]
-                    ))
-                init_slots_body.append(reg_call)
+            init_slots_body = []
             
-            # Add super()._init_slots() call at the START to chain up the hierarchy
-            # This ensures parent layout's slots are initialized before child's
-            super_call = ast.Expr(value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Call(func=ast.Name(id='super', ctx=ast.Load()), args=[], keywords=[]),
-                    attr='_init_slots',
-                    ctx=ast.Load()
-                ),
-                args=[],
-                keywords=[]
-            ))
-            # Check if super has _init_slots before calling
-            # if hasattr(super(), '_init_slots'): super()._init_slots()
+            # Chain super
             super_check = ast.If(
                 test=ast.Call(
                     func=ast.Name(id='hasattr', ctx=ast.Load()),
@@ -1163,119 +1104,120 @@ class CodeGenerator:
                     ],
                     keywords=[]
                 ),
-                body=[super_call],
+                body=[ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Call(func=ast.Name(id='super', ctx=ast.Load()), args=[], keywords=[]), attr='_init_slots', ctx=ast.Load()), args=[], keywords=[]))],
                 orelse=[]
             )
-            init_slots_body.insert(0, super_check)
+            init_slots_body.append(super_check)
+
+            for slot_name in slot_funcs_methods.keys():
+                safe_name = slot_name.replace('$', '_head_').replace('-', '_') if slot_name.startswith('$') else slot_name.replace('-', '_')
+                func_name = f'_render_slot_fill_{safe_name}_{file_hash}' if file_hash else f'_render_slot_fill_{safe_name}'
+                
+                if slot_name == '$head':
+                    reg_call = ast.Expr(value=ast.Call(
+                        func=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='register_head_slot', ctx=ast.Load()),
+                        args=[make_parent_layout_id(), ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=func_name, ctx=ast.Load())],
+                        keywords=[]
+                    ))
+                else:
+                    reg_call = ast.Expr(value=ast.Call(
+                        func=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='register_slot', ctx=ast.Load()),
+                        args=[make_parent_layout_id(), ast.Constant(value=slot_name), ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=func_name, ctx=ast.Load())],
+                        keywords=[]
+                    ))
+                init_slots_body.append(reg_call)
                 
             init_slots_func = ast.FunctionDef(
                 name='_init_slots',
                 args=ast.arguments(posonlyargs=[], args=[ast.arg(arg='self')], vararg=None, kwonlyargs=[], kw_defaults=[], defaults=[]),
-                body=init_slots_body if init_slots_body else [ast.Pass()],
+                body=init_slots_body,
                 decorator_list=[],
                 returns=None
             )
             binding_funcs.append(init_slots_func)
-            
+
         else:
             # === Standard Mode ===
             import hashlib
             layout_id = hashlib.md5(str(parsed.file_path).encode()).hexdigest() if parsed.file_path else None
             
-            render_str, aux_funcs = self.template_codegen.generate_render_method(parsed.template, layout_id=layout_id,
-                                                                               known_methods=known_methods, known_globals=known_globals, async_methods=async_methods)
+            render_func, aux_funcs = self.template_codegen.generate_render_method(
+                parsed.template, layout_id=layout_id,
+                known_methods=known_methods, known_globals=known_globals, async_methods=async_methods
+            )
+            binding_funcs.extend(aux_funcs)
 
-            # Parse aux funcs
-            for func_code in aux_funcs:
-                 if func_code.strip():
-                    ast_mod = ast.parse(func_code)
-                    if ast_mod.body:
-                        binding_funcs.append(ast_mod.body[0])
-
-            # Build SPA metadata injection
+            # SPA injection
             path_directive = parsed.get_directive_by_type(PathDirective)
             no_spa = parsed.get_directive_by_type(NoSpaDirective) is not None
             is_multi_path = path_directive and not path_directive.is_simple_string
             spa_enabled = is_multi_path and not no_spa
             
-            # Always inject logic to check for SPA metadata at runtime
-            spa_meta = f'''
-    # Inject SPA navigation metadata
-    import json
-    
-    # Check app state for global config
-    pjax_enabled = getattr(self.request.app.state, 'enable_pjax', False)
-    
-    if getattr(self, "__spa_enabled__", False) or pjax_enabled:
-        sibling_paths = getattr(self, "__sibling_paths__", [])
-        parts.append('<script id="_pyhtml_spa_meta" type="application/json">')
-        parts.append(json.dumps({{"sibling_paths": sibling_paths, "enable_pjax": pjax_enabled}}))
-        parts.append('</script>')
-'''
+            # Determine injection point (before final return)
             
-            # Inject script tag
-            injection = f"""{spa_meta}
-    # Inject client library script
-    parts.append('<script src=\"/_pyhtml/static/pyhtml.min.js\"></script>')
-"""
-            # Find where to inject - before closing </body> or at end
-            if "return" in render_str:
-                render_str = render_str.replace("    return", injection + "    return")
+            spa_check = ast.If(
+                test=ast.BoolOp(op=ast.Or(), values=[
+                    ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value="__spa_enabled__"), ast.Constant(value=False)], keywords=[]),
+                    ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Attribute(value=ast.Attribute(value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='request', ctx=ast.Load()), attr='app', ctx=ast.Load()), attr='state', ctx=ast.Load()), ast.Constant(value='enable_pjax'), ast.Constant(value=False)], keywords=[])
+                ]),
+                body=[
+                    # sibling_paths = ...
+                    ast.Assign(targets=[ast.Name(id='sibling_paths', ctx=ast.Store())], value=ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value="__sibling_paths__"), ast.List(elts=[], ctx=ast.Load())], keywords=[])),
+                    # pjax_enabled = ...
+                    ast.Assign(targets=[ast.Name(id='pjax_enabled', ctx=ast.Store())], value=ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Attribute(value=ast.Attribute(value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='request', ctx=ast.Load()), attr='app', ctx=ast.Load()), attr='state', ctx=ast.Load()), ast.Constant(value='enable_pjax'), ast.Constant(value=False)], keywords=[])),
+                    # parts.append(script tag)
+                    ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), args=[ast.Constant(value='<script id="_pyhtml_spa_meta" type="application/json">')], keywords=[])),
+                    # parts.append(json.dumps(...))
+                    ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), 
+                        args=[ast.Call(func=ast.Attribute(value=ast.Name(id='json', ctx=ast.Load()), attr='dumps', ctx=ast.Load()), 
+                            args=[ast.Dict(keys=[ast.Constant(value='sibling_paths'), ast.Constant(value='enable_pjax')], values=[ast.Name(id='sibling_paths', ctx=ast.Load()), ast.Name(id='pjax_enabled', ctx=ast.Load())])], keywords=[])], 
+                        keywords=[])),
+                    ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), args=[ast.Constant(value='</script>')], keywords=[])),
+                    # parts.append(client lib)
+                    ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), args=[ast.Constant(value='<script src="/_pyhtml/static/pyhtml.min.js"></script>')], keywords=[]))
+                ],
+                orelse=[]
+            )
             
-            # Generate _init_slots (empty)
-            binding_funcs.append(ast.FunctionDef(
-                name='_init_slots',
-                args=ast.arguments(posonlyargs=[], args=[ast.arg(arg='self')], vararg=None, kwonlyargs=[], kw_defaults=[], defaults=[]),
-                body=[ast.Pass()],
+            # Insert before last statement
+            if render_func.body and isinstance(render_func.body[-1], ast.Return):
+                render_func.body.insert(-1, spa_check)
+            else:
+                render_func.body.append(spa_check)
+            
+            # Add no-op _init_slots
+            binding_funcs.append(ast.FunctionDef(name='_init_slots', args=ast.arguments(posonlyargs=[], args=[ast.arg(arg='self')], vararg=None, kwonlyargs=[], kw_defaults=[], defaults=[]), body=[ast.Pass()], decorator_list=[], returns=None))
+
+        # Generate binding methods
+        for binding in self.template_codegen.generated_bindings:
+            target = binding.variable_name
+            # Unparse check if necessary, but here we can rely on standard keys
+            val_key = 'value'
+            if binding.event_type == 'change': val_key = 'checked'
+            elif binding.event_type == 'upload-progress': val_key = 'progress'
+            
+            handler_body = [
+                ast.Assign(
+                    targets=[ast.Name(id='val', ctx=ast.Store())],
+                    value=ast.Call(func=ast.Attribute(value=ast.Name(id='event_data', ctx=ast.Load()), attr='get', ctx=ast.Load()), args=[ast.Constant(value=val_key)], keywords=[])
+                ),
+                ast.If(
+                    test=ast.Compare(left=ast.Name(id='val', ctx=ast.Load()), ops=[ast.IsNot()], comparators=[ast.Constant(value=None)]),
+                    body=[ast.Assign(
+                        targets=[ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=target, ctx=ast.Store())],
+                        value=ast.Name(id='val', ctx=ast.Load())
+                    )],
+                    orelse=[]
+                )
+            ]
+            
+            binding_funcs.append(ast.AsyncFunctionDef(
+                name=binding.handler_name,
+                args=ast.arguments(posonlyargs=[], args=[ast.arg(arg='self'), ast.arg(arg='event_data')], vararg=None, kwonlyargs=[], kw_defaults=[], defaults=[]),
+                body=handler_body,
                 decorator_list=[],
                 returns=None
             ))
-
-            # Parse render func
-            render_ast = ast.parse(render_str)
-            render_func = render_ast.body[0] if isinstance(render_ast, ast.Module) and render_ast.body else None
-    
-            if not render_func:
-                 render_func = ast.FunctionDef(
-                    name='_render_template',
-                    args=ast.arguments(
-                        posonlyargs=[],
-                        args=[ast.arg(arg='self')],
-                        vararg=None,
-                        kwonlyargs=[],
-                        kw_defaults=[],
-                        defaults=[]
-                    ),
-                    body=[ast.Return(value=ast.Constant(value=''))],
-                    decorator_list=[],
-                    returns=None
-                )
-
-        # Generate binding methods matching generated_bindings
-        for binding in self.template_codegen.generated_bindings:
-            target = binding.variable_name
-            
-            val_key = 'checked' if binding.event_type == 'change' and 'checked' in (render_func and ast.unparse(render_func) or "") else 'value'
-            # Fallback logic: check event type
-            if binding.event_type == 'change':
-                 val_key = 'checked'
-            elif binding.event_type == 'upload-progress':
-                 val_key = 'progress'
-            else:
-                 val_key = 'value'
-            
-            func_code = f"""
-async def {binding.handler_name}(self, event_data):
-    val = event_data.get('{val_key}')
-    if val is not None:
-        self.{target} = val
-"""
-            try:
-                func_ast = ast.parse(func_code)
-                if isinstance(func_ast, ast.Module) and func_ast.body:
-                    binding_funcs.append(func_ast.body[0])
-            except SyntaxError as e:
-                print(f"Error generating binding handler for {binding.variable_name}: {e}")
 
         return render_func, binding_funcs
 

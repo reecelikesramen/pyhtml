@@ -103,7 +103,8 @@ class TestWebSocketHandler(unittest.IsolatedAsyncioTestCase):
 
     async def test_send_console_message(self):
         ws = MockWebSocket()
-        await self.handler._send_console_message(ws, "Hello Stdout", "Hello Stderr")
+        await self.handler._send_console_message(ws, "Hello Stdout")
+        await self.handler._send_console_message(ws, "Hello Stderr", level="error")
         
         self.assertEqual(len(ws.sent_messages), 2)
         self.assertEqual(ws.sent_messages[0]['type'], 'console')
