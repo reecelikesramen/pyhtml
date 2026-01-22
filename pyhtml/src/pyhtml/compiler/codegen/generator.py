@@ -178,6 +178,13 @@ class CodeGenerator:
 
         # Generate SPA navigation metadata
         class_body.extend(self._generate_spa_metadata(parsed))
+        
+        # Inject __no_spa__ flag if !no_spa was detected
+        if parsed.get_directive_by_type(NoSpaDirective):
+             class_body.append(ast.Assign(
+                 targets=[ast.Name(id='__no_spa__', ctx=ast.Store())],
+                 value=ast.Constant(value=True)
+             ))
 
         # Generate __init__ method
         class_body.append(self._generate_init_method(parsed))
@@ -1156,9 +1163,12 @@ class CodeGenerator:
             # Determine injection point (before final return)
             
             spa_check = ast.If(
-                test=ast.BoolOp(op=ast.Or(), values=[
-                    ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value="__spa_enabled__"), ast.Constant(value=False)], keywords=[]),
-                    ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Attribute(value=ast.Attribute(value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='request', ctx=ast.Load()), attr='app', ctx=ast.Load()), attr='state', ctx=ast.Load()), ast.Constant(value='enable_pjax'), ast.Constant(value=False)], keywords=[])
+                test=ast.BoolOp(op=ast.And(), values=[
+                    ast.UnaryOp(op=ast.Not(), operand=ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value="__no_spa__"), ast.Constant(value=False)], keywords=[])),
+                    ast.BoolOp(op=ast.Or(), values=[
+                        ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value="__spa_enabled__"), ast.Constant(value=False)], keywords=[]),
+                        ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Attribute(value=ast.Attribute(value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='request', ctx=ast.Load()), attr='app', ctx=ast.Load()), attr='state', ctx=ast.Load()), ast.Constant(value='enable_pjax'), ast.Constant(value=False)], keywords=[])
+                    ])
                 ]),
                 body=[
                     # sibling_paths = ...

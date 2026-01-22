@@ -3,7 +3,7 @@ import ast
 from pyhtml.compiler.codegen.generator import CodeGenerator
 from pyhtml.compiler.ast_nodes import (
     ParsedPyHTML, TemplateNode, EventAttribute, BindAttribute, 
-    FormValidationSchema, FieldValidationRules
+    FormValidationSchema, FieldValidationRules, PathDirective, NoSpaDirective
 )
 
 class TestCodeGenerator(unittest.TestCase):
@@ -108,6 +108,42 @@ class TestCodeGenerator(unittest.TestCase):
         self.assertIn("my_os", names)
         self.assertIn("my_sqrt", names)
         self.assertIn("json", names) 
+
+    def test_generate_spa_script_injection(self):
+        # Multi-path directive triggers SPA injection
+        parsed = ParsedPyHTML(
+            template=[TemplateNode(tag="div", children=[], attributes={}, line=1, column=0)],
+            directives=[PathDirective(name="path", line=1, column=0, routes={"/a": "a", "/b": "b"}, is_simple_string=False)],
+            file_path="test.pyhtml"
+        )
+        module = self.generator.generate(parsed)
+        
+        # Find _render_template method
+        render_func = next(n for n in module.body[-1].body if isinstance(n, ast.AsyncFunctionDef) and n.name == "_render_template")
+        
+        # DEBUG
+        # print(ast.dump(render_func))
+        
+        # Look for script tag injection in the body
+        script_appends = []
+        for n in render_func.body:
+            # The injection might be nested in an If statement (spa_check)
+            nodes_to_check = [n]
+            if isinstance(n, ast.If):
+                nodes_to_check.extend(n.body)
+            
+            for node in nodes_to_check:
+                if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and node.value.args:
+                    arg0 = node.value.args[0]
+                    if isinstance(arg0, ast.Constant) and isinstance(arg0.value, str) and "<script" in arg0.value:
+                        script_appends.append(node)
+                    elif isinstance(arg0, ast.JoinedStr):
+                        # Check first constant part of JoinedStr
+                        if arg0.values and isinstance(arg0.values[0], ast.Constant) and "<script" in arg0.values[0].value:
+                            script_appends.append(node)
+        
+        # Should have SPA meta script (constant parts) and client library script (JoinedStr)
+        self.assertTrue(len(script_appends) >= 2)
 
 if __name__ == "__main__":
     unittest.main()
