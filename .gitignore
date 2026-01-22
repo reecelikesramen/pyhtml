@@ -33,6 +33,7 @@ chatbot.db
 .coverage
 htmlcov/
 *.pem
+pyhtml/src/pyhtml/client/coverage/
 
 # Demo app
 demo-app/.pyhtml_cache/

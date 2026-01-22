@@ -237,4 +237,55 @@ describe('UnifiedEventHandler', () => {
 
         expect(appMock.sendEvent).toHaveBeenCalledWith('dynamic', expect.anything());
     });
+
+    it('should support multiple handlers via JSON', () => {
+        document.body.innerHTML = `
+            <button id="multi" 
+                data-on-click='[{"handler": "foo", "modifiers": ["stop"]}, {"handler": "bar", "modifiers": ["prevent"]}]'
+            ></button>
+        `;
+        const btn = document.getElementById('multi')!;
+        const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+        const stopPropagationSpy = vi.spyOn(event, 'stopPropagation');
+        const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
+
+        handler.init();
+        btn.dispatchEvent(event);
+
+        expect(appMock.sendEvent).toHaveBeenCalledWith('foo', expect.anything());
+        expect(appMock.sendEvent).toHaveBeenCalledWith('bar', expect.anything());
+        expect(stopPropagationSpy).toHaveBeenCalled();
+        expect(preventDefaultSpy).toHaveBeenCalled();
+    });
+
+    it('should handle explicit arguments in JSON handlers', () => {
+        document.body.innerHTML = `
+            <button id="args" 
+                data-on-click='[{"handler": "save", "modifiers": [], "args": [1, "test"]}]'
+            ></button>
+        `;
+        const btn = document.getElementById('args')!;
+
+        handler.init();
+        btn.click();
+
+        expect(appMock.sendEvent).toHaveBeenCalledWith('save', expect.objectContaining({
+            args: {
+                arg0: 1,
+                arg1: 'test'
+            }
+        }));
+    });
+
+    it('should fallback to e.code for key modifiers', () => {
+        document.body.innerHTML = '<input id="input" data-on-keyup="hit" data-modifiers-keyup="h">';
+        const input = document.getElementById('input')!;
+
+        handler.init();
+
+        // Simulate Alt+H which might produce '˙' but has code 'KeyH'
+        input.dispatchEvent(new KeyboardEvent('keyup', { key: '˙', code: 'KeyH', bubbles: true }));
+
+        expect(appMock.sendEvent).toHaveBeenCalledWith('hit', expect.anything());
+    });
 });
