@@ -387,12 +387,49 @@ class TemplateCodegen:
                 else:
                         lines.append(f'{indent_str}attrs[{repr(k)}] = {v}')
 
+            # Group and generate event attributes (handling multiples via JSON)
+            event_attrs_by_type = defaultdict(list)
             for attr in node.special_attributes:
                 if isinstance(attr, EventAttribute):
-                    lines.append(f'{indent_str}attrs["data-on-{attr.event_type}"] = {repr(attr.handler_name)}')
+                    event_attrs_by_type[attr.event_type].append(attr)
+            
+            for event_type, attrs_list in event_attrs_by_type.items():
+                if len(attrs_list) == 1:
+                    # Single handler
+                    attr = attrs_list[0]
+                    lines.append(f'{indent_str}attrs["data-on-{event_type}"] = {repr(attr.handler_name)}')
+                    if attr.modifiers:
+                        modifiers_str = " ".join(attr.modifiers)
+                        lines.append(f'{indent_str}attrs["data-modifiers-{event_type}"] = {repr(modifiers_str)}')
                     for i, arg_expr in enumerate(attr.args):
                             val = self._transform_expr(arg_expr, local_vars, known_globals)
                             lines.append(f'{indent_str}attrs["data-arg-{i}"] = json.dumps({val})')
+                else:
+                    # Multiple handlers - JSON format
+                    lines.append(f'{indent_str}_handlers_{event_type} = []')
+                    all_modifiers = set()
+                    for attr in attrs_list:
+                        modifiers = attr.modifiers or []
+                        all_modifiers.update(modifiers)
+                        
+                        lines.append(f'{indent_str}_h = {{"handler": {repr(attr.handler_name)}, "modifiers": {repr(modifiers)}}}')
+                        if attr.args:
+                            lines.append(f'{indent_str}_args = []')
+                            for arg_expr in attr.args:
+                                val = self._transform_expr(arg_expr, local_vars, known_globals)
+                                lines.append(f'{indent_str}_args.append({val})')
+                            lines.append(f'{indent_str}_h["args"] = _args')
+                        lines.append(f'{indent_str}_handlers_{event_type}.append(_h)')
+                    
+                    lines.append(f'{indent_str}attrs["data-on-{event_type}"] = json.dumps(_handlers_{event_type})')
+                    if all_modifiers:
+                        modifiers_str = " ".join(all_modifiers)
+                        lines.append(f'{indent_str}attrs["data-modifiers-{event_type}"] = {repr(modifiers_str)}')
+
+            # Handle other special attributes
+            for attr in node.special_attributes:
+                if isinstance(attr, EventAttribute):
+                    continue
                 elif isinstance(attr, ReactiveAttribute):
                     # Transformed expression (handling async calls and self. prefix)
                     val_expr = self._transform_reactive_expr(attr.expr, local_vars, known_methods, known_globals, async_methods)

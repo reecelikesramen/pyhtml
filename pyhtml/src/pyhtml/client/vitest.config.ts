@@ -1,0 +1,12 @@
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+    test: {
+        environment: 'happy-dom',
+        coverage: {
+            provider: 'v8',
+            reporter: ['text', 'json', 'html'],
+            include: ['src/events/handler.ts'],
+        },
+    },
+});

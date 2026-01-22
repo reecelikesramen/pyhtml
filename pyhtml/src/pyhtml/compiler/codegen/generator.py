@@ -408,6 +408,9 @@ class CodeGenerator:
         """Transform inline code: lift arguments and prefix globals with self."""
         import builtins
         
+        # Map $event to event for Alpine compatibility
+        code = code.replace('$event', 'event')
+        
         tree = ast.parse(code)
         extracted_args = []
         

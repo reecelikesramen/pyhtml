@@ -12,8 +12,19 @@ class EventAttributeCodegen(AttributeCodegen):
 
     def generate_html(self, attr: EventAttribute) -> str:
         """Generate HTML data attribute for event."""
-        # @click="handler" → data-on-click="handler"
-        return f'data-on-{attr.event_type}="{attr.handler_name}"'
+        # @click.prevent="handler" → data-on-click="handler" data-modifiers-click="prevent"
+        attrs = [f'data-on-{attr.event_type}="{attr.handler_name}"']
+        if attr.modifiers:
+            attrs.append(f'data-modifiers-{attr.event_type}="{" ".join(attr.modifiers)}"')
+        
+        # Lifted arguments support
+        if hasattr(attr, 'args') and attr.args:
+            for i, arg in enumerate(attr.args):
+                # We need to escape quotes in the argument value for HTML
+                escaped_arg = str(arg).replace('"', '&quot;')
+                attrs.append(f'data-arg-{i}="{escaped_arg}"')
+                
+        return ' '.join(attrs)
 
     def generate_handler(self, attr: EventAttribute) -> Optional[ast.FunctionDef]:
         """No extra handler needed - user defines it."""

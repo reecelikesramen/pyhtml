@@ -148,11 +148,12 @@ class EventAttribute(SpecialAttribute):
     event_type: str  # 'click', 'submit', etc.
     handler_name: str
     args: List[str] = field(default_factory=list)  # List of python expressions for arguments
+    modifiers: List[str] = field(default_factory=list)  # List of modifiers (e.g. ['prevent', 'stop'])
     # Form-specific fields
     validation_schema: Optional[FormValidationSchema] = None  # Set for @submit handlers
 
     def __str__(self) -> str:
-        return f"EventAttribute(event={self.event_type}, handler={self.handler_name}, args={self.args})"
+        return f"EventAttribute(event={self.event_type}, modifiers={self.modifiers}, handler={self.handler_name}, args={self.args})"
 
 
 @dataclass

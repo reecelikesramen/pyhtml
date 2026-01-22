@@ -17,12 +17,13 @@ class EventAttributeParser(AttributeParser):
         return attr_name.startswith(self.PREFIX)
 
     def parse(self, attr_name: str, attr_value: str, line: int, col: int) -> Optional[EventAttribute]:
-        """Parse @click="handler_name" attribute."""
-        match = self.PATTERN.match(attr_name)
-        if not match:
-            return None
+        """Parse @click.prevent.stop="handler_name" attribute."""
+        # Remove @ prefix
+        full_event = attr_name[1:]
+        parts = full_event.split('.')
+        event_type = parts[0]
+        modifiers = [m for m in parts[1:] if m]
 
-        event_type = match.group(1)
         handler_name = attr_value.strip().strip('"\'')  # Remove quotes
 
         # Parse handler args if present (future: handler(arg1, arg2))
@@ -36,6 +37,7 @@ class EventAttributeParser(AttributeParser):
             value=attr_value,
             event_type=event_type,
             handler_name=handler_name,
+            modifiers=modifiers,
             args=handler_args,
             line=line,
             column=col
