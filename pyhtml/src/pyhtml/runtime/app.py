@@ -4,7 +4,7 @@ from typing import Optional
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse, Response, PlainTextResponse
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 
@@ -12,6 +12,7 @@ from starlette.staticfiles import StaticFiles
 import traceback
 import re
 
+from pyhtml.compiler.exceptions import PyHTMLSyntaxError
 from pyhtml.runtime.loader import PageLoader
 from pyhtml.runtime.router import Router
 from pyhtml.runtime.websocket import WebSocketHandler
@@ -55,6 +56,8 @@ class PyHTML:
         self.enable_pjax = enable_pjax
         self.debug = debug
         self.enable_webtransport = enable_webtransport
+        # Internal flag set by dev_server.py when running via 'pyhtml dev'
+        self._is_dev_mode = False
         
         self.router = Router()
         
@@ -99,7 +102,20 @@ class PyHTML:
         ]
         
         # Debug endpoints (must be before catch-all)
+        # ONLY enable these if BOTH debug=True AND we are in dev mode
+        # This prevents source code exposure in 'pyhtml run' even if debug=True
         if self.debug:
+            # We defer the check to the handler or register them but check flag inside?
+            # Better to not register them at all if we know _is_dev_mode is False at init?
+            # PROBLEM: _is_dev_mode is set AFTER init by dev_server.py.
+            # So we register them, but gate them inside the handler, OR we allow dev_server
+            # to re-init app? No, dev_server imports app.
+            
+            # Solution: Register them, but check self._is_dev_mode inside the handlers.
+            # OR refactor so routes are dynamic? Starlette routes are fixed list usually.
+            
+            # Actually, let's keep them registered if debug=True, but 
+            # modify _handle_source/_handle_file to checking _is_dev_mode as well inside.
             routes.append(Route('/_pyhtml/source', self._handle_source, methods=['GET']))
             routes.append(Route('/_pyhtml/file/{encoded:path}', self._handle_file, methods=['GET']))
             # Chrome DevTools automatic workspace folders (M-135+)
@@ -115,6 +131,7 @@ class PyHTML:
         # Store configuration in app state for runtime access (e.g. by pages)
         self.app.state.enable_pjax = self.enable_pjax
         self.app.state.debug = self.debug
+        self.app.state.pyhtml = self
     
     async def _handle_capabilities(self, request: Request) -> JSONResponse:
         """Return server transport capabilities for client negotiation."""
@@ -124,6 +141,15 @@ class PyHTML:
             'webtransport': False,
             'version': '0.0.1'
         })
+
+    def _get_client_script_url(self) -> str:
+        """Return the appropriate client bundle URL based on server mode.
+        
+        Returns dev bundle when running via 'pyhtml dev', core bundle otherwise.
+        """
+        if self._is_dev_mode:
+            return "/_pyhtml/static/pyhtml.dev.min.js"
+        return "/_pyhtml/static/pyhtml.core.min.js"
 
     async def _handle_upload(self, request: Request) -> JSONResponse:
         """Handle file uploads."""
@@ -169,6 +195,10 @@ class PyHTML:
             print("DEBUG: _handle_source returning 404 because debug=False")
             return Response("Not Found", status_code=404)
             
+        if not self._is_dev_mode:
+            print("DEBUG: _handle_source returning 404 because _is_dev_mode=False")
+            return Response("Not Found", status_code=404)
+            
         path_str = request.query_params.get('path')
         print(f"DEBUG: _handle_source path={path_str}")
         if not path_str:
@@ -192,7 +222,7 @@ class PyHTML:
 
     async def _handle_file(self, request: Request) -> Response:
         """Serve source file by base64-encoded path (for DevTools source mapping)."""
-        if not self.debug:
+        if not self.debug or not self._is_dev_mode:
             return Response("Not Found", status_code=404)
             
         import base64
@@ -230,6 +260,9 @@ class PyHTML:
 
     async def _handle_devtools_json(self, request: Request) -> JSONResponse:
         """Serve Chrome DevTools project settings for automatic workspace folders."""
+        if not self.debug or not self._is_dev_mode:
+            return JSONResponse({}, status_code=404)
+
         import uuid
         import hashlib
         
@@ -341,6 +374,10 @@ class PyHTML:
                     elif self.path_based_routing:
                          # No explicit !path, use file-based route ONLY if enabled
                          self.router.add_route(route_path, page_class)
+                    elif name in ('404', '500'):
+                         # Special case: error pages (404.pyhtml, 500.pyhtml) are always registered
+                         # at their conventional routes regardless of path_based_routing setting
+                         self.router.add_route(f"/{name}", page_class)
                          
                 except Exception as e:
                     print(f"Failed to load page {entry}: {e}")
@@ -373,19 +410,37 @@ class PyHTML:
                 else:
                     routes_to_register = [route_path]
                 
-                error_detail = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+                # Use a ModeAwareErrorPage that checks debug/dev mode at RENDER time
+                # This is necessary because _is_dev_mode is set AFTER __init__ by dev_server.py
+                from pyhtml.runtime.compile_error_page import CompileErrorPage
+                from pyhtml.runtime.page import BasePage
                 
                 for route in routes_to_register:
-                    # Create a closure helper to generate ErrorPage instance
-                    # We can't pass the class directly because Routes expect a BasePage subclass
-                    # So we define a new class dynamically that inherits from ErrorPage
-                    # but has the specific error info baked in
+                    # Capture error and file_path in closure
+                    captured_error = error
+                    captured_file_path = str(file_path)
+                    captured_app = self  # Reference to PyHTML app for mode checking
                     
-                    class BoundErrorPage(ErrorPage):
+                    class ModeAwareErrorPage(BasePage):
+                        """Error page that decides at render time whether to show details or trigger 500."""
+                        
                         def __init__(self, request: Request, *args, **kwargs):
-                            super().__init__(request, "Compilation Error", error_detail)
-
-                    self.router.add_route(route, BoundErrorPage)
+                            # Store for parent __init__
+                            super().__init__(request, *args, **kwargs)
+                        
+                        async def render(self, init=True):
+                            # Check mode at render time (not registration time!)
+                            # This allows dev_server.py to set _is_dev_mode after app init
+                            if captured_app.debug or getattr(captured_app, '_is_dev_mode', False):
+                                # DEV MODE: Show detailed CompileErrorPage
+                                detail_page = CompileErrorPage(self.request, captured_error, file_path=captured_file_path)
+                                return await detail_page.render()
+                            else:
+                                # PROD MODE: Raise to trigger _handle_500
+                                raise RuntimeError("Page failed to load")
+                    
+                    ModeAwareErrorPage.__file_path__ = captured_file_path
+                    self.router.add_route(route, ModeAwareErrorPage)
                     
             except Exception:
                 # Fallback to basic path if regex fails
@@ -489,7 +544,11 @@ class PyHTML:
                  except Exception:
                      pass # Fallback
                      
-             return Response("404 Not Found", status_code=404)
+             # Default 404 with client script
+             page = ErrorPage(request, "404 Not Found", f"The path '{path}' could not be found.")
+             response = await page.render()
+             response.status_code = 404
+             return response
         
         page_class, params, variant_name = match
         # ... (params, query, path_info, url_helper construction)

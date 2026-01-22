@@ -5,3 +5,5 @@
     <p><small>{error_detail}</small></p>
     <a href="/" style="color: #6366f1; text-decoration: none;">&larr; Go Home</a>
 </div>
+---
+error_detail = "Please check server logs for more information."

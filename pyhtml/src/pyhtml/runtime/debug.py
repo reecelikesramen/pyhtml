@@ -10,6 +10,8 @@ from typing import List, Dict, Any, Optional
 from starlette.types import ASGIApp, Scope, Receive, Send
 from starlette.responses import HTMLResponse, PlainTextResponse
 
+from pyhtml.compiler.exceptions import PyHTMLSyntaxError
+
 class DevErrorMiddleware:
     """
     Middleware to catch exceptions and render a helpful debug page.
@@ -35,6 +37,10 @@ class DevErrorMiddleware:
         return getattr(self.app, name)
 
     def render_error_page(self, exc: Exception) -> HTMLResponse:
+        # Check if this is a compile-time error
+        if isinstance(exc, PyHTMLSyntaxError):
+            return self._render_compile_error(exc)
+        
         exc_type = type(exc).__name__
         exc_msg = str(exc)
         
@@ -49,6 +55,75 @@ class DevErrorMiddleware:
 
         html_content = self._generate_html(exc_type, exc_msg, frames, is_framework_error)
         return HTMLResponse(html_content, status_code=500)
+    
+    def _render_compile_error(self, exc: PyHTMLSyntaxError) -> HTMLResponse:
+        """Render a specialized error page for compile-time syntax errors."""
+        # Read the context around the error line
+        context_lines = []
+        if exc.file_path and exc.line and os.path.exists(exc.file_path):
+            try:
+                lines = linecache.getlines(exc.file_path)
+                start = max(1, exc.line - 5)
+                end = min(len(lines), exc.line + 5)
+                
+                for i in range(start, end + 1):
+                    if i <= len(lines):
+                        context_lines.append({
+                            'num': i,
+                            'content': lines[i-1].rstrip(),
+                            'is_current': i == exc.line
+                        })
+            except Exception:
+                pass
+        
+        # Generate code context HTML
+        context_html = ""
+        for line in context_lines:
+            cls = "line-current" if line['is_current'] else "line"
+            context_html += f"<div class='{cls}'><span class='line-num'>{line['num']}</span> <span class='code'>{html.escape(line['content'])}</span></div>"
+        
+        short_path = self._shorten_path(exc.file_path) if exc.file_path else "unknown file"
+        
+        return HTMLResponse(f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>PyHTML Syntax Error</title>
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a1a; color: #e0e0e0; margin: 0; padding: 20px; }}
+                h1 {{ color: #ff6b6b; font-size: 24px; margin-bottom: 5px; }}
+                .exc-msg {{ font-size: 16px; color: #fff; margin-bottom: 20px; white-space: pre-wrap; font-family: monospace; line-height: 1.6; }}
+                .container {{ max-width: 1000px; margin: 0 auto; }}
+                .error-location {{ background: #2d2d2d; border-radius: 8px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #ff6b6b; }}
+                .file-info {{ color: #ffd43b; font-family: monospace; font-size: 14px; margin-bottom: 10px; }}
+                .code-context {{ padding: 10px 0; background: #222; font-family: "Fira Code", monospace; font-size: 13px; overflow-x: auto; border-radius: 4px; }}
+                .line {{ padding: 2px 15px; color: #888; display: flex; }}
+                .line-current {{ padding: 2px 15px; background: #3c1e1e; color: #ffcccc; display: flex; border-left: 3px solid #ff6b6b; }}
+                .line-num {{ width: 40px; text-align: right; margin-right: 15px; opacity: 0.5; user-select: none; }}
+                .code {{ white-space: pre; }}
+                .help-box {{ background: #1e3a3a; border: 1px solid #69db7c; color: #69db7c; padding: 15px; border-radius: 8px; margin-top: 20px; }}
+                .help-box strong {{ display: block; margin-bottom: 8px; font-size: 16px; }}
+                .header-block {{ border-bottom: 1px solid #333; padding-bottom: 20px; margin-bottom: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header-block">
+                    <h1>PyHTML Syntax Error</h1>
+                </div>
+                
+                <div class="error-location">
+                    <div class="file-info">{html.escape(short_path)}:{exc.line}</div>
+                    <div class="exc-msg">{html.escape(exc.message)}</div>
+                </div>
+                
+                {f'<div class="code-context">{context_html}</div>' if context_html else ''}
+            </div>
+            <!-- Standard PyHTML Client Script for Hot Reload -->
+            <script src="/_pyhtml/static/pyhtml.dev.min.js"></script>
+        </body>
+        </html>
+        """, status_code=500)
 
     def _get_frames(self, tb) -> List[Dict[str, Any]]:
         frames = []

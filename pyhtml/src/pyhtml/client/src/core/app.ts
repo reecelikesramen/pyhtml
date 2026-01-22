@@ -1,8 +1,6 @@
 import { TransportManager, TransportConfig } from './transport-manager';
 import { DOMUpdater } from './dom-updater';
-import { ServerMessage, ClientMessage, EventData, RelocateMessage, StackFrame } from './transports';
-
-
+import { ServerMessage, ClientMessage, EventData, RelocateMessage } from './transports';
 
 export interface PyHTMLConfig extends TransportConfig {
     /** Auto-initialize on DOMContentLoaded */
@@ -17,18 +15,19 @@ const DEFAULT_CONFIG: PyHTMLConfig = {
 };
 
 /**
- * Main PyHTML Application class.
+ * Core PyHTML Application class.
+ * Provides transport, DOM updates, SPA navigation, and event handling.
+ * Dev-only features (status overlay, error traces) are in the dev bundle.
  */
 export class PyHTMLApp {
-    private transport: TransportManager;
-    private updater: DOMUpdater;
-    private initialized = false;
-    private config: PyHTMLConfig;
-    private siblingPaths: string[] = [];
-    private pathRegexes: RegExp[] = [];
-    private pjaxEnabled = false;
-    private statusOverlay: HTMLElement | null = null;
-    private isConnected = false;
+    protected transport: TransportManager;
+    protected updater: DOMUpdater;
+    protected initialized = false;
+    protected config: PyHTMLConfig;
+    protected siblingPaths: string[] = [];
+    protected pathRegexes: RegExp[] = [];
+    protected pjaxEnabled = false;
+    protected isConnected = false;
 
     constructor(config: Partial<PyHTMLConfig> = {}) {
         this.config = { ...DEFAULT_CONFIG, ...config };
@@ -46,10 +45,6 @@ export class PyHTMLApp {
         // Setup message handling
         this.transport.onMessage((msg) => this.handleMessage(msg));
         this.transport.onStatusChange((connected) => this.handleStatusChange(connected));
-
-        // Create UI
-        this.createStatusOverlay();
-        this.handleStatusChange(false); // Initial state
 
         // Connect transport with fallback
         try {
@@ -69,9 +64,17 @@ export class PyHTMLApp {
     }
 
     /**
+     * Handle connection status changes. Override in dev bundle for UI.
+     */
+    protected handleStatusChange(connected: boolean): void {
+        this.isConnected = connected;
+        // Base implementation: no UI, just track state
+    }
+
+    /**
      * Load SPA navigation metadata from injected script tag.
      */
-    private loadSPAMetadata(): void {
+    protected loadSPAMetadata(): void {
         const metaScript = document.getElementById('_pyhtml_spa_meta');
         if (metaScript) {
             try {
@@ -86,64 +89,31 @@ export class PyHTMLApp {
         }
     }
 
-    private createStatusOverlay(): void {
-        this.statusOverlay = document.createElement('div');
-        this.statusOverlay.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 5px;
-            font-family: system-ui, -apple-system, sans-serif;
-            font-size: 14px;
-            z-index: 10000;
-            display: none;
-            transition: opacity 0.3s;
-            pointer-events: none;
-        `;
-        document.body.appendChild(this.statusOverlay);
-    }
-
-    private handleStatusChange(connected: boolean): void {
-        this.isConnected = connected;
-        if (this.statusOverlay) {
-            if (connected) {
-                this.statusOverlay.style.display = 'none';
-            } else {
-                this.statusOverlay.textContent = 'Connection Lost - Reconnecting...';
-                this.statusOverlay.style.display = 'block';
-            }
-        }
-    }
-
     /**
      * Convert route pattern like '/a/:id' to regex.
      */
-    private patternToRegex(pattern: string): RegExp {
+    protected patternToRegex(pattern: string): RegExp {
         // Escape special regex chars except for our placeholders
         let regex = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
         // Replace :param:type or :param with capture groups
-        regex = regex.replace(/:(\w+)(:\w+)?/g, '([^/]+)');
+        regex = regex.replace(/:(\\w+)(:\\w+)?/g, '([^/]+)');
         // Replace {param:type} or {param} with capture groups
-        regex = regex.replace(/\{(\w+)(:\w+)?\}/g, '([^/]+)');
+        regex = regex.replace(/\\{(\\w+)(:\\w+)?\\}/g, '([^/]+)');
         return new RegExp(`^${regex}$`);
     }
 
     /**
      * Check if a path matches any sibling path pattern.
      */
-    private isSiblingPath(path: string): boolean {
+    protected isSiblingPath(path: string): boolean {
         return this.pathRegexes.some(regex => regex.test(path));
     }
 
     /**
      * Setup SPA navigation for sibling paths.
      */
-    private setupSPANavigation(): void {
-        // Handle browser back/forward - establish this ALWAYS to support navigating
-        // back to a valid SPA page from a 404 or other page.
+    protected setupSPANavigation(): void {
+        // Handle browser back/forward
         window.addEventListener('popstate', () => {
             this.sendRelocate(window.location.pathname + window.location.search);
         });
@@ -165,11 +135,8 @@ export class PyHTMLApp {
             let shouldIntercept = false;
 
             if (this.pjaxEnabled) {
-                // If PJAX enabled, intercept all internal paths (unless manually opted out maybe?)
-                // For now, intercept everything same-origin
                 shouldIntercept = true;
             } else if (this.isSiblingPath(link.pathname)) {
-                // Sibling path logic
                 shouldIntercept = true;
             }
 
@@ -181,20 +148,11 @@ export class PyHTMLApp {
     }
 
     /**
-     * Navigate to a sibling path using SPA navigation.
+     * Navigate to a path using SPA navigation.
      */
     navigateTo(path: string): void {
         if (!this.isConnected) {
             console.warn('PyHTML: Navigation blocked - Offline');
-            // Flash the overlay or show specific alert?
-            if (this.statusOverlay) {
-                this.statusOverlay.style.backgroundColor = 'rgba(200, 0, 0, 0.9)';
-                this.statusOverlay.textContent = 'Cannot navigate - Offline';
-                setTimeout(() => {
-                    this.handleStatusChange(this.isConnected); // Reset style
-                    if (this.statusOverlay) this.statusOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-                }, 1500);
-            }
             return;
         }
 
@@ -205,7 +163,7 @@ export class PyHTMLApp {
     /**
      * Send relocate message to server.
      */
-    private sendRelocate(path: string): void {
+    protected sendRelocate(path: string): void {
         const message: RelocateMessage = {
             type: 'relocate',
             path
@@ -216,7 +174,7 @@ export class PyHTMLApp {
     /**
      * Setup DOM event interceptors.
      */
-    private setupEventInterceptors(): void {
+    protected setupEventInterceptors(): void {
         // Click events
         document.addEventListener('click', (e) => {
             const target = (e.target as Element).closest('[data-on-click]');
@@ -242,20 +200,17 @@ export class PyHTMLApp {
                 const handler = target.getAttribute('data-on-submit');
                 if (handler) {
                     const form = target as HTMLFormElement;
-                    // Collect form data
                     const formData = new FormData(form);
                     const data: Record<string, any> = {};
 
                     // Handle regular fields
                     formData.forEach((value, key) => {
-                        if (value instanceof File) {
-                            // Skip files here, handle them below to support async reading
-                        } else {
+                        if (!(value instanceof File)) {
                             data[key] = value.toString();
                         }
                     });
 
-                    // Handle file inputs: Upload via HTTP endpoint first
+                    // Handle file uploads
                     const fileInputs = form.querySelectorAll('input[type="file"]');
                     const uploadPromises: Promise<void>[] = [];
 
@@ -267,9 +222,7 @@ export class PyHTMLApp {
                         if (fileInput.files && fileInput.files.length > 0) {
                             const file = fileInput.files[0];
 
-                            // Client-side Validation
-
-                            // Check size
+                            // Client-side size validation
                             const maxSizeAttr = fileInput.getAttribute('max-size');
                             if (maxSizeAttr) {
                                 let maxSize = parseInt(maxSizeAttr);
@@ -284,13 +237,6 @@ export class PyHTMLApp {
                                     uploadPromises.push(Promise.reject(msg));
                                     return;
                                 }
-                            }
-
-                            // Check type (if accept is set, though browser handles picker)
-                            const accept = fileInput.accept;
-                            if (accept) {
-                                // Simple check for basic types if needed
-                                // Skipping complex MIME parsing for now as server validates strictly
                             }
 
                             const uploadFormData = new FormData();
@@ -310,19 +256,17 @@ export class PyHTMLApp {
                                 }
 
                                 // Progress handling
-                                // Throttle progress updates to avoid flooding
                                 let lastProgressTime = 0;
-                                xhr.upload.onprogress = (e) => {
-                                    if (e.lengthComputable) {
+                                xhr.upload.onprogress = (ev) => {
+                                    if (ev.lengthComputable) {
                                         const now = Date.now();
-                                        if (now - lastProgressTime >= 100) { // 100ms throttle
+                                        if (now - lastProgressTime >= 100) {
                                             lastProgressTime = now;
-                                            const percent = e.loaded / e.total;
+                                            const percent = ev.loaded / ev.total;
 
-                                            // Send directly to avoid detached DOM node issues if re-rendered
-                                            const handler = fileInput.getAttribute('data-on-upload-progress');
-                                            if (handler) {
-                                                this.sendEvent(handler, {
+                                            const progressHandler = fileInput.getAttribute('data-on-upload-progress');
+                                            if (progressHandler) {
+                                                this.sendEvent(progressHandler, {
                                                     type: 'upload-progress',
                                                     id: fileInput.id,
                                                     progress: percent,
@@ -346,17 +290,14 @@ export class PyHTMLApp {
                                                 };
                                                 resolve();
                                             } else {
-                                                console.error('PyHTML: Upload failed, no ID returned', result);
                                                 reject(new Error('No ID returned'));
                                             }
-                                        } catch (e) {
-                                            reject(e);
+                                        } catch (err) {
+                                            reject(err);
                                         }
                                     } else {
-                                        // Handle server errors (e.g. 413 Payload Too Large)
                                         const msg = `Upload failed: ${xhr.status} ${xhr.statusText}`;
-                                        console.error('PyHTML: Upload failed', xhr.status, xhr.responseText);
-                                        alert(msg); // Provide immediate feedback
+                                        alert(msg);
                                         reject(new Error(msg));
                                     }
                                 };
@@ -370,12 +311,10 @@ export class PyHTMLApp {
                     });
 
                     // Wait for all uploads
-                    console.log('PyHTML: Waiting for uploads...');
                     try {
                         await Promise.all(uploadPromises);
-                        console.log('PyHTML: Uploads complete. Sending submit event.');
-                    } catch (e) {
-                        console.error('PyHTML: Upload validation failed', e);
+                    } catch (err) {
+                        console.error('PyHTML: Upload failed', err);
                         return;
                     }
 
@@ -389,7 +328,7 @@ export class PyHTMLApp {
             }
         });
 
-        // Input events (debounced for performance)
+        // Input events (debounced)
         let inputTimeout: number | undefined;
         document.addEventListener('input', (e) => {
             const target = (e.target as Element).closest('[data-on-input]');
@@ -405,7 +344,7 @@ export class PyHTMLApp {
                             args: this.getArgs(target)
                         });
                     }
-                }, 150); // 150ms debounce
+                }, 150);
             }
         });
 
@@ -425,23 +364,19 @@ export class PyHTMLApp {
                 }
             }
         });
-
     }
 
     /**
      * Collect data-arg-* attributes from element.
      */
-    private getArgs(element: Element): Record<string, unknown> {
+    protected getArgs(element: Element): Record<string, unknown> {
         const args: Record<string, unknown> = {};
         if (element instanceof HTMLElement) {
             for (const key in element.dataset) {
                 if (key.startsWith('arg')) {
-                    // dataset keys are camelCase (data-arg-0 -> arg0)
-                    // Values are JSON encoded
                     try {
                         args[key] = JSON.parse(element.dataset[key] || 'null');
-                    } catch (e) {
-                        console.warn('PyHTML: Failed to parse arg', key, element.dataset[key]);
+                    } catch {
                         args[key] = element.dataset[key];
                     }
                 }
@@ -464,94 +399,9 @@ export class PyHTMLApp {
     }
 
     /**
-     * Handle incoming server message.
+     * Handle incoming server message. Override in dev bundle for error_trace.
      */
-    private loadedSources = new Set<string>();
-
-    private getVirtualUrl(filename: string): string {
-        // Generate a consistent virtual URL for a filename
-        // Must include origin to ensure Chrome treats it as a full URL for linking
-        const encoded = btoa(filename).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-        // Append clean filename to URL so Chrome displays it in stack trace
-        const cleanName = filename.split(/[/\\]/).pop() || 'unknown';
-        return `${window.location.origin}/_pyhtml/file/${encoded}/${cleanName}`;
-    }
-
-    private async handleErrorTrace(errorMessage: string, trace: StackFrame[]) {
-        // Load sources for frames
-        const filesToLoad = new Set<string>();
-        for (const frame of trace) {
-            if (!this.loadedSources.has(frame.filename)) {
-                filesToLoad.add(frame.filename);
-            }
-        }
-
-
-        await Promise.all(Array.from(filesToLoad).map(async (filename) => {
-            try {
-                const virtualUrl = this.getVirtualUrl(filename);
-
-                // Fetch content
-                const url = `/_pyhtml/source?path=${encodeURIComponent(filename)}`;
-                const resp = await fetch(url);
-                if (resp.ok) {
-                    const content = await resp.text();
-
-                    // Inject the raw Python/PyHTML source with sourceURL only
-                    // The script has "syntax errors" (it's Python, not JS) but
-                    // DevTools will display the raw source and our explicit
-                    // column numbers will work.
-                    const script = document.createElement('script');
-                    script.textContent = `${content}\n//# sourceURL=${virtualUrl}`;
-
-                    // HACK: Suppress syntax errors from Python code being parsed as JS
-                    // We want the script to be loaded for DevTools, but not to clutter console.
-                    const handler = (e: ErrorEvent) => {
-                        if (e.target === window || e.target === script) {
-                            e.preventDefault();
-                            e.stopImmediatePropagation();
-                        }
-                    };
-                    window.addEventListener('error', handler, true); // Capture phase
-                    try {
-                        document.head.appendChild(script);
-                    } finally {
-                        // Remove handler immediately after synchronous execution attempt
-                        window.removeEventListener('error', handler, true);
-                    }
-
-                    this.loadedSources.add(filename);
-                }
-
-                this.loadedSources.add(filename);
-            } catch (e) {
-                console.warn('PyHTML: Failed to load source', filename, e);
-            }
-        }));
-
-        // Construct Error with stack pointing to absolute virtual URLs
-        const err = new Error(errorMessage);
-        const stackLines = [`${err.name}: ${err.message}`];
-
-        for (const frame of trace) {
-            const fn = frame.name || '<module>';
-            const virtualUrl = this.getVirtualUrl(frame.filename);
-            // Format: at functionName (url:line:col)
-            // Use colno from Python 3.11+ if available, otherwise default to 1
-            const col = frame.colno ?? 1;
-            stackLines.push(`    at ${fn} (${virtualUrl}:${frame.lineno}:${col})`);
-        }
-
-        err.stack = stackLines.join('\n');
-
-        // Log just the stack string to avoid Chrome appending its own call stack
-        console.error(err.stack);
-    }
-
-    /**
-     * Handle incoming server message.
-     */
-    private async handleMessage(msg: ServerMessage): Promise<void> {
+    protected async handleMessage(msg: ServerMessage): Promise<void> {
         switch (msg.type) {
             case 'update':
                 if (msg.html) {
@@ -569,9 +419,8 @@ export class PyHTMLApp {
                 break;
 
             case 'error_trace':
-                if (msg.trace) {
-                    await this.handleErrorTrace(msg.error || 'Unknown Error', msg.trace);
-                }
+                // In core bundle, just log the error (no source loading)
+                console.error('PyHTML: Error:', msg.error);
                 break;
 
             case 'console':
@@ -579,21 +428,11 @@ export class PyHTMLApp {
                     const prefix = 'PyHTML Server:';
                     const joined = msg.lines.join('\n');
                     if (msg.level === 'error') {
-                        console.group(prefix + ' Error');
-                        console.error(joined);
-                        console.groupEnd();
+                        console.error(prefix, joined);
                     } else if (msg.level === 'warn') {
-                        console.groupCollapsed(prefix + ' Warning');
-                        console.warn(joined);
-                        console.groupEnd();
+                        console.warn(prefix, joined);
                     } else {
-                        if (msg.lines.length === 1) {
-                            console.log(prefix, joined);
-                        } else {
-                            console.groupCollapsed(prefix + ' Log');
-                            console.log(joined);
-                            console.groupEnd();
-                        }
+                        console.log(prefix, joined);
                     }
                 }
                 break;
@@ -617,18 +456,3 @@ export class PyHTMLApp {
         this.transport.disconnect();
     }
 }
-
-// Auto-initialize
-const app = new PyHTMLApp();
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => app.init());
-} else {
-    app.init();
-}
-
-// Export for external use
-export { app };
-export { TransportManager } from './transport-manager';
-export { DOMUpdater } from './dom-updater';
-export * from './transports';

@@ -100,6 +100,10 @@ async def run_dev_server(
     
     # Load app to get config
     pyhtml_app = _import_app(app_str)
+    
+    # Enable dev mode flag to unlock source endpoints
+    pyhtml_app._is_dev_mode = True
+    
     pages_dir = pyhtml_app.pages_dir
 
     # Enable Dev Error Middleware

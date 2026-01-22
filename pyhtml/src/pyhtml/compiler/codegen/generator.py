@@ -1173,8 +1173,24 @@ class CodeGenerator:
                             args=[ast.Dict(keys=[ast.Constant(value='sibling_paths'), ast.Constant(value='enable_pjax')], values=[ast.Name(id='sibling_paths', ctx=ast.Load()), ast.Name(id='pjax_enabled', ctx=ast.Load())])], keywords=[])], 
                         keywords=[])),
                     ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), args=[ast.Constant(value='</script>')], keywords=[])),
-                    # parts.append(client lib)
-                    ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), args=[ast.Constant(value='<script src="/_pyhtml/static/pyhtml.min.js"></script>')], keywords=[]))
+                    # parts.append(client lib) - dynamically select core vs dev bundle
+                    # parts.append(f'<script src="{self.request.app.state.pyhtml._get_client_script_url()}"></script>')
+                    ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), 
+                        args=[ast.JoinedStr(values=[
+                            ast.Constant(value='<script src="'),
+                            ast.FormattedValue(value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ast.Attribute(
+                                        value=ast.Attribute(value=ast.Attribute(value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='request', ctx=ast.Load()), attr='app', ctx=ast.Load()), attr='state', ctx=ast.Load()),
+                                        attr='pyhtml', ctx=ast.Load()
+                                    ),
+                                    attr='_get_client_script_url', ctx=ast.Load()
+                                ),
+                                args=[], keywords=[]
+                            ), conversion=-1, format_spec=None),
+                            ast.Constant(value='"></script>')
+                        ])], 
+                        keywords=[]))
                 ],
                 orelse=[]
             )

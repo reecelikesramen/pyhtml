@@ -60,18 +60,8 @@ class ErrorPage(BasePage):
                 <h1>{html.escape(self.error_title)}</h1>
                 <pre>{escaped_detail}</pre>
             </div>
-            <!-- Auto-reload script to recover when fixed -->
-            <script>
-                // Simple polling for recovery
-                setInterval(async () => {{
-                    try {{
-                        const res = await fetch(window.location.href);
-                        if (res.status === 200) {{
-                            window.location.reload();
-                        }}
-                    }} catch (e) {{}}
-                }}, 2000);
-            </script>
+            <!-- Standard PyHTML Client Script for Hot Reload -->
+            <script src="/_pyhtml/static/pyhtml.dev.min.js"></script>
         </body>
         </html>
         """

@@ -71,6 +71,8 @@ class PageLoader:
                     name != '_LayoutBase'):
                     # Cache the compiled class
                     self._cache[path_key] = obj
+                    # Set file path for router to track
+                    obj.__file_path__ = str(pyhtml_file)
                     return obj
         raise ValueError(f"No page class found in {pyhtml_file}")
 

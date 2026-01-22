@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple, Dict, Any, Union
 
 from lxml import html, etree
 
+from pyhtml.compiler.exceptions import PyHTMLSyntaxError
 from pyhtml.compiler.ast_nodes import (
     ParsedPyHTML, SpecialAttribute, TemplateNode, InterpolationNode,
     EventAttribute, FormValidationSchema, FieldValidationRules, ModelAttribute
@@ -89,7 +90,8 @@ class PyHTMLParser:
             directive_section = '\n'.join(lines[:python_start])
             python_section = '\n'.join(lines[python_start + 1:])
         else:
-            # No block
+            # No block - validate that there's no malformed separator or orphaned Python code
+            self._validate_no_orphaned_python(lines, file_path)
             directive_section = content
             python_section = ""
 
@@ -234,8 +236,22 @@ class PyHTMLParser:
         # Parse Python code
         python_ast = None
         if python_section.strip():
-            # Don't silence SyntaxError - let it bubble up so user knows their code is invalid
-            python_ast = ast.parse(python_section)
+            try:
+                # Don't silence SyntaxError - let it bubble up so user knows their code is invalid
+                python_ast = ast.parse(python_section)
+            except SyntaxError as e:
+                # Calculate correct line number
+                # python_start is 0-indexed line number of '---'
+                # e.lineno is 1-indexed relative to python_section
+                # actual_line = (python_start + 1) + e.lineno
+                line_offset = python_start + 1
+                actual_line = line_offset + (e.lineno or 1)
+                
+                raise PyHTMLSyntaxError(
+                    f"Python syntax error: {e.msg}",
+                    file_path=file_path,
+                    line=actual_line
+                )
 
         if python_ast:
             # Shift line numbers to match original file
@@ -474,3 +490,54 @@ class PyHTMLParser:
                 regular[name] = str(value)
 
         return regular, special
+    
+    def _looks_like_python_code(self, line: str) -> bool:
+        """Check if a line looks like Python code."""
+        if not line:
+            return False
+        
+        # Skip HTML-like lines
+        if line.startswith('<') or line.endswith('>'):
+            return False
+        
+        # Check for common Python patterns
+        python_patterns = [
+            line.startswith('def '),
+            line.startswith('class '),
+            line.startswith('import '),
+            line.startswith('from '),
+            line.startswith('async def '),
+            line.startswith('@'),  # Decorators
+            # Assignment (but be careful not to match HTML attributes)
+            ('=' in line and not line.strip().startswith('<') and ':' not in line[:line.find('=')]),
+        ]
+        return any(python_patterns)
+    
+    def _validate_no_orphaned_python(self, lines: List[str], file_path: str) -> None:
+        """Validate that there's no malformed separator or orphaned Python code."""
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            
+            # Check for partial separator patterns
+            if stripped and all(c == '-' for c in stripped) and stripped != '---':
+                raise PyHTMLSyntaxError(
+                    f"Malformed separator on line {i+1}: found '{stripped}' but expected '---'. "
+                    f"Page-level Python code must be enclosed between two '---' lines.",
+                    file_path=file_path,
+                    line=i+1
+                )
+            
+            # Check for Python-like code without proper separator
+            # Only check after line 5 to allow for directives at the top
+            if i > 5 and self._looks_like_python_code(stripped):
+                raise PyHTMLSyntaxError(
+                    f"Python code detected on line {i+1} without '---' separator. "
+                    f"Page-level Python code must be enclosed between two '---' lines.\n"
+                    f"Example format:\n"
+                    f"  <div>HTML content</div>\n"
+                    f"  ---\n"
+                    f"  # Python code here\n"
+                    f"  ---",
+                    file_path=file_path,
+                    line=i+1
+                )

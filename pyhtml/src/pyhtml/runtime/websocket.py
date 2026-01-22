@@ -91,6 +91,15 @@ class WebSocketHandler:
 
     async def _send_error_trace(self, websocket: WebSocket, error: Exception):
         """Send a structured error trace to the client."""
+        # Gate on debug mode + dev mode
+        # If not in dev mode, send generic error message only
+        if not (self.app.debug and getattr(self.app, '_is_dev_mode', False)):
+             await websocket.send_bytes(msgpack.packb({
+                'type': 'error',
+                'error': f"{type(error).__name__}: An error occurred" 
+             }))
+             return
+
         exc_type, exc_value, exc_traceback = sys.exc_info()
         trace = []
         if exc_traceback:
@@ -383,9 +392,25 @@ class WebSocketHandler:
             # Match route to get new params and variant
             match = self.app.router.match(pathname)
             if not match:
-                print(f"Relocate: No route found for path: {pathname}")
-                return
-            
+                # Try custom 404 route
+                # This keeps the SPA alive instead of reloading
+                match = self.app.router.match("/404")
+                
+                if match:
+                    print(f"Relocate: Route not found for {pathname}, serving /404")
+                else:
+                    # Fallback to generic ErrorPage if no custom 404
+                    # We need to construct a bound ErrorPage class
+                    print(f"Relocate: Route not found for {pathname}, serving generic 404")
+                    from pyhtml.runtime.error_page import ErrorPage
+                    
+                    # Create a closure helper
+                    class BoundErrorPage(ErrorPage):
+                        def __init__(self, request: Request, *args, **kwargs):
+                            super().__init__(request, "404 Not Found", f"The path '{pathname}' could not be found.")
+                    
+                    match = (BoundErrorPage, {}, 'main')
+
             page_class, params, variant_name = match
             
             # Reset page
@@ -472,8 +497,12 @@ class WebSocketHandler:
             except Exception:
                 raise
         except Exception as e:
-            await self._send_error_trace(websocket, e)
+            # If relocation fails (e.g. 500 error), force a full reload
+            # This ensures the browser hits the server and gets the proper error page (or 500 page)
             print(f"Error handling relocate: {e}", file=sys.stderr)
+            await websocket.send_bytes(msgpack.packb({
+                'type': 'reload'
+            }))
         finally:
             log_callback_ctx.reset(token)
 
