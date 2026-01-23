@@ -509,17 +509,33 @@ class TemplateCodegen:
                         value=wrapper
                     ))
 
-            # Special Attributes
+
+            # Group and generate event attributes (handling multiples via JSON)
+            event_attrs_by_type = defaultdict(list)
             for attr in node.special_attributes:
                 if isinstance(attr, EventAttribute):
-                    # attrs["data-on-X"] = "handle"
+                    event_attrs_by_type[attr.event_type].append(attr)
+            
+            for event_type, attrs_list in event_attrs_by_type.items():
+                if len(attrs_list) == 1:
+                    # Single handler
+                    attr = attrs_list[0]
+                    # attrs["data-on-X"] = "handler"
                     body.append(ast.Assign(
-                        targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=f'data-on-{attr.event_type}'), ctx=ast.Store())],
+                        targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=f'data-on-{event_type}'), ctx=ast.Store())],
                         value=ast.Constant(value=attr.handler_name)
                     ))
                     
+                    # Add modifiers if present
+                    if attr.modifiers:
+                        modifiers_str = " ".join(attr.modifiers)
+                        body.append(ast.Assign(
+                            targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=f'data-modifiers-{event_type}'), ctx=ast.Store())],
+                            value=ast.Constant(value=modifiers_str)
+                        ))
+                    
+                    # Add args
                     for i, arg_expr in enumerate(attr.args):
-                        # attrs["data-arg-i"] = json.dumps(val)
                         val = self._transform_expr(arg_expr, local_vars, known_globals, line_offset=node.line, col_offset=node.column)
                         dump_call = ast.Call(
                             func=ast.Attribute(value=ast.Name(id='json', ctx=ast.Load()), attr='dumps', ctx=ast.Load()),
@@ -529,7 +545,69 @@ class TemplateCodegen:
                             targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=f'data-arg-{i}'), ctx=ast.Store())],
                             value=dump_call
                         ))
+                else:
+                    # Multiple handlers - JSON format
+                    # _handlers_X = []
+                    handler_list_name = f'_handlers_{event_type}'
+                    body.append(ast.Assign(
+                        targets=[ast.Name(id=handler_list_name, ctx=ast.Store())],
+                        value=ast.List(elts=[], ctx=ast.Load())
+                    ))
+                    
+                    all_modifiers = set()
+                    for attr in attrs_list:
+                        modifiers = attr.modifiers or []
+                        all_modifiers.update(modifiers)
+                        
+                        # _h = {"handler": "...", "modifiers": [...]}
+                        handler_dict = ast.Dict(
+                            keys=[ast.Constant(value="handler"), ast.Constant(value="modifiers")],
+                            values=[ast.Constant(value=attr.handler_name), ast.List(elts=[ast.Constant(value=m) for m in modifiers], ctx=ast.Load())]
+                        )
+                        body.append(ast.Assign(
+                            targets=[ast.Name(id='_h', ctx=ast.Store())],
+                            value=handler_dict
+                        ))
+                        
+                        if attr.args:
+                            # _args = [...]
+                            args_list = []
+                            for arg_expr in attr.args:
+                                val = self._transform_expr(arg_expr, local_vars, known_globals, line_offset=node.line, col_offset=node.column)
+                                args_list.append(val)
+                            body.append(ast.Assign(
+                                targets=[ast.Subscript(value=ast.Name(id='_h', ctx=ast.Load()), slice=ast.Constant(value="args"), ctx=ast.Store())],
+                                value=ast.List(elts=args_list, ctx=ast.Load())
+                            ))
+                        
+                        # _handlers_X.append(_h)
+                        body.append(ast.Expr(value=ast.Call(
+                            func=ast.Attribute(value=ast.Name(id=handler_list_name, ctx=ast.Load()), attr='append', ctx=ast.Load()),
+                            args=[ast.Name(id='_h', ctx=ast.Load())],
+                            keywords=[]
+                        )))
+                    
+                    # attrs["data-on-X"] = json.dumps(_handlers_X)
+                    body.append(ast.Assign(
+                        targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=f'data-on-{event_type}'), ctx=ast.Store())],
+                        value=ast.Call(
+                            func=ast.Attribute(value=ast.Name(id='json', ctx=ast.Load()), attr='dumps', ctx=ast.Load()),
+                            args=[ast.Name(id=handler_list_name, ctx=ast.Load())],
+                            keywords=[]
+                        )
+                    ))
+                    
+                    if all_modifiers:
+                        modifiers_str = " ".join(all_modifiers)
+                        body.append(ast.Assign(
+                            targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=f'data-modifiers-{event_type}'), ctx=ast.Store())],
+                            value=ast.Constant(value=modifiers_str)
+                        ))
 
+            # Handle other special attributes
+            for attr in node.special_attributes:
+                if isinstance(attr, EventAttribute):
+                    continue
                 elif isinstance(attr, ReactiveAttribute):
                     val_expr = self._transform_reactive_expr(attr.expr, local_vars, known_methods, known_globals, async_methods, line_offset=node.line, col_offset=node.column)
                     

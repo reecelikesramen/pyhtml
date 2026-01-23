@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
     test: {
-        environment: 'jsdom',
+        environment: 'happy-dom',
         globals: true,
         include: ['src/**/*.test.ts'],
         coverage: {
@@ -10,6 +10,6 @@ export default defineConfig({
             reporter: ['text', 'json', 'html'],
             include: ['src/**/*.ts'],
             exclude: ['src/**/*.test.ts', 'src/index.ts', 'src/pyhtml.core.ts', 'src/pyhtml.dev.ts'],
-        },
+        }
     },
 });

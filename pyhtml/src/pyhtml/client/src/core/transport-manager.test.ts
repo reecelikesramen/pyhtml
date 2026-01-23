@@ -37,15 +37,15 @@ class MockHTTP {
 }
 
 vi.mock('./transports/webtransport', () => ({
-    WebTransportTransport: vi.fn().mockImplementation(() => new MockWebTransport())
+    WebTransportTransport: vi.fn()
 }));
 
 vi.mock('./transports/websocket', () => ({
-    WebSocketTransport: vi.fn().mockImplementation(() => new MockWebSocket())
+    WebSocketTransport: vi.fn()
 }));
 
 vi.mock('./transports/http', () => ({
-    HTTPTransport: vi.fn().mockImplementation(() => new MockHTTP())
+    HTTPTransport: vi.fn()
 }));
 
 // Set static properties on the mocked constructors
@@ -59,9 +59,9 @@ describe('TransportManager', () => {
         vi.clearAllMocks();
 
         // Default mock implementations (successful connect)
-        (WebTransportTransport as any).mockImplementation(() => new MockWebTransport());
-        (WebSocketTransport as any).mockImplementation(() => new MockWebSocket());
-        (HTTPTransport as any).mockImplementation(() => new MockHTTP());
+        (WebTransportTransport as any).mockImplementation(MockWebTransport);
+        (WebSocketTransport as any).mockImplementation(MockWebSocket);
+        (HTTPTransport as any).mockImplementation(MockHTTP);
 
         vi.stubGlobal('location', { protocol: 'https:' });
         vi.stubGlobal('WebSocket', vi.fn());
@@ -77,10 +77,8 @@ describe('TransportManager', () => {
     });
 
     it('should fallback to WebSocket if WebTransport fails', async () => {
-        (WebTransportTransport as any).mockImplementation(() => {
-            const mock = new MockWebTransport();
-            mock.connect.mockRejectedValue(new Error('WT failed'));
-            return mock;
+        (WebTransportTransport as any).mockImplementation(class extends MockWebTransport {
+            connect = vi.fn().mockRejectedValue(new Error('WT failed'));
         });
 
         const manager = new TransportManager();
@@ -92,15 +90,11 @@ describe('TransportManager', () => {
     });
 
     it('should fallback to HTTP if WebSocket fails', async () => {
-        (WebTransportTransport as any).mockImplementation(() => {
-            const mock = new MockWebTransport();
-            mock.connect.mockRejectedValue(new Error('WT failed'));
-            return mock;
+        (WebTransportTransport as any).mockImplementation(class extends MockWebTransport {
+            connect = vi.fn().mockRejectedValue(new Error('WT failed'));
         });
-        (WebSocketTransport as any).mockImplementation(() => {
-            const mock = new MockWebSocket();
-            mock.connect.mockRejectedValue(new Error('WS failed'));
-            return mock;
+        (WebSocketTransport as any).mockImplementation(class extends MockWebSocket {
+            connect = vi.fn().mockRejectedValue(new Error('WS failed'));
         });
 
         const manager = new TransportManager();
@@ -128,20 +122,14 @@ describe('TransportManager', () => {
     });
 
     it('should throw if all transports fail', async () => {
-        (WebTransportTransport as any).mockImplementation(() => {
-            const mock = new MockWebTransport();
-            mock.connect.mockRejectedValue(new Error('WT failed'));
-            return mock;
+        (WebTransportTransport as any).mockImplementation(class extends MockWebTransport {
+            connect = vi.fn().mockRejectedValue(new Error('WT failed'));
         });
-        (WebSocketTransport as any).mockImplementation(() => {
-            const mock = new MockWebSocket();
-            mock.connect.mockRejectedValue(new Error('WS failed'));
-            return mock;
+        (WebSocketTransport as any).mockImplementation(class extends MockWebSocket {
+            connect = vi.fn().mockRejectedValue(new Error('WS failed'));
         });
-        (HTTPTransport as any).mockImplementation(() => {
-            const mock = new MockHTTP();
-            mock.connect.mockRejectedValue(new Error('HTTP failed'));
-            return mock;
+        (HTTPTransport as any).mockImplementation(class extends MockHTTP {
+            connect = vi.fn().mockRejectedValue(new Error('HTTP failed'));
         });
 
         const manager = new TransportManager();
@@ -150,10 +138,8 @@ describe('TransportManager', () => {
 
     it('should forward messages to registered handlers', async () => {
         const onMessageSpy = vi.fn();
-        (WebTransportTransport as any).mockImplementation(() => {
-            const mock = new MockWebTransport();
-            mock.onMessage = onMessageSpy;
-            return mock;
+        (WebTransportTransport as any).mockImplementation(class extends MockWebTransport {
+            onMessage = onMessageSpy;
         });
 
         const manager = new TransportManager();

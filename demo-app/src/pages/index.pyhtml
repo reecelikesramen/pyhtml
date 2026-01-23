@@ -34,6 +34,8 @@
     <a href="/new-attributes">New Attributes</a>
     <br>
     <a href="/dx_demo"><strong>DX Demo</strong> (Error Handling & Logging)</a>
+    <br>
+    <a href="/interactivity" style="display: inline-block; margin-top: 10px; padding: 10px 15px; background: #6366f1; color: white; border-radius: 8px; text-decoration: none; font-weight: bold;">Try Interactivity 0.1 ✨</a>
 </div>
 
 ---

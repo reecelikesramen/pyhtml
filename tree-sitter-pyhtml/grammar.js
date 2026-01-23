@@ -75,7 +75,7 @@ module.exports = grammar({
 
         _attribute_name: $ => choice(
             alias(/\w+/, $.attribute_name),
-            alias(choice(/@\w+/, /\$[a-zA-Z_]\w*/, /:\w+/), $.special_attribute_name)
+            alias(choice(/@[\w.]+/, /\$[a-zA-Z_]\w*/, /:\w+/), $.special_attribute_name)
         ),
 
         attribute_value: $ => choice(

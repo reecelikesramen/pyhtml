@@ -7,6 +7,23 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 
+class EventData(dict):
+    """Dict that allows dot-access to keys for Alpine.js compatibility."""
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            # Check for camelCase version of name
+            import re
+            camel = re.sub(r'(?!^)_([a-z])', lambda x: x.group(1).upper(), name)
+            if camel in self:
+                return self[camel]
+            raise AttributeError(f"'EventData' object has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        self[name] = value
+
+
 class BasePage:
     """Base class for all compiled pages."""
 
@@ -172,8 +189,8 @@ class BasePage:
             else:
                 # Only pass arguments that match parameters
                 for name in sig.parameters:
-                    if name == 'event_data':
-                        bound_kwargs['event_data'] = event_data
+                    if name == 'event_data' or name == 'event':
+                        bound_kwargs[name] = EventData(call_kwargs)
                     elif name in call_kwargs:
                         bound_kwargs[name] = call_kwargs[name]
             
