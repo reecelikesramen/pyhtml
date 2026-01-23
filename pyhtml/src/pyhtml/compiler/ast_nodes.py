@@ -185,6 +185,7 @@ class TemplateNode(ASTNode):
     special_attributes: List[SpecialAttribute] = field(default_factory=list)
     children: List['TemplateNode'] = field(default_factory=list)
     text_content: Optional[str] = None
+    is_raw: bool = False
 
     def __str__(self) -> str:
         if self.tag:

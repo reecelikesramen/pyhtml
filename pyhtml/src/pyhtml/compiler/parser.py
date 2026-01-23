@@ -270,11 +270,20 @@ class PyHTMLParser:
             file_path=file_path
         )
 
-    def _parse_text(self, text: str, start_line: int = 0) -> List[TemplateNode]:
+    def _parse_text(self, text: str, start_line: int = 0, raw_text: bool = False) -> List[TemplateNode]:
         """Helper to parse text string into list of text/interpolation nodes."""
         if not text:
             return []
             
+        if raw_text:
+            # Bypass interpolation for raw text elements (script, style)
+            return [TemplateNode(
+                tag=None,
+                text_content=text,
+                line=start_line, column=0,
+                is_raw=True
+            )]
+
         parts = self.interpolation_parser.parse(text, line=start_line, col=0)
         nodes = []
         for part in parts:
@@ -314,7 +323,8 @@ class PyHTMLParser:
         
         # Handle inner text (before first child)
         if element.text:
-            text_nodes = self._parse_text(element.text, start_line=getattr(element, 'sourceline', 0))
+            is_raw = isinstance(element.tag, str) and element.tag.lower() in ('script', 'style')
+            text_nodes = self._parse_text(element.text, start_line=getattr(element, 'sourceline', 0), raw_text=is_raw)
             if text_nodes:
                 node.children.extend(text_nodes)
                 

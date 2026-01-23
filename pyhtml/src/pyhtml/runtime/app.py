@@ -30,7 +30,9 @@ class PyHTML:
         path_based_routing: bool = True,
         enable_pjax: bool = True,
         debug: bool = False,
-        enable_webtransport: bool = False
+        enable_webtransport: bool = False,
+        static_dir: Optional[str] = None,
+        static_path: str = "/static"
     ):
         if pages_dir is None:
             # Auto-discovery
@@ -52,6 +54,14 @@ class PyHTML:
                 self.pages_dir = Path("pages")
         else:
             self.pages_dir = Path(pages_dir)
+        
+        # User configured static directory (disabled by default)
+        self.static_dir = None
+        if static_dir:
+            self.static_dir = Path(static_dir).resolve() # Resolve relative to CWD
+            
+        self.static_url_path = static_path
+            
         self.path_based_routing = path_based_routing
         self.enable_pjax = enable_pjax
         self.debug = debug
@@ -77,8 +87,8 @@ class PyHTML:
         # Compile and register all pages
         self._load_pages()
 
-        # Static files
-        static_dir = Path(__file__).parent.parent / 'static'
+        # Static files (PyHTML Internal)
+        internal_static_dir = Path(__file__).parent.parent / 'static'
         
         # Prepare exception handlers
         exception_handlers = {}
@@ -97,9 +107,16 @@ class PyHTML:
             Route('/_pyhtml/event', self.http_handler.handle_event, methods=['POST']),
             # Upload endpoint
             Route('/_pyhtml/upload', self._handle_upload, methods=['POST']),
-            # Static files
-            Mount('/_pyhtml/static', app=StaticFiles(directory=str(static_dir)), name='static'),
+            # Internal Static files
+            Mount('/_pyhtml/static', app=StaticFiles(directory=str(internal_static_dir)), name='internal_static'),
         ]
+        
+        # Mount User Static Files if configured
+        if self.static_dir:
+            if not self.static_dir.exists():
+                print(f"Warning: Configured static directory '{self.static_dir}' does not exist.")
+            else:
+                routes.append(Mount(self.static_url_path, app=StaticFiles(directory=str(self.static_dir)), name='static'))
         
         # Debug endpoints (must be before catch-all)
         # ONLY enable these if BOTH debug=True AND we are in dev mode

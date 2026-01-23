@@ -128,12 +128,7 @@
     </div>
 </div>
 
-<style>{page_css}</style>
-
----
-import datetime
-
-page_css = """
+<style>
     .container {
         max-width: 1200px;
         margin: 40px auto;
@@ -423,7 +418,11 @@ page_css = """
         color: #9ca3af;
         font-style: italic;
     }
-"""
+</style>
+
+---
+import datetime
+
 my_input = ""
 logs = []
 

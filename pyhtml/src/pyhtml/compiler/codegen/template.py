@@ -96,8 +96,9 @@ class TemplateCodegen:
                 targets=[ast.Name(id='parts', ctx=ast.Store())],
                 value=ast.List(elts=[], ctx=ast.Load())
             ),
-            # import json (for attribute serialization)
-            ast.Import(names=[ast.alias(name='json', asname=None)])
+            ast.Import(names=[ast.alias(name='json', asname=None)]),
+            # import helper
+            ast.ImportFrom(module='pyhtml.runtime.helpers', names=[ast.alias(name='ensure_async_iterator', asname=None)], level=0)
         ]
         
         for node in nodes:
@@ -259,9 +260,16 @@ class TemplateCodegen:
                 new_node = replace(node, special_attributes=new_attrs)
                 self._add_node(new_node, for_body, new_locals, bound_var, layout_id, known_methods, known_globals, async_methods)
             
+            # Wrap iterable in ensure_async_iterator
+            wrapped_iterable = ast.Call(
+                func=ast.Name(id='ensure_async_iterator', ctx=ast.Load()),
+                args=[iterable_expr],
+                keywords=[]
+            )
+            
             for_stmt = ast.AsyncFor(
                 target=loop_targets_node,
-                iter=iterable_expr,
+                iter=wrapped_iterable,
                 body=for_body,
                 orelse=[]
             )
@@ -332,7 +340,12 @@ class TemplateCodegen:
         if node.tag is None:
             # Text
             if node.text_content:
-                parts = self.interpolation_parser.parse(node.text_content, node.line, node.column)
+                parts = []
+                if node.is_raw:
+                    parts = [node.text_content]
+                else:
+                    parts = self.interpolation_parser.parse(node.text_content, node.line, node.column)
+                
                 if len(parts) == 1 and isinstance(parts[0], str):
                     append_stmt = ast.Expr(value=ast.Call(
                         func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()),

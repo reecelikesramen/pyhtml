@@ -1,0 +1,1 @@
+Hello im a static file
