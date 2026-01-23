@@ -17,6 +17,8 @@ dependencies = [
     "watchfiles>=0.21.0",
     "jinja2>=3.1.0",  # For initial template parsing
     "msgpack>=1.0.0",
+    "lxml>=4.9.0",
+    "pydantic>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +28,7 @@ dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.7.0",
+    "httpx>=0.23.0",
 ]
 http3 = [
     "aioquic>=0.9.0",

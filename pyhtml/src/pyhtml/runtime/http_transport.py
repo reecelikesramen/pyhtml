@@ -1,5 +1,6 @@
 """HTTP transport handler for PyHTML fallback."""
 import asyncio
+import inspect
 import uuid
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
@@ -104,7 +105,7 @@ class HTTPTransportHandler:
             
             # Run load hook
             if hasattr(session.page, 'on_load'):
-                if asyncio.iscoroutinefunction(session.page.on_load):
+                if inspect.iscoroutinefunction(session.page.on_load):
                     await session.page.on_load()
                 else:
                     session.page.on_load()
@@ -191,7 +192,7 @@ class HTTPTransportHandler:
                 
                 # Run load hook
                 if hasattr(session.page, 'on_load'):
-                    if asyncio.iscoroutinefunction(session.page.on_load):
+                    if inspect.iscoroutinefunction(session.page.on_load):
                         await session.page.on_load()
                     else:
                         session.page.on_load()

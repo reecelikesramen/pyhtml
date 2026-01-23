@@ -44,5 +44,13 @@ class TestConfig(unittest.TestCase):
             app = PyHTML(pages_dir=None)
             self.assertEqual(app.pages_dir, self.tmp_path / "src" / "pages")
 
+    def test_auto_discovery_root(self):
+        # Test finding 'pages' in root
+        from unittest.mock import patch
+        with patch('pathlib.Path.cwd', return_value=self.tmp_path):
+            (self.tmp_path / "pages").mkdir()
+            app = PyHTML(pages_dir=None)
+            self.assertEqual(app.pages_dir, self.tmp_path / "pages")
+
 if __name__ == '__main__':
     unittest.main()

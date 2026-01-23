@@ -39,7 +39,7 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         lines = []
         self.codegen._add_node(node, lines)
         
-        self.assertCodeIn("async for item in self.items:", lines)
+        self.assertCodeIn("async for item in ensure_async_iterator(self.items):", lines)
         # Check that child node was added with increased indent
         self.assertCodeIn("parts.append('<span')", lines)
 

@@ -1,5 +1,6 @@
 """Base page class with lifecycle system."""
 import asyncio
+import inspect
 from collections import defaultdict
 from typing import Dict, List, Optional, Callable, Any
 
@@ -87,7 +88,7 @@ class BasePage:
             parts = []
             # Render default content first (from the layout itself)
             if default_renderer:
-                if asyncio.iscoroutinefunction(default_renderer):
+                if inspect.iscoroutinefunction(default_renderer):
                     parts.append(await default_renderer())
                 else:
                     parts.append(default_renderer())
@@ -95,7 +96,7 @@ class BasePage:
             # Collect head content from ALL layout IDs in the inheritance chain
             for layout_id_key in self.head_slots:
                 for renderer in self.head_slots[layout_id_key]:
-                    if asyncio.iscoroutinefunction(renderer):
+                    if inspect.iscoroutinefunction(renderer):
                         parts.append(await renderer())
                     else:
                         parts.append(renderer())
@@ -104,13 +105,13 @@ class BasePage:
         # Normal replacement semantics
         if target_id and slot_name in self.slots[target_id]:
             renderer = self.slots[target_id][slot_name]
-            if asyncio.iscoroutinefunction(renderer):
+            if inspect.iscoroutinefunction(renderer):
                 return await renderer()
             return renderer()
             
         # Fallback to default content if provided
         if default_renderer:
-            if asyncio.iscoroutinefunction(default_renderer):
+            if inspect.iscoroutinefunction(default_renderer):
                 return await default_renderer()
             return default_renderer()
             
@@ -123,7 +124,7 @@ class BasePage:
             for hook_name in self.INIT_HOOKS:
                 if hasattr(self, hook_name):
                     hook = getattr(self, hook_name)
-                    if asyncio.iscoroutinefunction(hook):
+                    if inspect.iscoroutinefunction(hook):
                         await hook()
                     else:
                         hook()
@@ -135,7 +136,7 @@ class BasePage:
         for hook_name in self.RENDER_HOOKS:
             if hasattr(self, hook_name):
                 hook = getattr(self, hook_name)
-                if asyncio.iscoroutinefunction(hook):
+                if inspect.iscoroutinefunction(hook):
                     await hook()
                 else:
                     hook()
@@ -144,7 +145,7 @@ class BasePage:
 
     async def handle_event(self, event_name: str, event_data: dict) -> Response:
         """Handle client event (from @click, etc.)."""
-        import inspect
+
         
         # Retrieve handler
         handler = getattr(self, event_name, None)
@@ -154,7 +155,7 @@ class BasePage:
         # Call handler
         if event_name.startswith('_handle_bind_'):
             # Binding handlers expect raw event_data
-            if asyncio.iscoroutinefunction(handler):
+            if inspect.iscoroutinefunction(handler):
                 await handler(event_data)
             else:
                 handler(event_data)
@@ -195,7 +196,7 @@ class BasePage:
                         bound_kwargs[name] = call_kwargs[name]
             
             try:
-                if asyncio.iscoroutinefunction(handler):
+                if inspect.iscoroutinefunction(handler):
                     await handler(**bound_kwargs)
                 else:
                     handler(**bound_kwargs)
@@ -210,7 +211,7 @@ class BasePage:
     async def push_state(self):
         """Force a UI update with current state (useful for streaming progress)."""
         if self._on_update:
-            if asyncio.iscoroutinefunction(self._on_update):
+            if inspect.iscoroutinefunction(self._on_update):
                 await self._on_update()
             else:
                 self._on_update()

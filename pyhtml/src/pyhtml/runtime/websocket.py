@@ -1,5 +1,6 @@
 """WebSocket handler for PyHTML."""
 import asyncio
+import inspect
 import sys
 from typing import Dict, Any, Set
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -245,7 +246,7 @@ class WebSocketHandler:
                 self.connection_pages[websocket] = page
                 
                 if hasattr(page, 'on_load'):
-                    if asyncio.iscoroutinefunction(page.on_load):
+                    if inspect.iscoroutinefunction(page.on_load):
                         await page.on_load()
                     else:
                         page.on_load()
@@ -369,7 +370,7 @@ class WebSocketHandler:
                 
                 # Run on_load lifecycle hook
                 if hasattr(page, 'on_load'):
-                    if asyncio.iscoroutinefunction(page.on_load):
+                    if inspect.iscoroutinefunction(page.on_load):
                         await page.on_load()
                     else:
                         page.on_load()
@@ -481,7 +482,7 @@ class WebSocketHandler:
             # Run __on_load lifecycle hook
             try:
                 if hasattr(new_page, 'on_load'):
-                    if asyncio.iscoroutinefunction(new_page.on_load):
+                    if inspect.iscoroutinefunction(new_page.on_load):
                         await new_page.on_load()
                     else:
                         new_page.on_load()

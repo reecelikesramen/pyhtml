@@ -58,7 +58,18 @@ class PyHTML:
         # User configured static directory (disabled by default)
         self.static_dir = None
         if static_dir:
-            self.static_dir = Path(static_dir).resolve() # Resolve relative to CWD
+            path = Path(static_dir)
+            if not path.is_absolute():
+                # Try relative to CWD
+                potential = Path.cwd() / path
+                if not potential.exists():
+                    # Try src/ fallback
+                    src_potential = Path.cwd() / "src" / path
+                    if src_potential.exists():
+                        potential = src_potential
+                self.static_dir = potential.resolve()
+            else:
+                self.static_dir = path
             
         self.static_url_path = static_path
             
