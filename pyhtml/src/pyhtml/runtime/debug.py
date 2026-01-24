@@ -1,27 +1,26 @@
-import sys
-import traceback
-import linecache
 import html
+import linecache
 import os
-import inspect
-from pathlib import Path
-from typing import List, Dict, Any, Optional
+import traceback
+from typing import Any, Dict, List
 
-from starlette.types import ASGIApp, Scope, Receive, Send
-from starlette.responses import HTMLResponse, PlainTextResponse
+from starlette.responses import HTMLResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from pyhtml.compiler.exceptions import PyHTMLSyntaxError
+
 
 class DevErrorMiddleware:
     """
     Middleware to catch exceptions and render a helpful debug page.
     Active only in development mode.
     """
+
     def __init__(self, app: ASGIApp):
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope['type'] != 'http':
+        if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
@@ -40,22 +39,22 @@ class DevErrorMiddleware:
         # Check if this is a compile-time error
         if isinstance(exc, PyHTMLSyntaxError):
             return self._render_compile_error(exc)
-        
+
         exc_type = type(exc).__name__
         exc_msg = str(exc)
-        
+
         # Get traceback
         tb = exc.__traceback__
-        
+
         # Skip top-level framework frames to focus on user code/relevant calls
         # (optional refinement)
-        
+
         frames = self._get_frames(tb)
-        is_framework_error = self._is_framework_error(frames[-1]['filename']) if frames else False
+        is_framework_error = self._is_framework_error(frames[-1]["filename"]) if frames else False
 
         html_content = self._generate_html(exc_type, exc_msg, frames, is_framework_error)
         return HTMLResponse(html_content, status_code=500)
-    
+
     def _render_compile_error(self, exc: PyHTMLSyntaxError) -> HTMLResponse:
         """Render a specialized error page for compile-time syntax errors."""
         # Read the context around the error line
@@ -65,26 +64,29 @@ class DevErrorMiddleware:
                 lines = linecache.getlines(exc.file_path)
                 start = max(1, exc.line - 5)
                 end = min(len(lines), exc.line + 5)
-                
+
                 for i in range(start, end + 1):
                     if i <= len(lines):
-                        context_lines.append({
-                            'num': i,
-                            'content': lines[i-1].rstrip(),
-                            'is_current': i == exc.line
-                        })
+                        context_lines.append(
+                            {
+                                "num": i,
+                                "content": lines[i - 1].rstrip(),
+                                "is_current": i == exc.line,
+                            }
+                        )
             except Exception:
                 pass
-        
+
         # Generate code context HTML
         context_html = ""
         for line in context_lines:
-            cls = "line-current" if line['is_current'] else "line"
+            cls = "line-current" if line["is_current"] else "line"
             context_html += f"<div class='{cls}'><span class='line-num'>{line['num']}</span> <span class='code'>{html.escape(line['content'])}</span></div>"
-        
+
         short_path = self._shorten_path(exc.file_path) if exc.file_path else "unknown file"
-        
-        return HTMLResponse(f"""
+
+        return HTMLResponse(
+            f"""
         <!DOCTYPE html>
         <html>
         <head>
@@ -117,13 +119,15 @@ class DevErrorMiddleware:
                     <div class="exc-msg">{html.escape(exc.message)}</div>
                 </div>
                 
-                {f'<div class="code-context">{context_html}</div>' if context_html else ''}
+                {f'<div class="code-context">{context_html}</div>' if context_html else ""}
             </div>
             <!-- Standard PyHTML Client Script for Hot Reload -->
             <script src="/_pyhtml/static/pyhtml.dev.min.js"></script>
         </body>
         </html>
-        """, status_code=500)
+        """,
+            status_code=500,
+        )
 
     def _get_frames(self, tb) -> List[Dict[str, Any]]:
         frames = []
@@ -131,47 +135,51 @@ class DevErrorMiddleware:
             filename = frame.f_code.co_filename
             func_name = frame.f_code.co_name
             # locals_vars = frame.f_locals # Could be huge/sensitive, maybe filter or omit
-            
+
             # Read context
             # linecache.checkcache(filename) # Check for updates
             context_lines = []
             try:
-                # If file exists, read it. 
+                # If file exists, read it.
                 # Note: valid line numbers are 1-based.
                 # We want a window around lineno.
                 start = max(1, lineno - 5)
                 end = lineno + 5
-                
+
                 # Check if file exists
                 if os.path.exists(filename):
-                     lines = linecache.getlines(filename)
-                     for i in range(start, end + 1):
-                         if i <= len(lines):
-                             context_lines.append({
-                                 'num': i,
-                                 'content': lines[i-1].rstrip(),
-                                 'is_current': i == lineno
-                             })
+                    lines = linecache.getlines(filename)
+                    for i in range(start, end + 1):
+                        if i <= len(lines):
+                            context_lines.append(
+                                {
+                                    "num": i,
+                                    "content": lines[i - 1].rstrip(),
+                                    "is_current": i == lineno,
+                                }
+                            )
             except Exception:
                 pass
 
-            frames.append({
-                'filename': filename,
-                'short_filename': self._shorten_path(filename),
-                'func_name': func_name,
-                'lineno': lineno,
-                'context': context_lines,
-                'is_user_code': self._is_user_code(filename)
-            })
+            frames.append(
+                {
+                    "filename": filename,
+                    "short_filename": self._shorten_path(filename),
+                    "func_name": func_name,
+                    "lineno": lineno,
+                    "context": context_lines,
+                    "is_user_code": self._is_user_code(filename),
+                }
+            )
         return frames
 
     def _is_framework_error(self, filename: str) -> bool:
         # If the LAST frame is in pyhtml package, it's likely a framework error
         # UNLESS it's a template compilation error which might manifest differently.
-        return 'pyhtml/src/pyhtml' in filename or 'site-packages/pyhtml' in filename
+        return "pyhtml/src/pyhtml" in filename or "site-packages/pyhtml" in filename
 
     def _is_user_code(self, filename: str) -> bool:
-        return not self._is_framework_error(filename) and '<frozen' not in filename
+        return not self._is_framework_error(filename) and "<frozen" not in filename
 
     def _shorten_path(self, path: str) -> str:
         cwd = os.getcwd()
@@ -179,35 +187,39 @@ class DevErrorMiddleware:
             return os.path.relpath(path, cwd)
         return path
 
-    def _generate_html(self, exc_type: str, exc_msg: str, frames: List[Dict[str, Any]], is_framework_error: bool) -> str:
+    def _generate_html(
+        self, exc_type: str, exc_msg: str, frames: List[Dict[str, Any]], is_framework_error: bool
+    ) -> str:
         # GitHub issue URL generation
         issue_title = urllib.parse.quote(f"Bug: {exc_type}: {exc_msg}")
-        issue_body = urllib.parse.quote(f"### Description\nEncountered an error in PyHTML.\n\n### Error\n`{exc_type}: {exc_msg}`\n\n### Traceback\n(Please paste relevant traceback here)")
+        issue_body = urllib.parse.quote(
+            f"### Description\nEncountered an error in PyHTML.\n\n### Error\n`{exc_type}: {exc_msg}`\n\n### Traceback\n(Please paste relevant traceback here)"
+        )
         github_url = f"https://github.com/reecelikesramen/pyhtml/issues/new?title={issue_title}&body={issue_body}"
 
         frames_html = []
-        for frame in reversed(frames): # Show most recent call first
+        for frame in reversed(frames):  # Show most recent call first
             context_html = ""
-            for line in frame['context']:
-                cls = "line-current" if line['is_current'] else "line"
+            for line in frame["context"]:
+                cls = "line-current" if line["is_current"] else "line"
                 context_html += f"<div class='{cls}'><span class='line-num'>{line['num']}</span> <span class='code'>{html.escape(line['content'])}</span></div>"
-            
-            frame_class = "frame-user" if frame['is_user_code'] else "frame-vendor"
-            
+
+            frame_class = "frame-user" if frame["is_user_code"] else "frame-vendor"
+
             frames_html.append(f"""
             <div class="frame {frame_class}">
                 <div class="frame-header">
-                    <span class="func">{html.escape(frame['func_name'])}</span>
-                    <span class="file">{html.escape(frame['short_filename'])}:{frame['lineno']}</span>
+                    <span class="func">{html.escape(frame["func_name"])}</span>
+                    <span class="file">{html.escape(frame["short_filename"])}:{frame["lineno"]}</span>
                 </div>
                 <div class="code-context">
                     {context_html}
                 </div>
             </div>
             """)
-        
+
         frames_joined = "\n".join(frames_html)
-        
+
         framework_alert = ""
         if is_framework_error:
             framework_alert = f"""
@@ -259,4 +271,6 @@ class DevErrorMiddleware:
         </body>
         </html>
         """
+
+
 import urllib.parse

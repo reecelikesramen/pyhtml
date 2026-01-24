@@ -1,8 +1,8 @@
 """Base attribute code generator."""
-from abc import ABC, abstractmethod
-from typing import Optional
 
 import ast
+from abc import ABC, abstractmethod
+from typing import Optional
 
 from pyhtml.compiler.ast_nodes import SpecialAttribute
 

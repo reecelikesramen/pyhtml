@@ -1,9 +1,0 @@
-<button @click="
-print('hello')
-count += 1
-">Click me</button>
-
-<p>Count: {count}</p>
-
----
-count = 0

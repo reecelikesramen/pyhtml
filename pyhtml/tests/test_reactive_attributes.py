@@ -1,25 +1,28 @@
-
-import pytest
+import asyncio
 import os
 import tempfile
-import asyncio
 from pathlib import Path
-from pyhtml.runtime.loader import PageLoader
-from pyhtml.runtime.page import BasePage
 from unittest.mock import MagicMock
+
+import pytest
+from pyhtml.runtime.loader import PageLoader
+
 
 @pytest.fixture
 def loader():
     return PageLoader()
 
+
 @pytest.fixture
 def mock_app():
     from unittest.mock import MagicMock
+
     app = MagicMock()
     app.state = MagicMock()
     app.state.webtransport_cert_hash = None
     app.state.enable_pjax = False
     return app
+
 
 def test_variable_binding(loader, mock_app):
     """Test :attr="var" binding."""
@@ -32,7 +35,7 @@ my_id = "dynamic-id"
 my_class = "btn"
 """
         (tmp_path / "page.pyhtml").write_text(page_code)
-        
+
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
@@ -41,11 +44,12 @@ my_class = "btn"
             request.app = mock_app
             page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
-            
+
             assert 'id="dynamic-id"' in html
             assert 'class="btn"' in html
         finally:
             os.chdir(orig_cwd)
+
 
 def test_method_binding_paramless(loader, mock_app):
     """Test :attr="method" auto-call binding."""
@@ -58,7 +62,7 @@ def get_title():
     return "My Title"
 """
         (tmp_path / "page.pyhtml").write_text(page_code)
-        
+
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
@@ -67,10 +71,11 @@ def get_title():
             request.app = mock_app
             page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
-            
+
             assert 'title="My Title"' in html
         finally:
             os.chdir(orig_cwd)
+
 
 def test_expression_binding(loader, mock_app):
     """Test :attr="expr" binding."""
@@ -82,7 +87,7 @@ def test_expression_binding(loader, mock_app):
 is_error = True
 """
         (tmp_path / "page.pyhtml").write_text(page_code)
-        
+
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
@@ -91,10 +96,11 @@ is_error = True
             request.app = mock_app
             page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
-            
+
             assert 'class="error"' in html
         finally:
             os.chdir(orig_cwd)
+
 
 def test_boolean_attributes(loader, mock_app):
     """Test boolean attribute behavior."""
@@ -108,7 +114,7 @@ is_disabled = False
 is_readonly = None
 """
         (tmp_path / "page.pyhtml").write_text(page_code)
-        
+
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
@@ -117,15 +123,16 @@ is_readonly = None
             request.app = mock_app
             page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
-            
+
             # checked="True" -> checked=""
             assert 'checked=""' in html
             # disabled="False" -> omitted
-            assert 'disabled' not in html
+            assert "disabled" not in html
             # readonly="None" -> omitted
-            assert 'readonly' not in html
+            assert "readonly" not in html
         finally:
             os.chdir(orig_cwd)
+
 
 def test_async_binding(loader, mock_app):
     """Test :attr="await async_call()" binding."""
@@ -138,7 +145,7 @@ async def get_data():
     return "async-data"
 """
         (tmp_path / "page.pyhtml").write_text(page_code)
-        
+
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
@@ -147,7 +154,7 @@ async def get_data():
             request.app = mock_app
             page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
-            
+
             assert 'data-val="async-data"' in html
         finally:
             os.chdir(orig_cwd)
@@ -164,7 +171,7 @@ is_loading = True
 is_expanded = False
 """
         (tmp_path / "page.pyhtml").write_text(page_code)
-        
+
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
@@ -173,7 +180,7 @@ is_expanded = False
             request.app = mock_app
             page = PageClass(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
-            
+
             # aria-busy="true"
             assert 'aria-busy="true"' in html
             # aria-expanded="false"

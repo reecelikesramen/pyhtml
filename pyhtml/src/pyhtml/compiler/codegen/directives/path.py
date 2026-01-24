@@ -1,7 +1,7 @@
 """Path directive code generator."""
-from typing import List
 
 import ast
+from typing import List
 
 from pyhtml.compiler.ast_nodes import PathDirective
 from pyhtml.compiler.codegen.directives.base import DirectiveCodegen
@@ -21,22 +21,19 @@ class PathDirectiveCodegen(DirectiveCodegen):
 
         routes_ast = ast.Dict(
             keys=[ast.Constant(value=k) for k in routes_dict.keys()],
-            values=[ast.Constant(value=v) for v in routes_dict.values()]
+            values=[ast.Constant(value=v) for v in routes_dict.values()],
         )
 
         statements.append(
-            ast.Assign(
-                targets=[ast.Name(id='__routes__', ctx=ast.Store())],
-                value=routes_ast
-            )
+            ast.Assign(targets=[ast.Name(id="__routes__", ctx=ast.Store())], value=routes_ast)
         )
 
         # Generate __path_mode__
-        mode = 'string' if directive.is_simple_string else 'dict'
+        mode = "string" if directive.is_simple_string else "dict"
         statements.append(
             ast.Assign(
-                targets=[ast.Name(id='__path_mode__', ctx=ast.Store())],
-                value=ast.Constant(value=mode)
+                targets=[ast.Name(id="__path_mode__", ctx=ast.Store())],
+                value=ast.Constant(value=mode),
             )
         )
 
@@ -45,8 +42,8 @@ class PathDirectiveCodegen(DirectiveCodegen):
             first_pattern = list(routes_dict.values())[0]
             statements.append(
                 ast.Assign(
-                    targets=[ast.Name(id='__route__', ctx=ast.Store())],
-                    value=ast.Constant(value=first_pattern)
+                    targets=[ast.Name(id="__route__", ctx=ast.Store())],
+                    value=ast.Constant(value=first_pattern),
                 )
             )
 

@@ -1,12 +1,14 @@
 """AST node definitions for PyHTML compiler."""
+
 import ast
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 
 @dataclass
 class ASTNode:
     """Base for all AST nodes."""
+
     line: int
     column: int
 
@@ -14,12 +16,14 @@ class ASTNode:
 @dataclass
 class Directive(ASTNode):
     """Base for directives."""
+
     name: str
 
 
 @dataclass
 class PathDirective(Directive):
     """!path { 'name': '/route/{param}' } or !path '/route'"""
+
     routes: Dict[str, str]  # {'name': '/route/{param}'}
     is_simple_string: bool = False
 
@@ -38,6 +42,7 @@ class NoSpaDirective(Directive):
 @dataclass
 class LayoutDirective(Directive):
     """!layout "path/to/layout.pyhtml" """
+
     layout_path: str
 
     def __str__(self) -> str:
@@ -47,6 +52,7 @@ class LayoutDirective(Directive):
 @dataclass
 class SpecialAttribute(ASTNode):
     """Base for special attributes ($, @, :)."""
+
     name: str
     value: str
 
@@ -54,6 +60,7 @@ class SpecialAttribute(ASTNode):
 @dataclass
 class KeyAttribute(SpecialAttribute):
     """$key="unique_id"."""
+
     expr: str
 
     def __str__(self) -> str:
@@ -63,8 +70,9 @@ class KeyAttribute(SpecialAttribute):
 @dataclass
 class IfAttribute(SpecialAttribute):
     """$if="condition"."""
+
     condition: str
-    
+
     def __str__(self) -> str:
         return f"IfAttribute(condition={self.condition})"
 
@@ -72,8 +80,9 @@ class IfAttribute(SpecialAttribute):
 @dataclass
 class ShowAttribute(SpecialAttribute):
     """$show="condition"."""
+
     condition: str
-    
+
     def __str__(self) -> str:
         return f"ShowAttribute(condition={self.condition})"
 
@@ -81,11 +90,12 @@ class ShowAttribute(SpecialAttribute):
 @dataclass
 class ForAttribute(SpecialAttribute):
     """$for="item in items"."""
-    is_template_tag: bool # <template $for>
-    loop_vars: str # "item" or "key, value"
-    iterable: str # "items" or "items.items()"
+
+    is_template_tag: bool  # <template $for>
+    loop_vars: str  # "item" or "key, value"
+    iterable: str  # "items" or "items.items()"
     key: Optional[str] = None
-    
+
     def __str__(self) -> str:
         return f"ForAttribute(vars={self.loop_vars}, in={self.iterable})"
 
@@ -93,9 +103,10 @@ class ForAttribute(SpecialAttribute):
 @dataclass
 class BindAttribute(SpecialAttribute):
     """$bind="variable"."""
+
     variable: str
     binding_type: Optional[str] = None
-    
+
     def __str__(self) -> str:
         return f"BindAttribute(var={self.variable}, type={self.binding_type})"
 
@@ -103,6 +114,7 @@ class BindAttribute(SpecialAttribute):
 @dataclass
 class FieldValidationRules:
     """Validation rules for a single form field."""
+
     name: str
     required: bool = False
     required_expr: Optional[str] = None  # For :required="condition"
@@ -118,7 +130,7 @@ class FieldValidationRules:
     title: Optional[str] = None  # Custom error message
     max_size: Optional[int] = None  # Max file size in bytes
     allowed_types: Optional[List[str]] = None  # Allowed MIME types or extensions
-    
+
     def __str__(self) -> str:
         return f"FieldValidationRules(name={self.name}, required={self.required})"
 
@@ -126,9 +138,10 @@ class FieldValidationRules:
 @dataclass
 class FormValidationSchema:
     """Schema containing all validation rules for a form."""
+
     fields: Dict[str, FieldValidationRules] = field(default_factory=dict)
     model_name: Optional[str] = None  # For $model="ClassName"
-    
+
     def __str__(self) -> str:
         return f"FormValidationSchema(fields={len(self.fields)}, model={self.model_name})"
 
@@ -136,8 +149,9 @@ class FormValidationSchema:
 @dataclass
 class ModelAttribute(SpecialAttribute):
     """$model="ModelClassName" - Pydantic model binding."""
+
     model_name: str
-    
+
     def __str__(self) -> str:
         return f"ModelAttribute(model={self.model_name})"
 
@@ -145,10 +159,13 @@ class ModelAttribute(SpecialAttribute):
 @dataclass
 class EventAttribute(SpecialAttribute):
     """@click="handler_name" or @click="handler(arg1)"."""
+
     event_type: str  # 'click', 'submit', etc.
     handler_name: str
     args: List[str] = field(default_factory=list)  # List of python expressions for arguments
-    modifiers: List[str] = field(default_factory=list)  # List of modifiers (e.g. ['prevent', 'stop'])
+    modifiers: List[str] = field(
+        default_factory=list
+    )  # List of modifiers (e.g. ['prevent', 'stop'])
     # Form-specific fields
     validation_schema: Optional[FormValidationSchema] = None  # Set for @submit handlers
 
@@ -162,6 +179,7 @@ class ReactiveAttribute(SpecialAttribute):
     :attr="expression"
     Represents a reactive attribute where the value is a python expression.
     """
+
     expr: str
 
     def __str__(self) -> str:
@@ -171,6 +189,7 @@ class ReactiveAttribute(SpecialAttribute):
 @dataclass
 class InterpolationNode(ASTNode):
     """Represents {variable} in text."""
+
     expression: str  # Python expression to evaluate
 
     def __str__(self) -> str:
@@ -180,10 +199,11 @@ class InterpolationNode(ASTNode):
 @dataclass
 class TemplateNode(ASTNode):
     """HTML element or text node."""
+
     tag: Optional[str]  # None for text nodes
     attributes: Dict[str, str] = field(default_factory=dict)  # Regular HTML attributes
     special_attributes: List[SpecialAttribute] = field(default_factory=list)
-    children: List['TemplateNode'] = field(default_factory=list)
+    children: List["TemplateNode"] = field(default_factory=list)
     text_content: Optional[str] = None
     is_raw: bool = False
 
@@ -196,6 +216,7 @@ class TemplateNode(ASTNode):
 @dataclass
 class ParsedPyHTML:
     """Top-level parsed document."""
+
     directives: List[Directive] = field(default_factory=list)
     template: List[TemplateNode] = field(default_factory=list)
     python_code: str = ""  # Raw Python section (below ---)

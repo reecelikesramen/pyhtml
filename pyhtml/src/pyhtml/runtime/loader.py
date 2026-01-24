@@ -1,6 +1,6 @@
 """Page loader - compiles and executes .pyhtml files."""
+
 import ast
-import importlib.util
 import sys
 from pathlib import Path
 from typing import Dict, Optional, Type
@@ -18,57 +18,61 @@ class PageLoader:
         self.codegen = CodeGenerator()
         self._cache: Dict[str, Type[BasePage]] = {}  # path -> compiled class
 
-    def load(self, pyhtml_file: Path, use_cache: bool = True, implicit_layout: Optional[str] = None) -> Type[BasePage]:
+    def load(
+        self, pyhtml_file: Path, use_cache: bool = True, implicit_layout: Optional[str] = None
+    ) -> Type[BasePage]:
         """Load and compile a .pyhtml file into a page class."""
         # Normalize path
         pyhtml_file = pyhtml_file.resolve()
         path_key = str(pyhtml_file)
-        
+
         # Check cache first (incorporate layout into key if needed? No, file content + layout dep determines it)
         # Actually if implicit layout changes, we might need to recompile, but for now assume strict mapping
         if use_cache and path_key in self._cache:
             return self._cache[path_key]
-        
+
         # Parse
         parsed = self.parser.parse_file(pyhtml_file)
 
         # Inject implicit layout if no explicit layout present
         if implicit_layout:
-             from pyhtml.compiler.ast_nodes import LayoutDirective
-             if not parsed.get_directive_by_type(LayoutDirective):
-                 # Create directive
-                 # We need to ensure implicit_layout is relative or absolute?
-                 # content relies on load_layout taking a path.
-                 parsed.directives.append(LayoutDirective(
-                     name='layout',
-                     line=0,
-                     column=0,
-                     layout_path=implicit_layout
-                 ))
+            from pyhtml.compiler.ast_nodes import LayoutDirective
+
+            if not parsed.get_directive_by_type(LayoutDirective):
+                # Create directive
+                # We need to ensure implicit_layout is relative or absolute?
+                # content relies on load_layout taking a path.
+                parsed.directives.append(
+                    LayoutDirective(name="layout", line=0, column=0, layout_path=implicit_layout)
+                )
 
         # Generate code
         module_ast = self.codegen.generate(parsed)
         ast.fix_missing_locations(module_ast)
-            
+
         # Compile and load
-        code = compile(module_ast, str(pyhtml_file), 'exec')
-        module = type(sys)('pyhtml_page')
-        
+        code = compile(module_ast, str(pyhtml_file), "exec")
+        module = type(sys)("pyhtml_page")
+
         # Inject global load_layout
         module.load_layout = self.load_layout
-        
+
         exec(code, module.__dict__)
-        
+
         # Find Page class (skip _LayoutBase which is imported from layout)
         import pyhtml.runtime.page as page_mod
+
         CurrentBasePage = page_mod.BasePage
-        
+
         for name, obj in module.__dict__.items():
-            if name.startswith('__'): continue
+            if name.startswith("__"):
+                continue
             if isinstance(obj, type):
-                if (issubclass(obj, CurrentBasePage) and
-                    obj is not CurrentBasePage and
-                    name != '_LayoutBase'):
+                if (
+                    issubclass(obj, CurrentBasePage)
+                    and obj is not CurrentBasePage
+                    and name != "_LayoutBase"
+                ):
                     # Cache the compiled class
                     self._cache[path_key] = obj
                     # Set file path for router to track
@@ -95,18 +99,21 @@ class PageLoader:
             else:
                 # Fallback to CWD
                 path = Path.cwd() / layout_path
-        
+
         # Resolve symlinks for consistent path comparison
         path = path.resolve()
-        
+
         return self.load(path)
+
 
 # Global instance for generated code to use
 _loader_instance = PageLoader()
 
+
 def get_loader() -> PageLoader:
     """Get global loader instance."""
     return _loader_instance
+
 
 def load_layout(path: str, base_path: str = None) -> Type[BasePage]:
     """Helper for generated code to load layouts."""

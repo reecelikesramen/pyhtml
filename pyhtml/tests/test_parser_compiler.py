@@ -1,7 +1,8 @@
 import unittest
-from pathlib import Path
+
+from pyhtml.compiler.ast_nodes import InterpolationNode, LayoutDirective
 from pyhtml.compiler.parser import PyHTMLParser
-from pyhtml.compiler.ast_nodes import TemplateNode, InterpolationNode, LayoutDirective
+
 
 class TestParserCompiler(unittest.TestCase):
     def setUp(self):
@@ -58,6 +59,7 @@ class TestParserCompiler(unittest.TestCase):
         self.assertTrue(fields["email"].required)
         self.assertEqual(fields["email"].minlength, 5)
         self.assertEqual(fields["age"].min_value, "18")
+
 
 if __name__ == "__main__":
     unittest.main()

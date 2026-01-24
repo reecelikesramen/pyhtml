@@ -1,10 +1,17 @@
-import unittest
 import ast
-from pyhtml.compiler.codegen.generator import CodeGenerator
+import unittest
+
 from pyhtml.compiler.ast_nodes import (
-    ParsedPyHTML, TemplateNode, EventAttribute, BindAttribute, 
-    FormValidationSchema, FieldValidationRules, PathDirective, NoSpaDirective
+    BindAttribute,
+    EventAttribute,
+    FieldValidationRules,
+    FormValidationSchema,
+    ParsedPyHTML,
+    PathDirective,
+    TemplateNode,
 )
+from pyhtml.compiler.codegen.generator import CodeGenerator
+
 
 class TestCodeGenerator(unittest.TestCase):
     def setUp(self):
@@ -33,18 +40,18 @@ class TestCodeGenerator(unittest.TestCase):
         self.assertIn("afunc", methods)
         self.assertIn("afunc", async_methods)
         self.assertIn("x", variables)
-        self.assertIn("request", variables) # Default variable
+        self.assertIn("request", variables)  # Default variable
 
     def test_generate_basic_module(self):
         parsed = ParsedPyHTML(
             template=[TemplateNode(tag="div", children=[], attributes={}, line=1, column=0)],
             python_code="name = 'World'",
             python_ast=ast.parse("name = 'World'"),
-            file_path="test.pyhtml"
+            file_path="test.pyhtml",
         )
         module = self.generator.generate(parsed)
         self.assertIsInstance(module, ast.Module)
-        
+
         # Check for class definition
         class_defs = [n for n in module.body if isinstance(n, ast.ClassDef)]
         self.assertEqual(len(class_defs), 1)
@@ -55,10 +62,10 @@ class TestCodeGenerator(unittest.TestCase):
         code = "update_user(user_id, 'new_name')"
         # user_id is unbound
         body, args = self.generator._transform_inline_code(code, known_methods={"update_user"})
-        
+
         self.assertEqual(len(args), 1)
         self.assertEqual(args[0], "user_id")
-        
+
         # Verify the call was transformed to use arg0
         call = body[0].value
         self.assertIsInstance(call.args[0], ast.Name)
@@ -68,32 +75,55 @@ class TestCodeGenerator(unittest.TestCase):
         # Test @click with $bind="busy"
         node = TemplateNode(tag="button", line=1, column=0)
         node.special_attributes = [
-            EventAttribute(name="@click", value="do_work", event_type="click", handler_name="do_work", line=1, column=0),
-            BindAttribute(name="$bind", value="is_loading", variable="is_loading", binding_type="busy", line=1, column=0)
+            EventAttribute(
+                name="@click",
+                value="do_work",
+                event_type="click",
+                handler_name="do_work",
+                line=1,
+                column=0,
+            ),
+            BindAttribute(
+                name="$bind",
+                value="is_loading",
+                variable="is_loading",
+                binding_type="busy",
+                line=1,
+                column=0,
+            ),
         ]
         parsed = ParsedPyHTML(template=[node])
-        
-        handlers = self.generator._process_handlers(parsed, known_methods={"do_work"}, async_methods=set())
+
+        handlers = self.generator._process_handlers(
+            parsed, known_methods={"do_work"}, async_methods=set()
+        )
         self.assertEqual(len(handlers), 1)
-        
+
         # Check for wrapping logic (set busy, try, finally unset busy)
         body = handlers[0].body
-        self.assertIsInstance(body[0], ast.Assign) # set busy = True
-        self.assertIsInstance(body[1], ast.If)     # check _on_update
-        self.assertIsInstance(body[2], ast.Try)    # try block
-        self.assertIsInstance(body[2].finalbody[0], ast.Assign) # set busy = False
+        self.assertIsInstance(body[0], ast.Assign)  # set busy = True
+        self.assertIsInstance(body[1], ast.If)  # check _on_update
+        self.assertIsInstance(body[2], ast.Try)  # try block
+        self.assertIsInstance(body[2].finalbody[0], ast.Assign)  # set busy = False
 
     def test_generate_form_validation(self):
-        schema = FormValidationSchema(fields={
-            "email": FieldValidationRules(name="email", required=True, input_type="email")
-        })
+        schema = FormValidationSchema(
+            fields={"email": FieldValidationRules(name="email", required=True, input_type="email")}
+        )
         node = TemplateNode(tag="form", line=1, column=0)
         node.special_attributes = [
-            EventAttribute(name="@submit", value="save", event_type="submit", 
-                           handler_name="save", validation_schema=schema, line=1, column=0)
+            EventAttribute(
+                name="@submit",
+                value="save",
+                event_type="submit",
+                handler_name="save",
+                validation_schema=schema,
+                line=1,
+                column=0,
+            )
         ]
         parsed = ParsedPyHTML(template=[node])
-        
+
         methods = self.generator._generate_form_validation_methods(parsed, set())
         # Should have schema assignment and wrapper method
         self.assertEqual(len(methods), 2)
@@ -107,23 +137,35 @@ class TestCodeGenerator(unittest.TestCase):
         names = self.generator._extract_import_names(tree)
         self.assertIn("my_os", names)
         self.assertIn("my_sqrt", names)
-        self.assertIn("json", names) 
+        self.assertIn("json", names)
 
     def test_generate_spa_script_injection(self):
         # Multi-path directive triggers SPA injection
         parsed = ParsedPyHTML(
             template=[TemplateNode(tag="div", children=[], attributes={}, line=1, column=0)],
-            directives=[PathDirective(name="path", line=1, column=0, routes={"/a": "a", "/b": "b"}, is_simple_string=False)],
-            file_path="test.pyhtml"
+            directives=[
+                PathDirective(
+                    name="path",
+                    line=1,
+                    column=0,
+                    routes={"/a": "a", "/b": "b"},
+                    is_simple_string=False,
+                )
+            ],
+            file_path="test.pyhtml",
         )
         module = self.generator.generate(parsed)
-        
+
         # Find _render_template method
-        render_func = next(n for n in module.body[-1].body if isinstance(n, ast.AsyncFunctionDef) and n.name == "_render_template")
-        
+        render_func = next(
+            n
+            for n in module.body[-1].body
+            if isinstance(n, ast.AsyncFunctionDef) and n.name == "_render_template"
+        )
+
         # DEBUG
         # print(ast.dump(render_func))
-        
+
         # Look for script tag injection in the body
         script_appends = []
         for n in render_func.body:
@@ -131,19 +173,32 @@ class TestCodeGenerator(unittest.TestCase):
             nodes_to_check = [n]
             if isinstance(n, ast.If):
                 nodes_to_check.extend(n.body)
-            
+
             for node in nodes_to_check:
-                if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and node.value.args:
+                if (
+                    isinstance(node, ast.Expr)
+                    and isinstance(node.value, ast.Call)
+                    and node.value.args
+                ):
                     arg0 = node.value.args[0]
-                    if isinstance(arg0, ast.Constant) and isinstance(arg0.value, str) and "<script" in arg0.value:
+                    if (
+                        isinstance(arg0, ast.Constant)
+                        and isinstance(arg0.value, str)
+                        and "<script" in arg0.value
+                    ):
                         script_appends.append(node)
                     elif isinstance(arg0, ast.JoinedStr):
                         # Check first constant part of JoinedStr
-                        if arg0.values and isinstance(arg0.values[0], ast.Constant) and "<script" in arg0.values[0].value:
+                        if (
+                            arg0.values
+                            and isinstance(arg0.values[0], ast.Constant)
+                            and "<script" in arg0.values[0].value
+                        ):
                             script_appends.append(node)
-        
+
         # Should have SPA meta script (constant parts) and client library script (JoinedStr)
         self.assertTrue(len(script_appends) >= 2)
+
 
 if __name__ == "__main__":
     unittest.main()

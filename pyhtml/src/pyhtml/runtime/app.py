@@ -1,60 +1,54 @@
 """Main ASGI application."""
+
+import re
+import traceback
 from pathlib import Path
 from typing import Optional
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response, PlainTextResponse
+from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 
-from starlette.staticfiles import StaticFiles
-import traceback
-import re
-
-from pyhtml.compiler.exceptions import PyHTMLSyntaxError
-from pyhtml.runtime.loader import PageLoader
-from pyhtml.runtime.router import Router
-from pyhtml.runtime.websocket import WebSocketHandler
-from pyhtml.runtime.http_transport import HTTPTransportHandler
 from pyhtml.runtime.error_page import ErrorPage
+from pyhtml.runtime.http_transport import HTTPTransportHandler
+from pyhtml.runtime.router import Router
 from pyhtml.runtime.upload_manager import upload_manager
+from pyhtml.runtime.websocket import WebSocketHandler
 
 
 class PyHTML:
     """Main ASGI application and configuration."""
 
     def __init__(
-        self, 
-        pages_dir: Optional[str] = None, 
+        self,
+        pages_dir: Optional[str] = None,
         path_based_routing: bool = True,
         enable_pjax: bool = True,
         debug: bool = False,
         enable_webtransport: bool = False,
         static_dir: Optional[str] = None,
-        static_path: str = "/static"
+        static_path: str = "/static",
     ):
         if pages_dir is None:
             # Auto-discovery
             cwd = Path.cwd()
-            potential_paths = [
-                cwd / "pages",
-                cwd / "src" / "pages"
-            ]
-            
+            potential_paths = [cwd / "pages", cwd / "src" / "pages"]
+
             discovered = False
             for path in potential_paths:
                 if path.exists() and path.is_dir():
                     self.pages_dir = path
                     discovered = True
                     break
-            
+
             if not discovered:
                 # Default to 'pages' and let it fail/warn later if missing
                 self.pages_dir = Path("pages")
         else:
             self.pages_dir = Path(pages_dir)
-        
+
         # User configured static directory (disabled by default)
         self.static_dir = None
         if static_dir:
@@ -70,28 +64,30 @@ class PyHTML:
                 self.static_dir = potential.resolve()
             else:
                 self.static_dir = path
-            
+
         self.static_url_path = static_path
-            
+
         self.path_based_routing = path_based_routing
         self.enable_pjax = enable_pjax
         self.debug = debug
         self.enable_webtransport = enable_webtransport
         # Internal flag set by dev_server.py when running via 'pyhtml dev'
         self._is_dev_mode = False
-        
+
         self.router = Router()
-        
+
         from pyhtml.runtime.loader import get_loader
+
         self.loader = get_loader()
-        
+
         self.ws_handler = WebSocketHandler(self)
         self.http_handler = HTTPTransportHandler(self)
-        
+
         # Initialize WebTransport handler
         from pyhtml.runtime.webtransport_handler import WebTransportHandler
+
         self.web_transport_handler = WebTransportHandler(self)
-        
+
         # Valid upload tokens
         self.upload_tokens = set()
 
@@ -99,8 +95,8 @@ class PyHTML:
         self._load_pages()
 
         # Static files (PyHTML Internal)
-        internal_static_dir = Path(__file__).parent.parent / 'static'
-        
+        internal_static_dir = Path(__file__).parent.parent / "static"
+
         # Prepare exception handlers
         exception_handlers = {}
         if not self.debug:
@@ -109,26 +105,36 @@ class PyHTML:
         # Build routes list
         routes = [
             # Capabilities endpoint for transport negotiation
-            Route('/_pyhtml/capabilities', self._handle_capabilities, methods=['GET']),
+            Route("/_pyhtml/capabilities", self._handle_capabilities, methods=["GET"]),
             # WebSocket transport
-            WebSocketRoute('/_pyhtml/ws', self.ws_handler.handle),
+            WebSocketRoute("/_pyhtml/ws", self.ws_handler.handle),
             # HTTP transport endpoints
-            Route('/_pyhtml/session', self.http_handler.create_session, methods=['POST']),
-            Route('/_pyhtml/poll', self.http_handler.poll, methods=['GET']),
-            Route('/_pyhtml/event', self.http_handler.handle_event, methods=['POST']),
+            Route("/_pyhtml/session", self.http_handler.create_session, methods=["POST"]),
+            Route("/_pyhtml/poll", self.http_handler.poll, methods=["GET"]),
+            Route("/_pyhtml/event", self.http_handler.handle_event, methods=["POST"]),
             # Upload endpoint
-            Route('/_pyhtml/upload', self._handle_upload, methods=['POST']),
+            Route("/_pyhtml/upload", self._handle_upload, methods=["POST"]),
             # Internal Static files
-            Mount('/_pyhtml/static', app=StaticFiles(directory=str(internal_static_dir)), name='internal_static'),
+            Mount(
+                "/_pyhtml/static",
+                app=StaticFiles(directory=str(internal_static_dir)),
+                name="internal_static",
+            ),
         ]
-        
+
         # Mount User Static Files if configured
         if self.static_dir:
             if not self.static_dir.exists():
                 print(f"Warning: Configured static directory '{self.static_dir}' does not exist.")
             else:
-                routes.append(Mount(self.static_url_path, app=StaticFiles(directory=str(self.static_dir)), name='static'))
-        
+                routes.append(
+                    Mount(
+                        self.static_url_path,
+                        app=StaticFiles(directory=str(self.static_dir)),
+                        name="static",
+                    )
+                )
+
         # Debug endpoints (must be before catch-all)
         # ONLY enable these if BOTH debug=True AND we are in dev mode
         # This prevents source code exposure in 'pyhtml run' even if debug=True
@@ -138,41 +144,48 @@ class PyHTML:
             # PROBLEM: _is_dev_mode is set AFTER init by dev_server.py.
             # So we register them, but gate them inside the handler, OR we allow dev_server
             # to re-init app? No, dev_server imports app.
-            
+
             # Solution: Register them, but check self._is_dev_mode inside the handlers.
             # OR refactor so routes are dynamic? Starlette routes are fixed list usually.
-            
-            # Actually, let's keep them registered if debug=True, but 
+
+            # Actually, let's keep them registered if debug=True, but
             # modify _handle_source/_handle_file to checking _is_dev_mode as well inside.
-            routes.append(Route('/_pyhtml/source', self._handle_source, methods=['GET']))
-            routes.append(Route('/_pyhtml/file/{encoded:path}', self._handle_file, methods=['GET']))
+            routes.append(Route("/_pyhtml/source", self._handle_source, methods=["GET"]))
+            routes.append(Route("/_pyhtml/file/{encoded:path}", self._handle_file, methods=["GET"]))
             # Chrome DevTools automatic workspace folders (M-135+)
-            routes.append(Route('/.well-known/appspecific/com.chrome.devtools.json', 
-                               self._handle_devtools_json, methods=['GET']))
-        
+            routes.append(
+                Route(
+                    "/.well-known/appspecific/com.chrome.devtools.json",
+                    self._handle_devtools_json,
+                    methods=["GET"],
+                )
+            )
+
         # Default page handler (catch-all, must be last)
-        routes.append(Route('/{path:path}', self._handle_request, methods=['GET', 'POST']))
-        
+        routes.append(Route("/{path:path}", self._handle_request, methods=["GET", "POST"]))
+
         # Create Starlette app with all transport routes
         self.app = Starlette(routes=routes, exception_handlers=exception_handlers)
-        
+
         # Store configuration in app state for runtime access (e.g. by pages)
         self.app.state.enable_pjax = self.enable_pjax
         self.app.state.debug = self.debug
         self.app.state.pyhtml = self
-    
+
     async def _handle_capabilities(self, request: Request) -> JSONResponse:
         """Return server transport capabilities for client negotiation."""
-        return JSONResponse({
-            'transports': ['websocket', 'http'],
-            # WebTransport requires HTTP/3 - only available when running with Hypercorn
-            'webtransport': False,
-            'version': '0.0.1'
-        })
+        return JSONResponse(
+            {
+                "transports": ["websocket", "http"],
+                # WebTransport requires HTTP/3 - only available when running with Hypercorn
+                "webtransport": False,
+                "version": "0.0.1",
+            }
+        )
 
     def _get_client_script_url(self) -> str:
         """Return the appropriate client bundle URL based on server mode.
-        
+
         Returns dev bundle when running via 'pyhtml dev', core bundle otherwise.
         """
         if self._is_dev_mode:
@@ -184,12 +197,12 @@ class PyHTML:
         print(f"DEBUG: Handling upload request for {request.url}")
         try:
             # Check for upload token
-            token = request.headers.get('X-Upload-Token')
+            token = request.headers.get("X-Upload-Token")
             if not token or token not in self.upload_tokens:
-                return JSONResponse({'error': 'Invalid or expired upload token'}, status_code=403)
+                return JSONResponse({"error": "Invalid or expired upload token"}, status_code=403)
 
             # Fail-fast: Check Content-Length header
-            content_length = request.headers.get('content-length')
+            content_length = request.headers.get("content-length")
             if content_length:
                 try:
                     length = int(content_length)
@@ -197,24 +210,24 @@ class PyHTML:
                     # Real app might configure this or inspect specific field limits after streaming
                     if length > 10 * 1024 * 1024:
                         print(f"WARN: Upload rejected. Content-Length {length} exceeds 10MB limit.")
-                        return JSONResponse({'error': 'Payload Too Large'}, status_code=413)
+                        return JSONResponse({"error": "Payload Too Large"}, status_code=413)
                 except ValueError:
                     pass
 
             form = await request.form()
             response_data = {}
             for field_name, file in form.items():
-                if hasattr(file, 'filename'): # It's an UploadFile
+                if hasattr(file, "filename"):  # It's an UploadFile
                     # We don't really need the ID if we are just testing upload for now?
                     # Wait, saving returns the ID!
                     upload_id = upload_manager.save(file)
                     response_data[field_name] = upload_id
-            
+
             print(f"DEBUG: Upload successful. Returning: {response_data}")
             return JSONResponse(response_data)
         except Exception as e:
             traceback.print_exc()
-            return JSONResponse({'error': str(e)}, status_code=500)
+            return JSONResponse({"error": str(e)}, status_code=500)
 
     async def _handle_source(self, request: Request) -> Response:
         """Serve source code for debugging."""
@@ -222,28 +235,30 @@ class PyHTML:
         if not self.debug:
             print("DEBUG: _handle_source returning 404 because debug=False")
             return Response("Not Found", status_code=404)
-            
+
         if not self._is_dev_mode:
             print("DEBUG: _handle_source returning 404 because _is_dev_mode=False")
             return Response("Not Found", status_code=404)
-            
-        path_str = request.query_params.get('path')
+
+        path_str = request.query_params.get("path")
         print(f"DEBUG: _handle_source path={path_str}")
         if not path_str:
             return Response("Missing path", status_code=400)
-            
+
         try:
             path = Path(path_str).resolve()
-            print(f"DEBUG: _handle_source resolved path={path}, exists={path.exists()}, is_file={path.is_file()}")
+            print(
+                f"DEBUG: _handle_source resolved path={path}, exists={path.exists()}, is_file={path.is_file()}"
+            )
             # Security check: Ensure we are only serving files from allowed directories?
             # For a dev tool, we might want to allow viewing any file in the traceback which might include library files.
             # But normally we want to restrict to project and maybe venv.
             # Let's just check it exists and is a file for now.
             if not path.is_file():
                 return Response("File not found", status_code=404)
-                
-            content = path.read_text(encoding='utf-8')
-            return Response(content, media_type='text/plain')
+
+            content = path.read_text(encoding="utf-8")
+            return Response(content, media_type="text/plain")
         except Exception as e:
             print(f"DEBUG: _handle_source exception: {e}")
             return Response(str(e), status_code=500)
@@ -252,16 +267,16 @@ class PyHTML:
         """Serve source file by base64-encoded path (for DevTools source mapping)."""
         if not self.debug or not self._is_dev_mode:
             return Response("Not Found", status_code=404)
-            
+
         import base64
-        import base64
-        encoded_path = request.path_params.get('encoded', '')
-        
+
+        encoded_path = request.path_params.get("encoded", "")
+
         # If the path contains a slash, it means we appended the filename for Chrome's benefit
         # e.g., "BASE64STRING/my_file.py"
         # We only care about the first part
-        if '/' in encoded_path:
-            encoded = encoded_path.split('/')[0]
+        if "/" in encoded_path:
+            encoded = encoded_path.split("/")[0]
         else:
             encoded = encoded_path
 
@@ -270,18 +285,18 @@ class PyHTML:
             # Restore padding
             padding = 4 - (len(encoded) % 4)
             if padding != 4:
-                encoded += '=' * padding
+                encoded += "=" * padding
             # Restore standard base64 chars
-            encoded = encoded.replace('-', '+').replace('_', '/')
-            path_str = base64.b64decode(encoded).decode('utf-8')
-            
+            encoded = encoded.replace("-", "+").replace("_", "/")
+            path_str = base64.b64decode(encoded).decode("utf-8")
+
             path = Path(path_str).resolve()
             if not path.is_file():
                 return Response("File not found", status_code=404)
-                
-            content = path.read_text(encoding='utf-8')
+
+            content = path.read_text(encoding="utf-8")
             # Return as JavaScript so browser DevTools can parse it
-            return Response(content, media_type='text/plain')
+            return Response(content, media_type="text/plain")
         except Exception as e:
             print(f"DEBUG: _handle_file exception: {e}")
             return Response(str(e), status_code=500)
@@ -291,22 +306,19 @@ class PyHTML:
         if not self.debug or not self._is_dev_mode:
             return JSONResponse({}, status_code=404)
 
-        import uuid
         import hashlib
-        
+        import uuid
+
         # Use current working directory as project root
         project_root = Path.cwd()
-        
+
         # Generate a consistent UUID from the project path
         path_hash = hashlib.md5(str(project_root).encode()).hexdigest()
         project_uuid = str(uuid.UUID(path_hash[:32]))
-        
-        return JSONResponse({
-            "workspace": {
-                "root": str(project_root.resolve()),
-                "uuid": project_uuid
-            }
-        })
+
+        return JSONResponse(
+            {"workspace": {"root": str(project_root.resolve()), "uuid": project_uuid}}
+        )
 
     def _load_pages(self):
         """Discover and compile all .pyhtml files."""
@@ -314,7 +326,9 @@ class PyHTML:
         # We need to sort files to ensure deterministic order but scanning is recursive
         self._scan_directory(self.pages_dir)
 
-    def _scan_directory(self, dir_path: Path, layout_path: Optional[str] = None, url_prefix: str = ""):
+    def _scan_directory(
+        self, dir_path: Path, layout_path: Optional[str] = None, url_prefix: str = ""
+    ):
         """Recursively scan directory for pages and layouts."""
         # 1. Check for layout.pyhtml in this directory
         current_layout = layout_path
@@ -337,76 +351,76 @@ class PyHTML:
             return
 
         for entry in entries:
-            if entry.name.startswith('_') or entry.name.startswith('.'):
+            if entry.name.startswith("_") or entry.name.startswith("."):
                 continue
-                
+
             if entry.is_dir():
                 # Determine new prefix
                 # Check if it's a param directory [param]
                 name = entry.name
                 new_segment = name
-                
+
                 # Check for [param] syntax
-                param_match = re.match(r'^\[(.*?)\]$', name)
+                param_match = re.match(r"^\[(.*?)\]$", name)
                 if param_match:
-                     param_name = param_match.group(1)
-                     # Convert to routing syntax :{name} (or whatever Router supports)
-                     # Router supports :name or {name}
-                     new_segment = f"{{{param_name}}}"
-                
-                new_prefix = (url_prefix + "/" + new_segment).replace('//', '/')
+                    param_name = param_match.group(1)
+                    # Convert to routing syntax :{name} (or whatever Router supports)
+                    # Router supports :name or {name}
+                    new_segment = f"{{{param_name}}}"
+
+                new_prefix = (url_prefix + "/" + new_segment).replace("//", "/")
                 self._scan_directory(entry, current_layout, new_prefix)
-                
-            elif entry.is_file() and entry.suffix == '.pyhtml':
-                if entry.name == 'layout.pyhtml':
-                    continue # Already handled
-                
+
+            elif entry.is_file() and entry.suffix == ".pyhtml":
+                if entry.name == "layout.pyhtml":
+                    continue  # Already handled
+
                 # Determine route path
-                name = entry.stem # filename without .pyhtml
-                
+                name = entry.stem  # filename without .pyhtml
+
                 route_segment = name
-                if name == 'index':
+                if name == "index":
                     route_segment = ""
                 else:
                     # Check for [param] in filename
-                    param_match = re.match(r'^\[(.*?)\]$', name)
+                    param_match = re.match(r"^\[(.*?)\]$", name)
                     if param_match:
-                         param_name = param_match.group(1)
-                         route_segment = f"{{{param_name}}}"
-                
-                route_path = (url_prefix + "/" + route_segment).replace('//', '/')
-                
+                        param_name = param_match.group(1)
+                        route_segment = f"{{{param_name}}}"
+
+                route_path = (url_prefix + "/" + route_segment).replace("//", "/")
+
                 # Strip trailing slash for index pages (unless root)
-                if route_path != "/" and route_path.endswith('/'):
-                    route_path = route_path.rstrip('/')
-                
+                if route_path != "/" and route_path.endswith("/"):
+                    route_path = route_path.rstrip("/")
+
                 if not route_path:
                     route_path = "/"
-                
+
                 try:
                     # Load page with implicit layout
                     page_class = self.loader.load(entry, implicit_layout=current_layout)
-                    
+
                     # Register routes
                     # 1. explicit !path overrides implicit routing?
                     # Generally yes. If !path exists, we might add those IN ADDITION or INSTEAD.
                     # Current logic in add_page inspects __routes__ (from !path).
                     # If present, use that. If not, use implicit route_path.
-                    
-                    if hasattr(page_class, '__routes__') and page_class.__routes__:
-                         # User specified explicit paths
-                         self.router.add_page(page_class)
-                    elif hasattr(page_class, '__route__') and page_class.__route__:
-                         # Should not happen as __route__ is derived from __routes__ usually
-                         self.router.add_page(page_class)
+
+                    if hasattr(page_class, "__routes__") and page_class.__routes__:
+                        # User specified explicit paths
+                        self.router.add_page(page_class)
+                    elif hasattr(page_class, "__route__") and page_class.__route__:
+                        # Should not happen as __route__ is derived from __routes__ usually
+                        self.router.add_page(page_class)
                     elif self.path_based_routing:
-                         # No explicit !path, use file-based route ONLY if enabled
-                         self.router.add_route(route_path, page_class)
-                    elif name in ('404', '500'):
-                         # Special case: error pages (404.pyhtml, 500.pyhtml) are always registered
-                         # at their conventional routes regardless of path_based_routing setting
-                         self.router.add_route(f"/{name}", page_class)
-                         
+                        # No explicit !path, use file-based route ONLY if enabled
+                        self.router.add_route(route_path, page_class)
+                    elif name in ("404", "500"):
+                        # Special case: error pages (404.pyhtml, 500.pyhtml) are always registered
+                        # at their conventional routes regardless of path_based_routing setting
+                        self.router.add_route(f"/{name}", page_class)
+
                 except Exception as e:
                     print(f"Failed to load page {entry}: {e}")
                     traceback.print_exc()
@@ -418,12 +432,12 @@ class PyHTML:
         # 1. Start with path relative to pages_dir
         try:
             rel_path = file_path.relative_to(self.pages_dir)
-            
+
             # Basic route inference from path
-            route_path = "/" + str(rel_path.with_suffix('')).replace('index', '').strip('/')
+            route_path = "/" + str(rel_path.with_suffix("")).replace("index", "").strip("/")
             if not route_path:
                 route_path = "/"
-            
+
             # Also try to regex extract !path directives from file content
             # to handle custom routes properly even if compilation fails
             try:
@@ -431,48 +445,50 @@ class PyHTML:
                 # Look for !path "..." or !path '...'
                 # This is a simple regex, might need refinement
                 path_directives = re.findall(r'!path\s+[\'"]([^\'"]+)[\'"]', content)
-                
+
                 routes_to_register = []
                 if path_directives:
                     routes_to_register = path_directives
                 else:
                     routes_to_register = [route_path]
-                
+
                 # Use a ModeAwareErrorPage that checks debug/dev mode at RENDER time
                 # This is necessary because _is_dev_mode is set AFTER __init__ by dev_server.py
                 from pyhtml.runtime.compile_error_page import CompileErrorPage
                 from pyhtml.runtime.page import BasePage
-                
+
                 for route in routes_to_register:
                     # Capture error and file_path in closure
                     captured_error = error
                     captured_file_path = str(file_path)
                     captured_app = self  # Reference to PyHTML app for mode checking
-                    
+
                     class ModeAwareErrorPage(BasePage):
                         """Error page that decides at render time whether to show details or trigger 500."""
-                        
+
                         def __init__(self, request: Request, *args, **kwargs):
                             # Store for parent __init__
                             super().__init__(request, *args, **kwargs)
-                        
+
                         async def render(self, init=True):
                             # Check mode at render time (not registration time!)
                             # This allows dev_server.py to set _is_dev_mode after app init
-                            if captured_app.debug or getattr(captured_app, '_is_dev_mode', False):
+                            if captured_app.debug or getattr(captured_app, "_is_dev_mode", False):
                                 # DEV MODE: Show detailed CompileErrorPage
-                                detail_page = CompileErrorPage(self.request, captured_error, file_path=captured_file_path)
+                                detail_page = CompileErrorPage(
+                                    self.request, captured_error, file_path=captured_file_path
+                                )
                                 return await detail_page.render()
                             else:
                                 # PROD MODE: Raise to trigger _handle_500
                                 raise RuntimeError("Page failed to load")
-                    
+
                     ModeAwareErrorPage.__file_path__ = captured_file_path
                     self.router.add_route(route, ModeAwareErrorPage)
-                    
+
             except Exception:
                 # Fallback to basic path if regex fails
-                 pass
+                pass
 
         except Exception as e:
             print(f"Failed to register error page for {file_path}: {e}")
@@ -484,32 +500,32 @@ class PyHTML:
         try:
             # Recompile
             new_page_class = self.loader.load(path)
-            
+
             # Update router
             # Note: This is tricky because we need to replace the old route
             # For now, simplistic approach: add it again (router generally uses latest)
             # Better approach: remove old routes for this file first?
             # Implementation detail of router.add_page needed.
-            
+
             # Ideally we clear routes associated with this file_path first
             self.router.remove_routes_for_file(str(path))
             self.router.add_page(new_page_class)
-            
+
             print(f"Reloaded page: {path}")
             return True
         except Exception as e:
             print(f"Failed to reload page {path}: {e}")
             traceback.print_exc()
-            
+
             # Register error page for this file so user sees the error on refresh
             self.router.remove_routes_for_file(str(path))
             self._register_error_page(path, e)
-            
+
             # If we have a websocket connection on this page, we should push the error?!
             # The watcher in dev_server.py catches this exception.
-            # We should probably re-raise or handle it there to broadcast 'reload' 
+            # We should probably re-raise or handle it there to broadcast 'reload'
             # so the client reloads and sees the error page.
-            
+
             # Re-raise so dev_server knows it failed
             raise e
 
@@ -521,7 +537,7 @@ class PyHTML:
             try:
                 page_class, params, variant_name = match
                 # Minimal context
-                page = page_class(request, params, {}, path={'main': True}, url=None)
+                page = page_class(request, params, {}, path={"main": True}, url=None)
                 response = await page.render()
                 # Force 500 status
                 response.status_code = 500
@@ -529,130 +545,130 @@ class PyHTML:
             except Exception:
                 # If 500 page fails, fall back
                 pass
-        
+
         return PlainTextResponse("Internal Server Error", status_code=500)
 
     async def _handle_request(self, request: Request) -> Response:
         """Handle HTTP request."""
         # Check for uploads first
         # (This was handled in Route declarations, but uploads go to /_pyhtml/upload)
-        
+
         path = request.url.path
         match = self.router.match(path)
         if not match:
-             # Try custom 404
-             match_404 = self.router.match("/404")
-             if match_404:
-                 page_class, params, variant_name = match_404
-                 # Render 404 page
-                 # Note: We pass original request so URL is preserved?
-                 # Yes, user checking request.url on 404 page might want to know what failed.
-                 
-                 # Construct params/query
-                 query = dict(request.query_params)
-                 
-                 # Path info
-                 path_info = {}
-                 if hasattr(page_class, '__routes__'):
-                     for name in page_class.__routes__.keys():
-                         path_info[name] = (name == variant_name)
-                 elif hasattr(page_class, '__route__'):
-                     path_info['main'] = True
+            # Try custom 404
+            match_404 = self.router.match("/404")
+            if match_404:
+                page_class, params, variant_name = match_404
+                # Render 404 page
+                # Note: We pass original request so URL is preserved?
+                # Yes, user checking request.url on 404 page might want to know what failed.
 
-                 from pyhtml.runtime.router import URLHelper
-                 url_helper = None
-                 if hasattr(page_class, '__routes__'):
-                      url_helper = URLHelper(page_class.__routes__)
-                 
-                 try:
-                     page = page_class(request, {}, query, path=path_info, url=url_helper)
-                     response = await page.render()
-                     response.status_code = 404
-                     return response
-                 except Exception:
-                     pass # Fallback
-                     
-             # Default 404 with client script
-             page = ErrorPage(request, "404 Not Found", f"The path '{path}' could not be found.")
-             response = await page.render()
-             response.status_code = 404
-             return response
-        
+                # Construct params/query
+                query = dict(request.query_params)
+
+                # Path info
+                path_info = {}
+                if hasattr(page_class, "__routes__"):
+                    for name in page_class.__routes__.keys():
+                        path_info[name] = name == variant_name
+                elif hasattr(page_class, "__route__"):
+                    path_info["main"] = True
+
+                from pyhtml.runtime.router import URLHelper
+
+                url_helper = None
+                if hasattr(page_class, "__routes__"):
+                    url_helper = URLHelper(page_class.__routes__)
+
+                try:
+                    page = page_class(request, {}, query, path=path_info, url=url_helper)
+                    response = await page.render()
+                    response.status_code = 404
+                    return response
+                except Exception:
+                    pass  # Fallback
+
+            # Default 404 with client script
+            page = ErrorPage(request, "404 Not Found", f"The path '{path}' could not be found.")
+            response = await page.render()
+            response.status_code = 404
+            return response
+
         page_class, params, variant_name = match
         # ... (params, query, path_info, url_helper construction)
         # Build query params
         query = dict(request.query_params)
-        
+
         # Build path info dict
         path_info = {}
-        if hasattr(page_class, '__routes__'):
+        if hasattr(page_class, "__routes__"):
             for name in page_class.__routes__.keys():
-                path_info[name] = (name == variant_name)
-        elif hasattr(page_class, '__route__'):
-            path_info['main'] = True
-            
+                path_info[name] = name == variant_name
+        elif hasattr(page_class, "__route__"):
+            path_info["main"] = True
+
         # Build URL helper
         from pyhtml.runtime.router import URLHelper
+
         url_helper = None
-        if hasattr(page_class, '__routes__'):
-             url_helper = URLHelper(page_class.__routes__)
-        
+        if hasattr(page_class, "__routes__"):
+            url_helper = URLHelper(page_class.__routes__)
+
         # Instantiate page
         page = page_class(request, params, query, path=path_info, url=url_helper)
 
         # Check if this is an event request
-        if request.method == 'POST' and 'X-PyHTML-Event' in request.headers:
+        if request.method == "POST" and "X-PyHTML-Event" in request.headers:
             # Handle event
             try:
                 event_data = await request.json()
-                response = await page.handle_event(
-                    event_data.get('handler', ''),
-                    event_data
-                )
+                response = await page.handle_event(event_data.get("handler", ""), event_data)
             except Exception as e:
-                return JSONResponse({'error': str(e)}, status_code=500)
+                return JSONResponse({"error": str(e)}, status_code=500)
         else:
             # Normal render
             response = await page.render()
 
         # Script injection is now handled by the compiler (generator.py)
         # to ensure it's present in both dev and production.
-        
+
         # Inject WebTransport certificate hash if available (Dev Mode)
-        if isinstance(response, Response) and response.media_type == 'text/html':
-             body = response.body.decode('utf-8')
-             injections = []
-             
-             # WebTransport Hash
-             if hasattr(request.app.state, 'webtransport_cert_hash'):
-                 cert_hash = list(request.app.state.webtransport_cert_hash)
-                 injections.append(f'<script>window.PYHTML_CERT_HASH = {cert_hash};</script>')
-                 
-             # Upload Token Injection
-             if getattr(page, '__has_uploads__', False):
-                 import secrets
-                 token = secrets.token_urlsafe(32)
-                 self.upload_tokens.add(token)
-                 # Token meta tag
-                 injections.append(f'<meta name="pyhtml-upload-token" content="{token}">')
-                 
-             if injections:
-                 injection_str = '\n'.join(injections)
-                 if '</body>' in body:
-                     body = body.replace('</body>', injection_str + '</body>')
-                 else:
-                     body += injection_str
-                 response = Response(body, media_type='text/html')
-        
+        if isinstance(response, Response) and response.media_type == "text/html":
+            body = response.body.decode("utf-8")
+            injections = []
+
+            # WebTransport Hash
+            if hasattr(request.app.state, "webtransport_cert_hash"):
+                cert_hash = list(request.app.state.webtransport_cert_hash)
+                injections.append(f"<script>window.PYHTML_CERT_HASH = {cert_hash};</script>")
+
+            # Upload Token Injection
+            if getattr(page, "__has_uploads__", False):
+                import secrets
+
+                token = secrets.token_urlsafe(32)
+                self.upload_tokens.add(token)
+                # Token meta tag
+                injections.append(f'<meta name="pyhtml-upload-token" content="{token}">')
+
+            if injections:
+                injection_str = "\n".join(injections)
+                if "</body>" in body:
+                    body = body.replace("</body>", injection_str + "</body>")
+                else:
+                    body += injection_str
+                response = Response(body, media_type="text/html")
+
         return response
 
     async def __call__(self, scope, receive, send):
         """ASGI interface."""
         print(f"DEBUG: Scope type: {scope['type']}")
-        if scope['type'] == 'webtransport':
+        if scope["type"] == "webtransport":
             await self.web_transport_handler.handle(scope, receive, send)
             return
-            
+
         await self.app(scope, receive, send)
 
     # --- Extensible Hooks ---
@@ -669,6 +685,6 @@ class PyHTML:
         Hook to populate page.user from request/websocket.
         Override to return user from session/JWT.
         """
-        if 'user' in request_or_websocket.scope:
+        if "user" in request_or_websocket.scope:
             return request_or_websocket.user
         return None

@@ -1,8 +1,8 @@
 """Base directive code generator."""
-from abc import ABC, abstractmethod
-from typing import List
 
 import ast
+from abc import ABC, abstractmethod
+from typing import List
 
 from pyhtml.compiler.ast_nodes import Directive
 

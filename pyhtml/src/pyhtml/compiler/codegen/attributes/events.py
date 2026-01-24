@@ -1,7 +1,7 @@
 """Event attribute code generator."""
-from typing import Optional
 
 import ast
+from typing import Optional
 
 from pyhtml.compiler.ast_nodes import EventAttribute
 from pyhtml.compiler.codegen.attributes.base import AttributeCodegen
@@ -16,15 +16,15 @@ class EventAttributeCodegen(AttributeCodegen):
         attrs = [f'data-on-{attr.event_type}="{attr.handler_name}"']
         if attr.modifiers:
             attrs.append(f'data-modifiers-{attr.event_type}="{" ".join(attr.modifiers)}"')
-        
+
         # Lifted arguments support
-        if hasattr(attr, 'args') and attr.args:
+        if hasattr(attr, "args") and attr.args:
             for i, arg in enumerate(attr.args):
                 # We need to escape quotes in the argument value for HTML
-                escaped_arg = str(arg).replace('"', '&quot;')
+                escaped_arg = str(arg).replace('"', "&quot;")
                 attrs.append(f'data-arg-{i}="{escaped_arg}"')
-                
-        return ' '.join(attrs)
+
+        return " ".join(attrs)
 
     def generate_handler(self, attr: EventAttribute) -> Optional[ast.FunctionDef]:
         """No extra handler needed - user defines it."""

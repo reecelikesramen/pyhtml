@@ -1,4 +1,5 @@
 """Validation for .pyhtml files."""
+
 from pathlib import Path
 from typing import List
 
@@ -13,7 +14,7 @@ def validate_project(pages_dir: Path) -> List[str]:
     if not pages_dir.exists():
         return [f"Pages directory not found: {pages_dir}"]
 
-    for pyhtml_file in pages_dir.rglob('*.pyhtml'):
+    for pyhtml_file in pages_dir.rglob("*.pyhtml"):
         try:
             parsed = parser.parse_file(pyhtml_file)
             # Basic validation
