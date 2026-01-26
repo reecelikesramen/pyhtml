@@ -1,27 +1,33 @@
+import html
+import linecache
+import os
+import traceback
+from typing import Any, Dict, Optional, Union
+
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
-from typing import Dict, Any, Optional, Union
-import html
-import os
-import linecache
-import traceback
 
-from pyhtml.runtime.page import BasePage
 from pyhtml.compiler.exceptions import PyHTMLSyntaxError
+from pyhtml.runtime.page import BasePage
 
 
 class CompileErrorPage(BasePage):
     """Page used to display compilation errors with helpful context.
-    
+
     Handles both PyHTMLSyntaxError (with known file/line) and generic
     exceptions (extracting info from traceback).
     """
 
-    def __init__(self, request: Request, error: Union[PyHTMLSyntaxError, Exception], file_path: Optional[str] = None):
+    def __init__(
+        self,
+        request: Request,
+        error: Union[PyHTMLSyntaxError, Exception],
+        file_path: Optional[str] = None,
+    ):
         self.request = request
         self.error = error
         self._file_path = file_path
-        
+
         # Extract file/line info based on error type
         if isinstance(error, PyHTMLSyntaxError):
             self.error_file = error.file_path
@@ -31,8 +37,10 @@ class CompileErrorPage(BasePage):
         else:
             # Generic exception - extract from traceback
             self.error_message = f"{type(error).__name__}: {str(error)}"
-            self.traceback_lines = traceback.format_exception(type(error), error, error.__traceback__)
-            
+            self.traceback_lines = traceback.format_exception(
+                type(error), error, error.__traceback__
+            )
+
             # Try to find the most relevant frame (last user code frame)
             self.error_file = file_path
             self.error_line = None
@@ -40,12 +48,15 @@ class CompileErrorPage(BasePage):
                 tb_summary = traceback.extract_tb(error.__traceback__)
                 for frame in reversed(tb_summary):
                     # Prefer .pyhtml files
-                    if frame.filename.endswith('.pyhtml'):
+                    if frame.filename.endswith(".pyhtml"):
                         self.error_file = frame.filename
                         self.error_line = frame.lineno
                         break
                     # Otherwise use last non-framework frame
-                    if 'pyhtml/src/pyhtml' not in frame.filename and 'site-packages' not in frame.filename:
+                    if (
+                        "pyhtml/src/pyhtml" not in frame.filename
+                        and "site-packages" not in frame.filename
+                    ):
                         self.error_file = frame.filename
                         self.error_line = frame.lineno
                         break
@@ -65,23 +76,25 @@ class CompileErrorPage(BasePage):
                 lines = linecache.getlines(self.error_file)
                 start = max(1, self.error_line - 5)
                 end = min(len(lines), self.error_line + 5)
-                
+
                 for i in range(start, end + 1):
                     if i <= len(lines):
-                        context_lines.append({
-                            'num': i,
-                            'content': lines[i-1].rstrip(),
-                            'is_current': i == self.error_line
-                        })
+                        context_lines.append(
+                            {
+                                "num": i,
+                                "content": lines[i - 1].rstrip(),
+                                "is_current": i == self.error_line,
+                            }
+                        )
             except Exception:
                 pass
-        
+
         # Generate code context HTML
         context_html = ""
         for line in context_lines:
-            cls = "line-current" if line['is_current'] else "line"
+            cls = "line-current" if line["is_current"] else "line"
             context_html += f"<div class='{cls}'><span class='line-num'>{line['num']}</span> <span class='code'>{html.escape(line['content'])}</span></div>"
-        
+
         # Shorten file path for display
         file_display = self.error_file or "unknown"
         try:
@@ -90,13 +103,13 @@ class CompileErrorPage(BasePage):
                 file_display = os.path.relpath(file_display, cwd)
         except:
             pass
-        
+
         # Error title based on type
         if isinstance(self.error, PyHTMLSyntaxError):
             error_title = "PyHTML Syntax Error"
         else:
             error_title = "Compilation Error"
-        
+
         # Traceback section for generic exceptions
         traceback_html = ""
         if self.traceback_lines:
@@ -107,7 +120,7 @@ class CompileErrorPage(BasePage):
                 <pre class="traceback">{html.escape(tb_text)}</pre>
             </div>
             """
-        
+
         content = f"""
         <!DOCTYPE html>
         <html>
@@ -138,11 +151,11 @@ class CompileErrorPage(BasePage):
                 </div>
                 
                 <div class="error-location">
-                    <div class="file-info">{html.escape(file_display)}{':' + str(self.error_line) if self.error_line else ''}</div>
+                    <div class="file-info">{html.escape(file_display)}{":" + str(self.error_line) if self.error_line else ""}</div>
                     <div class="exc-msg">{html.escape(self.error_message)}</div>
                 </div>
                 
-                {f'<div class="code-context">{context_html}</div>' if context_html else ''}
+                {f'<div class="code-context">{context_html}</div>' if context_html else ""}
                 
                 {traceback_html}
             </div>
@@ -156,4 +169,3 @@ class CompileErrorPage(BasePage):
     async def handle_event(self, handler_name: str, data: Dict[str, Any]):
         """No-op for error page."""
         return HTMLResponse("Error page does not handle events")
-

@@ -1,8 +1,8 @@
 """Base page class with lifecycle system."""
-import asyncio
+
 import inspect
 from collections import defaultdict
-from typing import Dict, List, Optional, Callable, Any
+from typing import Callable, Dict, List, Optional
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -12,13 +12,15 @@ from pyhtml.runtime.style_collector import StyleCollector
 
 class EventData(dict):
     """Dict that allows dot-access to keys for Alpine.js compatibility."""
+
     def __getattr__(self, name):
         try:
             return self[name]
         except KeyError:
             # Check for camelCase version of name
             import re
-            camel = re.sub(r'(?!^)_([a-z])', lambda x: x.group(1).upper(), name)
+
+            camel = re.sub(r"(?!^)_([a-z])", lambda x: x.group(1).upper(), name)
             if camel in self:
                 return self[camel]
             raise AttributeError(f"'EventData' object has no attribute '{name}'")
@@ -35,14 +37,14 @@ class BasePage:
 
     # Lifecycle hooks registry (extensible!)
     INIT_HOOKS = [
-        'on_before_load',
-        'on_load',
+        "on_before_load",
+        "on_load",
     ]
-    
+
     RENDER_HOOKS = [
-        'on_after_render',
+        "on_after_render",
     ]
-    
+
     # Legacy support / full list
     LIFECYCLE_HOOKS = INIT_HOOKS + RENDER_HOOKS
 
@@ -78,7 +80,7 @@ class BasePage:
         # Framework-managed state
         self.errors: Dict[str, str] = {}
         self.loading: Dict[str, bool] = {}
-        
+
         # Slot registry: layout_id -> slot_name -> renderer (replacement semantics)
         self.slots: Dict[str, Dict[str, Union[Callable, str]]] = defaultdict(dict)
         
@@ -94,7 +96,7 @@ class BasePage:
         
         # Head slot registry: layout_id -> list of renderers (append semantics, top-down order)
         self.head_slots: Dict[str, List[Callable]] = defaultdict(list)
-        
+
         # Async update hook for intermediate state (injected by runtime)
         self._on_update: Optional[Callable[[], Awaitable[None]]] = None
 
@@ -108,10 +110,16 @@ class BasePage:
         if renderer not in self.head_slots[layout_id]:
             self.head_slots[layout_id].append(renderer)
 
-    async def render_slot(self, slot_name: str, default_renderer: Optional[Callable] = None, layout_id: str = None, append: bool = False) -> str:
+    async def render_slot(
+        self,
+        slot_name: str,
+        default_renderer: Optional[Callable] = None,
+        layout_id: str = None,
+        append: bool = False,
+    ) -> str:
         """Render a slot for the current layout."""
         target_id = layout_id or self.LAYOUT_ID
-        
+
         # Handle $head slots with append semantics
         if append:
             parts = []
@@ -121,7 +129,7 @@ class BasePage:
                     parts.append(await default_renderer())
                 else:
                     parts.append(default_renderer())
-            
+
             # Collect head content from ALL layout IDs in the inheritance chain
             for layout_id_key in self.head_slots:
                 for renderer in self.head_slots[layout_id_key]:
@@ -129,8 +137,8 @@ class BasePage:
                         parts.append(await renderer())
                     else:
                         parts.append(renderer())
-            return ''.join(parts)
-        
+            return "".join(parts)
+
         # Normal replacement semantics
         if target_id and slot_name in self.slots[target_id]:
             renderer = self.slots[target_id][slot_name]
@@ -145,7 +153,7 @@ class BasePage:
             if inspect.iscoroutinefunction(default_renderer):
                 return await default_renderer()
             return default_renderer()
-            
+
         return ""
 
     async def render(self, init: bool = True) -> Response:
@@ -187,19 +195,18 @@ class BasePage:
                 else:
                     hook()
 
-        return Response(html, media_type='text/html')
+        return Response(html, media_type="text/html")
 
     async def handle_event(self, event_name: str, event_data: dict) -> Response:
         """Handle client event (from @click, etc.)."""
 
-        
         # Retrieve handler
         handler = getattr(self, event_name, None)
         if not handler:
             raise ValueError(f"Handler {event_name} not found")
 
         # Call handler
-        if event_name.startswith('_handle_bind_'):
+        if event_name.startswith("_handle_bind_"):
             # Binding handlers expect raw event_data
             if inspect.iscoroutinefunction(handler):
                 await handler(event_data)
@@ -207,40 +214,40 @@ class BasePage:
                 handler(event_data)
         else:
             # Regular handlers: intelligent argument mapping
-            args = event_data.get('args', {})
-            
+            args = event_data.get("args", {})
+
             # Normalize args keys (arg-0 -> arg0) because dataset keys preserve hyphens before digits
             normalized_args = {}
             for k, v in args.items():
-                if k.startswith('arg'):
-                    normalized_args[k.replace('-', '')] = v
+                if k.startswith("arg"):
+                    normalized_args[k.replace("-", "")] = v
                 else:
                     normalized_args[k] = v
-                    
-            call_kwargs = {k: v for k, v in event_data.items() if k != 'args'}
+
+            call_kwargs = {k: v for k, v in event_data.items() if k != "args"}
             call_kwargs.update(normalized_args)
-            
+
             # Check signature to see what arguments the handler accepts
             sig = inspect.signature(handler)
             bound_kwargs = {}
-            
+
             has_var_kw = False
             for param in sig.parameters.values():
                 if param.kind == inspect.Parameter.VAR_KEYWORD:
                     has_var_kw = True
                     break
-            
+
             if has_var_kw:
                 # If accepts **kwargs, pass everything
                 bound_kwargs = call_kwargs
             else:
                 # Only pass arguments that match parameters
                 for name in sig.parameters:
-                    if name == 'event_data' or name == 'event':
+                    if name == "event_data" or name == "event":
                         bound_kwargs[name] = EventData(call_kwargs)
                     elif name in call_kwargs:
                         bound_kwargs[name] = call_kwargs[name]
-            
+
             try:
                 if inspect.iscoroutinefunction(handler):
                     await handler(**bound_kwargs)
@@ -249,7 +256,6 @@ class BasePage:
             except Exception as e:
                 # Let the runtime handle logging and reporting
                 raise e
-
 
         # Re-render without re-initializing
         return await self.render(init=False)
@@ -264,4 +270,4 @@ class BasePage:
 
     async def _render_template(self) -> str:
         """Render template - implemented by codegen."""
-        return ''
+        return ""

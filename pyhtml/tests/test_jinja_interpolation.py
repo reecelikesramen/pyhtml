@@ -1,6 +1,8 @@
 import unittest
-from pyhtml.compiler.interpolation.jinja import JinjaInterpolationParser
+
 from pyhtml.compiler.ast_nodes import InterpolationNode
+from pyhtml.compiler.interpolation.jinja import JinjaInterpolationParser
+
 
 class TestJinjaInterpolation(unittest.TestCase):
     def setUp(self):
@@ -66,6 +68,7 @@ class TestJinjaInterpolation(unittest.TestCase):
     def test_compile_empty(self):
         self.assertEqual(self.parser.compile(""), "''")
         self.assertEqual(self.parser.compile(None), "''")
+
 
 if __name__ == "__main__":
     unittest.main()

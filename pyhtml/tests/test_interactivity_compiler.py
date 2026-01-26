@@ -1,7 +1,9 @@
 import unittest
+
+from pyhtml.compiler.ast_nodes import EventAttribute
 from pyhtml.compiler.attributes.events import EventAttributeParser
 from pyhtml.compiler.codegen.attributes.events import EventAttributeCodegen
-from pyhtml.compiler.ast_nodes import EventAttribute
+
 
 class TestInteractivityCompiler(unittest.TestCase):
     def setUp(self):
@@ -30,7 +32,7 @@ class TestInteractivityCompiler(unittest.TestCase):
     def test_parser_performance_modifiers(self):
         attr = self.parser.parse("@input.debounce", '"handler"', 1, 1)
         self.assertEqual(attr.modifiers, ["debounce"])
-        
+
         attr = self.parser.parse("@scroll.throttle", '"handler"', 1, 1)
         self.assertEqual(attr.modifiers, ["throttle"])
 
@@ -42,7 +44,7 @@ class TestInteractivityCompiler(unittest.TestCase):
             handler_name="handler",
             modifiers=[],
             line=1,
-            column=1
+            column=1,
         )
         html = self.codegen.generate_html(attr)
         self.assertEqual(html, 'data-on-click="handler"')
@@ -55,7 +57,7 @@ class TestInteractivityCompiler(unittest.TestCase):
             handler_name="handler",
             modifiers=["prevent", "stop"],
             line=1,
-            column=1
+            column=1,
         )
         html = self.codegen.generate_html(attr)
         # Order matters based on implementation
@@ -76,11 +78,12 @@ class TestInteractivityCompiler(unittest.TestCase):
         # Multiple dots
         attr = self.parser.parse("@click..stop", '"h"', 1, 1)
         self.assertIn("stop", attr.modifiers)
-        
+
         # Only @
         attr = self.parser.parse("@", '"h"', 1, 1)
         self.assertEqual(attr.event_type, "")
         self.assertEqual(attr.modifiers, [])
+
 
 if __name__ == "__main__":
     unittest.main()

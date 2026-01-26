@@ -1,10 +1,11 @@
 """Code generators for scaffolding."""
+
 from pathlib import Path
 
 
 def generate_page(name: str):
     """Generate a new page."""
-    pages_dir = Path('pages')
+    pages_dir = Path("pages")
     pages_dir.mkdir(exist_ok=True)
 
     page_file = pages_dir / f"{name}.pyhtml"
@@ -28,7 +29,7 @@ def generate_page(name: str):
 
 def generate_component(name: str):
     """Generate a new component."""
-    components_dir = Path('components')
+    components_dir = Path("components")
     components_dir.mkdir(exist_ok=True)
 
     component_file = components_dir / f"{name}.pyhtml"

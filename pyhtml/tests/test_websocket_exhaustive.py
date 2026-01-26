@@ -1,13 +1,13 @@
-import unittest
 import asyncio
-import msgpack
-import io
-from unittest.mock import MagicMock, AsyncMock, patch
-from starlette.websockets import WebSocket, WebSocketDisconnect
-from starlette.responses import Response
+import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from pyhtml.runtime.websocket import WebSocketHandler
+import msgpack
 from pyhtml.runtime.page import BasePage
+from pyhtml.runtime.websocket import WebSocketHandler
+from starlette.responses import Response
+from starlette.websockets import WebSocketDisconnect
+
 
 class MockPage(BasePage):
     def __init__(self, request, params, query, **kwargs):
@@ -23,19 +23,20 @@ class MockPage(BasePage):
     async def render(self, init=True):
         self.render_count += 1
         return Response("<html></html>")
-    
+
     async def handle_event(self, name, data):
         return Response("Updated")
+
 
 class TestWebSocketExhaustive(unittest.TestCase):
     def setUp(self):
         # Use spec=object so it doesn't have every attribute
-        self.app = MagicMock(spec=['router', 'get_user'])
+        self.app = MagicMock(spec=["router", "get_user"])
         self.handler = WebSocketHandler(self.app)
 
     def create_mock_ws(self):
         ws = AsyncMock()
-        ws.scope = {'type': 'websocket', 'path': '/ws'}
+        ws.scope = {"type": "websocket", "path": "/ws"}
         return ws
 
     def test_handle_disconnect(self):
@@ -46,56 +47,52 @@ class TestWebSocketExhaustive(unittest.TestCase):
 
     def test_handle_loop_message(self):
         ws = self.create_mock_ws()
-        data = msgpack.packb({'type': 'event', 'handler': 'click'})
+        data = msgpack.packb({"type": "event", "handler": "click"})
         ws.receive_bytes.side_effect = [data, WebSocketDisconnect()]
-        
-        with patch.object(self.handler, '_process_message', new_callable=AsyncMock) as mock_proc:
+
+        with patch.object(self.handler, "_process_message", new_callable=AsyncMock) as mock_proc:
             asyncio.run(self.handler.handle(ws))
             mock_proc.assert_called_once()
 
     def test_process_message_types(self):
         ws = self.create_mock_ws()
-        
-        with patch.object(self.handler, '_handle_event', new_callable=AsyncMock) as mock_event:
-            asyncio.run(self.handler._process_message(ws, {'type': 'event'}))
+
+        with patch.object(self.handler, "_handle_event", new_callable=AsyncMock) as mock_event:
+            asyncio.run(self.handler._process_message(ws, {"type": "event"}))
             mock_event.assert_called_once()
-            
-        with patch.object(self.handler, '_handle_relocate', new_callable=AsyncMock) as mock_reloc:
-            asyncio.run(self.handler._process_message(ws, {'type': 'relocate'}))
+
+        with patch.object(self.handler, "_handle_relocate", new_callable=AsyncMock) as mock_reloc:
+            asyncio.run(self.handler._process_message(ws, {"type": "relocate"}))
             mock_reloc.assert_called_once()
 
     def test_handle_event_create_page(self):
         ws = self.create_mock_ws()
-        ws.scope = {'type': 'websocket', 'path': '/ws'}
-        
-        self.app.router.match.return_value = (MockPage, {'id': '1'}, "main")
-        
-        data = {
-            'handler': 'click',
-            'path': '/test?foo=bar',
-            'data': {'x': 1}
-        }
-        
+        ws.scope = {"type": "websocket", "path": "/ws"}
+
+        self.app.router.match.return_value = (MockPage, {"id": "1"}, "main")
+
+        data = {"handler": "click", "path": "/test?foo=bar", "data": {"x": 1}}
+
         asyncio.run(self.handler._handle_event(ws, data))
-        
+
         self.assertIn(ws, self.handler.connection_pages)
         page = self.handler.connection_pages[ws]
         self.assertIsInstance(page, MockPage)
-        self.assertEqual(page.params, {'id': '1'})
-        self.assertEqual(page.query, {'foo': 'bar'})
-        
+        self.assertEqual(page.params, {"id": "1"})
+        self.assertEqual(page.query, {"foo": "bar"})
+
         ws.send_bytes.assert_called()
 
     def test_handle_relocate_new_page(self):
         ws = self.create_mock_ws()
-        ws.scope = {'type': 'websocket', 'path': '/ws'}
-        
+        ws.scope = {"type": "websocket", "path": "/ws"}
+
         self.app.router.match.return_value = (MockPage, {}, "main")
-        
-        data = {'path': '/about'}
-        
+
+        data = {"path": "/about"}
+
         asyncio.run(self.handler._handle_relocate(ws, data))
-        
+
         self.assertIn(ws, self.handler.connection_pages)
         page = self.handler.connection_pages[ws]
         self.assertIsInstance(page, MockPage)
@@ -104,17 +101,17 @@ class TestWebSocketExhaustive(unittest.TestCase):
     def test_broadcast_reload_hot(self):
         ws = self.create_mock_ws()
         self.handler.active_connections.add(ws)
-        
+
         page = MockPage(MagicMock(), {}, {})
         page.request = MagicMock()
         page.request.url.path = "/test"
         page.some_state = 42
         self.handler.connection_pages[ws] = page
-        
+
         self.app.router.match.return_value = (MockPage, {}, "main")
-        
+
         asyncio.run(self.handler.broadcast_reload())
-        
+
         new_page = self.handler.connection_pages[ws]
         self.assertNotEqual(new_page, page)
         self.assertEqual(new_page.some_state, 42)
@@ -126,30 +123,30 @@ class TestWebSocketExhaustive(unittest.TestCase):
         # Test standard message
         asyncio.run(self.handler._send_console_message(ws, "Hello\nWorld"))
         self.assertEqual(ws.send_bytes.call_count, 1)
-        
+
         # Test error message
-        asyncio.run(self.handler._send_console_message(ws, "Error\nOccurred", level='error'))
+        asyncio.run(self.handler._send_console_message(ws, "Error\nOccurred", level="error"))
         self.assertEqual(ws.send_bytes.call_count, 2)
-        
+
     def test_handle_event_with_output(self):
         ws = self.create_mock_ws()
-        ws.scope = {'type': 'websocket', 'path': '/'}
+        ws.scope = {"type": "websocket", "path": "/"}
         self.app.router.match.return_value = (MockPage, {}, "main")
-        data = {'handler': 'click', 'data': {}}
+        data = {"handler": "click", "data": {}}
         asyncio.run(self.handler._handle_event(ws, data))
         ws.send_bytes.assert_called()
 
     def test_handle_relocate_existing_page(self):
         ws = self.create_mock_ws()
-        ws.scope = {'type': 'websocket', 'path': '/'}
+        ws.scope = {"type": "websocket", "path": "/"}
         old_page = MockPage(MagicMock(), {}, {})
         self.handler.connection_pages[ws] = old_page
-        self.app.router.match.return_value = (MockPage, {'id': '2'}, "main")
-        data = {'path': '/item/2'}
+        self.app.router.match.return_value = (MockPage, {"id": "2"}, "main")
+        data = {"path": "/item/2"}
         asyncio.run(self.handler._handle_relocate(ws, data))
         new_page = self.handler.connection_pages[ws]
         self.assertNotEqual(new_page, old_page)
-        self.assertEqual(new_page.params, {'id': '2'})
+        self.assertEqual(new_page.params, {"id": "2"})
 
     def test_broadcast_reload_cleanup(self):
         ws = self.create_mock_ws()
@@ -169,22 +166,22 @@ class TestWebSocketExhaustive(unittest.TestCase):
         asyncio.run(self.handler.broadcast_reload())
         args, _ = ws.send_bytes.call_args
         msg = msgpack.unpackb(args[0], raw=False)
-        self.assertEqual(msg['type'], 'reload')
+        self.assertEqual(msg["type"], "reload")
 
     def test_handle_event_no_route(self):
         ws = self.create_mock_ws()
         self.app.router.match.return_value = None
-        data = {'handler': 'click', 'path': '/invalid'}
-        with patch('builtins.print'):
-             asyncio.run(self.handler._handle_event(ws, data))
+        data = {"handler": "click", "path": "/invalid"}
+        with patch("builtins.print"):
+            asyncio.run(self.handler._handle_event(ws, data))
         self.assertNotIn(ws, self.handler.connection_pages)
 
     def test_handle_relocate_no_route(self):
         ws = self.create_mock_ws()
-        data = {'path': '/missing'}
+        data = {"path": "/missing"}
         self.app.router.match.return_value = None
-        with patch('builtins.print'):
-             asyncio.run(self.handler._handle_relocate(ws, data))
+        with patch("builtins.print"):
+            asyncio.run(self.handler._handle_relocate(ws, data))
 
     def test_broadcast_reload_no_page(self):
         ws = self.create_mock_ws()
@@ -200,26 +197,27 @@ class TestWebSocketExhaustive(unittest.TestCase):
         page.request = MagicMock()
         page.request.url.path = "/"
         self.handler.connection_pages[ws] = page
-        
+
         self.app.router.match.return_value = (MockPage, {}, "main")
         # Force reload to fail during render
-        with patch.object(MockPage, 'render', side_effect=Exception("Render crash")):
+        with patch.object(MockPage, "render", side_effect=Exception("Render crash")):
             asyncio.run(self.handler.broadcast_reload())
-            
+
         args, _ = ws.send_bytes.call_args
         msg = msgpack.unpackb(args[0], raw=False)
-        self.assertEqual(msg['type'], 'reload')
+        self.assertEqual(msg["type"], "reload")
 
     def test_handle_event_sync_onload(self):
         class SyncLoadPage(MockPage):
             def on_load(self):
                 self.load_called = True
-        
+
         ws = self.create_mock_ws()
         self.app.router.match.return_value = (SyncLoadPage, {}, "main")
-        data = {'handler': 'click', 'path': '/'}
+        data = {"handler": "click", "path": "/"}
         asyncio.run(self.handler._handle_event(ws, data))
         self.assertTrue(self.handler.connection_pages[ws].load_called)
+
 
 if __name__ == "__main__":
     unittest.main()

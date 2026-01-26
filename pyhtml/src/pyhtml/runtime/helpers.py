@@ -1,14 +1,12 @@
-import inspect
-
 async def ensure_async_iterator(iterable):
     """
     Ensure an iterable is an async iterator.
     Handles both sync iterables (list, etc.) and async iterables.
     """
-    if hasattr(iterable, '__aiter__'):
+    if hasattr(iterable, "__aiter__"):
         async for item in iterable:
             yield item
-    elif hasattr(iterable, '__iter__'):
+    elif hasattr(iterable, "__iter__"):
         for item in iterable:
             yield item
     else:

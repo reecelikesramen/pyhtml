@@ -1,4 +1,5 @@
 """Base attribute parser."""
+
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -16,6 +17,8 @@ class AttributeParser(ABC):
         return attr_name.startswith(self.PREFIX)
 
     @abstractmethod
-    def parse(self, attr_name: str, attr_value: str, line: int, col: int) -> Optional[SpecialAttribute]:
+    def parse(
+        self, attr_name: str, attr_value: str, line: int, col: int
+    ) -> Optional[SpecialAttribute]:
         """Parse attribute. Returns None if not applicable."""
         pass

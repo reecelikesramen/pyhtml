@@ -1,6 +1,8 @@
 import unittest
-from pyhtml.compiler.parser import PyHTMLParser
+
 from pyhtml.compiler.ast_nodes import EventAttribute
+from pyhtml.compiler.parser import PyHTMLParser
+
 
 class TestParserAdvanced(unittest.TestCase):
     def setUp(self):
@@ -22,26 +24,26 @@ class TestParserAdvanced(unittest.TestCase):
         form = parsed.template[0]
         submit = next(a for a in form.special_attributes if isinstance(a, EventAttribute))
         fields = submit.validation_schema.fields
-        
+
         # Text
         self.assertTrue(fields["t1"].required)
         self.assertEqual(fields["t1"].minlength, 2)
         self.assertEqual(fields["t1"].maxlength, 10)
         self.assertEqual(fields["t1"].pattern, "[a-z]+")
-        
+
         # Number
         self.assertEqual(fields["n1"].min_value, "0")
         self.assertEqual(fields["n1"].max_value, "100")
         self.assertEqual(fields["n1"].step, "5")
-        
+
         # File
         self.assertEqual(fields["f1"].allowed_types, ["image/*", ".pdf"])
         self.assertEqual(fields["f1"].max_size, 5 * 1024 * 1024)
-        
+
         # Textarea
         self.assertEqual(fields["area"].input_type, "textarea")
         self.assertEqual(fields["area"].title, "Please fill")
-        
+
         # Select
         self.assertEqual(fields["sel"].input_type, "select")
 
@@ -55,10 +57,11 @@ class TestParserAdvanced(unittest.TestCase):
         form = parsed.template[0]
         submit = next(a for a in form.special_attributes if isinstance(a, EventAttribute))
         field = submit.validation_schema.fields["email"]
-        
+
         self.assertEqual(field.required_expr, "is_required")
         self.assertEqual(field.min_expr, "min_age")
         self.assertEqual(field.max_expr, "max_age")
+
 
 if __name__ == "__main__":
     unittest.main()

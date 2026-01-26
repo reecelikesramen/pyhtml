@@ -1,5 +1,7 @@
-import unittest
 import ast
+import unittest
+
+from pyhtml.compiler.ast_nodes import InterpolationNode, TemplateNode
 from pyhtml.compiler.codegen.template import TemplateCodegen
 from pyhtml.compiler.ast_nodes import TemplateNode, IfAttribute, InterpolationNode, EventAttribute
 
@@ -10,11 +12,12 @@ class TestCodegenTemplate(unittest.TestCase):
     def normalize_ast(self, node):
         """Ensure all nodes have lineno/col_offset for unparse."""
         if isinstance(node, list):
-            for n in node: self.normalize_ast(n)
+            for n in node:
+                self.normalize_ast(n)
             return node
-            
+
         for child in ast.walk(node):
-            if not hasattr(child, 'lineno'):
+            if not hasattr(child, "lineno"):
                 child.lineno = 1
                 child.end_lineno = 1
                 child.col_offset = 0
@@ -24,17 +27,17 @@ class TestCodegenTemplate(unittest.TestCase):
     def assertASTEqual(self, ast_node, expected_code):
         """Helper to compare AST node equal to expected code string."""
         self.normalize_ast(ast_node)
-        
+
         # Normalize by parsing the expected code
         if isinstance(ast_node, ast.AST):
             generated_code = ast.unparse(ast_node).strip()
             self.assertEqual(generated_code, expected_code)
         elif isinstance(ast_node, list):
-             # For list of statements
-             generated_code = "\n".join(ast.unparse(n) for n in ast_node).strip()
-             self.assertEqual(generated_code, expected_code)
+            # For list of statements
+            generated_code = "\n".join(ast.unparse(n) for n in ast_node).strip()
+            self.assertEqual(generated_code, expected_code)
         else:
-             self.fail(f"Unexpected AST type: {type(ast_node)}")
+            self.fail(f"Unexpected AST type: {type(ast_node)}")
 
     def test_transform_expr_basic(self):
         # name should become self.name
@@ -69,33 +72,37 @@ class TestCodegenTemplate(unittest.TestCase):
         interp_node = InterpolationNode(line=1, column=0, expression="msg")
         text_wrapper = TemplateNode(tag=None, special_attributes=[interp_node], line=1, column=0)
         node = TemplateNode(tag="div", children=[text_wrapper], line=1, column=0)
-        
+
         func_def, aux = self.codegen.generate_render_method([node])
-        
+
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
         self.assertIn("async def _render_template(self):", code)
         self.assertIn("parts = []", code)
         self.assertIn("import json", code)
-        self.assertIn("parts.append('<div')", code) # unparse uses single quotes often?
+        self.assertIn("parts.append('<div')", code)  # unparse uses single quotes often?
         self.assertIn("parts.append(str(self.msg))", code)
         self.assertIn("parts.append('</div>')", code)
         self.assertIn("return ''.join(parts)", code)
 
     def test_generate_slot_methods(self):
         # Node with slot filler: <slot name="header">...</slot>
-        node = TemplateNode(tag="slot", attributes={"name": "header"}, children=[
-            TemplateNode(tag=None, text_content="Header content", line=1, column=0)
-        ], line=1, column=0)
-        
+        node = TemplateNode(
+            tag="slot",
+            attributes={"name": "header"},
+            children=[TemplateNode(tag=None, text_content="Header content", line=1, column=0)],
+            line=1,
+            column=0,
+        )
+
         slots, aux = self.codegen.generate_slot_methods([node], file_id="test")
         self.assertIn("header", slots)
-        
+
         # slots["header"] is an AsyncFunctionDef
         func_def = slots["header"]
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
-        
+
         self.assertIn("async def _render_slot_fill_header_", code)
         self.assertIn("parts.append('Header content')", code)
 

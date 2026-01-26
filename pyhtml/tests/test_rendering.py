@@ -1,7 +1,8 @@
-import unittest
 import asyncio
-from unittest.mock import MagicMock
 import sys
+import unittest
+from unittest.mock import MagicMock
+
 
 # Helper to mock modules for tests
 def mock_modules(mapping):
@@ -12,6 +13,7 @@ def mock_modules(mapping):
         sys.modules[name] = mock
     return original_modules
 
+
 def restore_modules(original_modules, mapping):
     for name in mapping:
         if name in original_modules:
@@ -19,41 +21,46 @@ def restore_modules(original_modules, mapping):
         else:
             del sys.modules[name]
 
+
 class TestPageRendering(unittest.TestCase):
     def setUp(self):
         self.mock_starlette = MagicMock()
         self.mocks = {
-            'starlette': self.mock_starlette,
-            'starlette.requests': self.mock_starlette,
-            'starlette.responses': self.mock_starlette,
-            'starlette.routing': self.mock_starlette,
-            'starlette.staticfiles': self.mock_starlette,
-            'starlette.applications': self.mock_starlette,
-            'starlette.websockets': self.mock_starlette,
-            'starlette.datastructures': self.mock_starlette,
-            'starlette.types': self.mock_starlette,
-            'starlette.exceptions': self.mock_starlette,
-            'starlette.middleware': self.mock_starlette,
-            'jinja2': MagicMock(),
-            'lxml': MagicMock(),
-            'lxml.html': MagicMock(),
-            'lxml.etree': MagicMock(),
+            "starlette": self.mock_starlette,
+            "starlette.requests": self.mock_starlette,
+            "starlette.responses": self.mock_starlette,
+            "starlette.routing": self.mock_starlette,
+            "starlette.staticfiles": self.mock_starlette,
+            "starlette.applications": self.mock_starlette,
+            "starlette.websockets": self.mock_starlette,
+            "starlette.datastructures": self.mock_starlette,
+            "starlette.types": self.mock_starlette,
+            "starlette.exceptions": self.mock_starlette,
+            "starlette.middleware": self.mock_starlette,
+            "jinja2": MagicMock(),
+            "lxml": MagicMock(),
+            "lxml.html": MagicMock(),
+            "lxml.etree": MagicMock(),
         }
         self.original_modules = mock_modules(self.mocks)
-        
+
         # Import BasePage after mocking
         global BasePage
-        import pyhtml.runtime.page as page_mod
-        import pyhtml.runtime.loader as loader_mod
         import importlib
+
+        import pyhtml.runtime.loader as loader_mod
+        import pyhtml.runtime.page as page_mod
+
         importlib.reload(page_mod)
         importlib.reload(loader_mod)
         BasePage = page_mod.BasePage
 
     def tearDown(self):
         import importlib
-        import pyhtml.runtime.page as page_mod
+
         import pyhtml.runtime.loader as loader_mod
+        import pyhtml.runtime.page as page_mod
+
         restore_modules(self.original_modules, self.mocks)
         importlib.reload(page_mod)
         importlib.reload(loader_mod)
@@ -61,71 +68,75 @@ class TestPageRendering(unittest.TestCase):
     def test_params_as_attributes(self):
         """Verify params are exposed as attributes."""
         request = MagicMock()
-        params = {'id': '42', 'slug': 'test-post'}
-        
+        params = {"id": "42", "slug": "test-post"}
+
         page = BasePage(request, params=params, query={})
-        
-        self.assertTrue(hasattr(page, 'id'))
-        self.assertEqual(page.id, '42')
-        self.assertEqual(page.slug, 'test-post')
+
+        self.assertTrue(hasattr(page, "id"))
+        self.assertEqual(page.id, "42")
+        self.assertEqual(page.slug, "test-post")
 
     def test_recursive_slot_logic(self):
         """Verify slot registration logic manually."""
+
         # 1. Root Layout (LAYOUT_ID="ROOT")
         class RootLayout(BasePage):
             LAYOUT_ID = "ROOT"
-            
+
             async def _render_template(self):
                 # <slot /> renders default slot for layout ROOT
                 renderer = self.slots.get("ROOT", {}).get("default")
                 content = await renderer() if renderer else ""
                 return "ROOT_START|" + content + "|ROOT_END"
-                
+
             def _init_slots(self):
-                if hasattr(super(), "_init_slots"): super()._init_slots()
-                
+                if hasattr(super(), "_init_slots"):
+                    super()._init_slots()
+
         # 2. Sub Layout (LAYOUT_ID="SUB", parent="ROOT")
         class SubLayout(RootLayout):
             LAYOUT_ID = "SUB"
-            
+
             # CodeGen: registers filler for ROOT default slot
             # MUST be unique to avoid override by child!
             async def _render_slot_fill_default_sub(self):
-                 # SubLayout content: <slot /> (which renders SUB default slot)
-                 renderer = self.slots.get("SUB", {}).get("default")
-                 content = await renderer() if renderer else ""
-                 return "SUB_START|" + content + "|SUB_END"
-                 
+                # SubLayout content: <slot /> (which renders SUB default slot)
+                renderer = self.slots.get("SUB", {}).get("default")
+                content = await renderer() if renderer else ""
+                return "SUB_START|" + content + "|SUB_END"
+
             def _init_slots(self):
-                if hasattr(super(), "_init_slots"): super()._init_slots()
+                if hasattr(super(), "_init_slots"):
+                    super()._init_slots()
                 # Register self for parent
                 self.register_slot("ROOT", "default", self._render_slot_fill_default_sub)
 
         # 3. Leaf Page (parent="SUB")
         class LeafPage(SubLayout):
             # NO LAYOUT_ID (it's a page)
-            
+
             # CodeGen: registers filler for SUB default slot
             async def _render_slot_fill_default_leaf(self):
                 return "LEAF_CONTENT"
 
             def _init_slots(self):
-                if hasattr(super(), "_init_slots"): super()._init_slots()
+                if hasattr(super(), "_init_slots"):
+                    super()._init_slots()
                 self.register_slot("SUB", "default", self._render_slot_fill_default_leaf)
 
         # Execution
         request = MagicMock()
         page = LeafPage(request, params={}, query={})
-        
+
         # Generated code would call this in __init__
         page._init_slots()
-        
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-             # BasePage.render() calls self._render_template().
-             content = loop.run_until_complete(page._render_template())
-             self.assertEqual(content, "ROOT_START|SUB_START|LEAF_CONTENT|SUB_END|ROOT_END")
+            # BasePage.render() calls self._render_template().
+            content = loop.run_until_complete(page._render_template())
+            self.assertEqual(content, "ROOT_START|SUB_START|LEAF_CONTENT|SUB_END|ROOT_END")
         finally:
             loop.close()
 

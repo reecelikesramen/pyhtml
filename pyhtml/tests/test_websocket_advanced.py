@@ -1,9 +1,9 @@
 import unittest
-from unittest.mock import MagicMock, AsyncMock, patch
-from pyhtml.runtime.websocket import WebSocketHandler
+from unittest.mock import AsyncMock, MagicMock
+
 from pyhtml.runtime.app import PyHTML
-import msgpack
-import asyncio
+from pyhtml.runtime.websocket import WebSocketHandler
+
 
 class TestWebSocketAdvanced(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -19,35 +19,36 @@ class TestWebSocketAdvanced(unittest.IsolatedAsyncioTestCase):
         page1 = MagicMock()
         # Mock request for page1 to allow reload logic to find path
         page1.request.url.path = "/test"
-        
+
         self.handler.active_connections = {ws1, ws2}
         self.handler.connection_pages = {ws1: page1}
-        
+
         # Mock router match to return a page class
         NewPageClass = MagicMock()
         self.app.router.match.return_value = (NewPageClass, {}, "main")
-        
+
         # Execute broadcast_reload
         await self.handler.broadcast_reload()
-        
+
         # ws1 has a page, so it should receive an 'update' message (hot reload)
         # or 'reload' if something fails.
         # Our mock setup should allow success path:
         # 1. match found
         # 2. new_page instantiated
         # 3. render called
-        
+
         # Verify NewPageClass instantiated
         NewPageClass.assert_called_once()
-        
+
         # Verify ws1 got 'update' message
         # ws1.send_bytes.assert_called() # Hard to check payload without unpacking msgpack
-        
+
         # ws2 has no page, so it should receive 'reload'
         # ws2.send_bytes.assert_called()
-        
+
         self.assertTrue(ws1.send_bytes.called)
         self.assertTrue(ws2.send_bytes.called)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,6 @@
 import unittest
-from pathlib import Path
+
+from pyhtml.compiler.ast_nodes import InterpolationNode, LayoutDirective
 from pyhtml.compiler.parser import PyHTMLParser
 from pyhtml.compiler.ast_nodes import TemplateNode, InterpolationNode, LayoutDirective, ComponentDirective, PropsDirective, ProvideDirective, InjectDirective
 

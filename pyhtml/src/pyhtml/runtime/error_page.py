@@ -1,7 +1,8 @@
+import html
+from typing import Any, Dict
+
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
-from typing import Dict, Any
-import html
 
 from pyhtml.runtime.page import BasePage
 

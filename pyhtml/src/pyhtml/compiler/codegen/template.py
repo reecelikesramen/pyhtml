@@ -1,4 +1,5 @@
 """Template rendering code generation."""
+
 import ast
 import re
 import dataclasses
@@ -9,10 +10,19 @@ from dataclasses import dataclass, replace # Keep replace import to minimize dif
 # Safer: Just import dataclasses and use fully qualified name where it fails.
 from typing import List, Set, Tuple, Dict, Optional, Union
 from collections import defaultdict
+from dataclasses import dataclass, replace
+from typing import Dict, List, Set, Tuple
 
 from pyhtml.compiler.ast_nodes import (
-    InterpolationNode, TemplateNode, SpecialAttribute, EventAttribute,
-    IfAttribute, ShowAttribute, ForAttribute, BindAttribute, KeyAttribute, ReactiveAttribute
+    BindAttribute,
+    EventAttribute,
+    ForAttribute,
+    IfAttribute,
+    InterpolationNode,
+    KeyAttribute,
+    ReactiveAttribute,
+    ShowAttribute,
+    TemplateNode,
 )
 from pyhtml.compiler.interpolation.jinja import JinjaInterpolationParser
 
@@ -20,6 +30,7 @@ from pyhtml.compiler.interpolation.jinja import JinjaInterpolationParser
 @dataclass
 class BindingDef:
     """Definition of a generated binding."""
+
     handler_name: str
     variable_name: str
     event_type: str  # 'input' or 'change'
@@ -29,8 +40,23 @@ class TemplateCodegen:
     """Generates Python AST for rendering template."""
 
     # HTML void elements that don't have closing tags
-    VOID_ELEMENTS = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
-                     'link', 'meta', 'param', 'source', 'track', 'wbr', 'slot'}
+    VOID_ELEMENTS = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+        "slot",
+    }
 
     def __init__(self):
         self.interpolation_parser = JinjaInterpolationParser()
@@ -65,23 +91,24 @@ class TemplateCodegen:
         """
         self._reset_state()
         slots = defaultdict(list)
-        
+
         # Generate a short hash from file_id to make method names unique per file
         import hashlib
+
         file_hash = hashlib.md5(file_id.encode()).hexdigest()[:8] if file_id else ""
-        
+
         # 1. Bucket nodes into slots based on wrapper elements
         for node in template_nodes:
-            if node.tag == 'slot' and node.attributes and 'name' in node.attributes:
-                slot_name = node.attributes['name']
+            if node.tag == "slot" and node.attributes and "name" in node.attributes:
+                slot_name = node.attributes["name"]
                 for child in node.children:
                     slots[slot_name].append(child)
-            elif node.tag == 'pyhtml-head':
+            elif node.tag == "pyhtml-head":
                 for child in node.children:
-                    slots['$head'].append(child)
+                    slots["$head"].append(child)
             else:
-                slots['default'].append(node)
-            
+                slots["default"].append(node)
+
         # 2. Generate functions for each slot
         slot_funcs = {}
         for slot_name, nodes in slots.items():
@@ -103,16 +130,20 @@ class TemplateCodegen:
                          component_map: Dict[str, str] = None, scope_id: str = None, initial_locals: Set[str] = None,
                          implicit_root_source: str = None) -> ast.AsyncFunctionDef:
         """Generate a single function body as AST."""
-        
+
         # parts = []
         body: List[ast.stmt] = [
             ast.Assign(
-                targets=[ast.Name(id='parts', ctx=ast.Store())],
-                value=ast.List(elts=[], ctx=ast.Load())
+                targets=[ast.Name(id="parts", ctx=ast.Store())],
+                value=ast.List(elts=[], ctx=ast.Load()),
             ),
-            ast.Import(names=[ast.alias(name='json', asname=None)]),
+            ast.Import(names=[ast.alias(name="json", asname=None)]),
             # import helper
-            ast.ImportFrom(module='pyhtml.runtime.helpers', names=[ast.alias(name='ensure_async_iterator', asname=None)], level=0)
+            ast.ImportFrom(
+                module="pyhtml.runtime.helpers",
+                names=[ast.alias(name="ensure_async_iterator", asname=None)],
+                level=0,
+            ),
         ]
         
         root_element = self._get_root_element(nodes)
@@ -129,39 +160,46 @@ class TemplateCodegen:
         body.append(
             ast.Return(
                 value=ast.Call(
-                    func=ast.Attribute(value=ast.Constant(value=''), attr='join', ctx=ast.Load()),
-                    args=[ast.Name(id='parts', ctx=ast.Load())],
-                    keywords=[]
+                    func=ast.Attribute(value=ast.Constant(value=""), attr="join", ctx=ast.Load()),
+                    args=[ast.Name(id="parts", ctx=ast.Load())],
+                    keywords=[],
                 )
             )
         )
-        
+
         func_def = ast.AsyncFunctionDef(
             name=func_name,
             args=ast.arguments(
                 posonlyargs=[],
-                args=[ast.arg(arg='self')],
+                args=[ast.arg(arg="self")],
                 vararg=None,
                 kwonlyargs=[],
                 kw_defaults=[],
-                defaults=[]
+                defaults=[],
             ),
             body=body,
             decorator_list=[],
-            returns=None
+            returns=None,
         )
-        # We don't set lineno on the function def itself as it's generated, 
-        # but we could set it to the first node's line? 
-        # Better to leave it (defaults to 1?) or set to 0. 
+        # We don't set lineno on the function def itself as it's generated,
+        # but we could set it to the first node's line?
+        # Better to leave it (defaults to 1?) or set to 0.
         # The body statements will have correct linenos.
         return func_def
 
-    def _transform_expr(self, expr_str: str, local_vars: Set[str], known_globals: Set[str] = None, line_offset: int = 0, col_offset: int = 0) -> ast.expr:
+    def _transform_expr(
+        self,
+        expr_str: str,
+        local_vars: Set[str],
+        known_globals: Set[str] = None,
+        line_offset: int = 0,
+        col_offset: int = 0,
+    ) -> ast.expr:
         """Transform expression string to AST with self. handling."""
         expr_str = expr_str.strip()
-        
+
         try:
-            tree = ast.parse(expr_str, mode='eval')
+            tree = ast.parse(expr_str, mode="eval")
             if line_offset > 0:
                 # ast.increment_lineno uses 1-based indexing for AST, but adds diff
                 # We want result to be line_offset.
@@ -173,14 +211,17 @@ class TemplateCodegen:
             # Try regex replacement then parse
             def repl(m):
                 word = m.group(1)
-                if word in local_vars: return word
-                if known_globals and word in known_globals: return word
-                keywords = {'if', 'else', 'and', 'or', 'not', 'in', 'is', 'True', 'False', 'None'}
-                if word in keywords: return word
-                return f'self.{word}'
-            
-            replaced = re.sub(r'\\b([a-zA-Z_]\w*)\\b(?!\s*[(\[])', repl, expr_str)
-            tree = ast.parse(replaced, mode='eval')
+                if word in local_vars:
+                    return word
+                if known_globals and word in known_globals:
+                    return word
+                keywords = {"if", "else", "and", "or", "not", "in", "is", "True", "False", "None"}
+                if word in keywords:
+                    return word
+                return f"self.{word}"
+
+            replaced = re.sub(r"\\b([a-zA-Z_]\w*)\\b(?!\s*[(\[])", repl, expr_str)
+            tree = ast.parse(replaced, mode="eval")
 
         class AddSelfTransformer(ast.NodeTransformer):
             def visit_Name(self, node):
@@ -212,17 +253,33 @@ class TemplateCodegen:
         # Returns the expression node
         return new_tree.body
 
-    def _transform_reactive_expr(self, expr_str: str, local_vars: Set[str], known_methods: Set[str] = None, known_globals: Set[str] = None, async_methods: Set[str] = None, line_offset: int = 0, col_offset: int = 0) -> ast.expr:
+    def _transform_reactive_expr(
+        self,
+        expr_str: str,
+        local_vars: Set[str],
+        known_methods: Set[str] = None,
+        known_globals: Set[str] = None,
+        async_methods: Set[str] = None,
+        line_offset: int = 0,
+        col_offset: int = 0,
+    ) -> ast.expr:
         """Transform reactive expression to AST, handling async calls and self."""
-        base_expr = self._transform_expr(expr_str, local_vars, known_globals, line_offset, col_offset)
-        
+        base_expr = self._transform_expr(
+            expr_str, local_vars, known_globals, line_offset, col_offset
+        )
+
         # Auto-call if it matches self.method
-        if isinstance(base_expr, ast.Attribute) and isinstance(base_expr.value, ast.Name) and base_expr.value.id == 'self':
-             if known_methods and base_expr.attr in known_methods:
-                 base_expr = ast.Call(func=base_expr, args=[], keywords=[])
-        
+        if (
+            isinstance(base_expr, ast.Attribute)
+            and isinstance(base_expr.value, ast.Name)
+            and base_expr.value.id == "self"
+        ):
+            if known_methods and base_expr.attr in known_methods:
+                base_expr = ast.Call(func=base_expr, args=[], keywords=[])
+
         # Async handling
         if async_methods:
+
             class AsyncAwaiter(ast.NodeTransformer):
                 def __init__(self):
                     self.in_await = False
@@ -238,18 +295,20 @@ class TemplateCodegen:
                     if self.in_await:
                         return self.generic_visit(node)
 
-                    if isinstance(node.func, ast.Attribute) and \
-                       isinstance(node.func.value, ast.Name) and \
-                       node.func.value.id == 'self' and \
-                       node.func.attr in async_methods:
+                    if (
+                        isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "self"
+                        and node.func.attr in async_methods
+                    ):
                         return ast.Await(value=node)
                     return self.generic_visit(node)
-            
+
             # Wrap in Module/Expr to visit
             mod = ast.Module(body=[ast.Expr(value=base_expr)], type_ignores=[])
             AsyncAwaiter().visit(mod)
             base_expr = mod.body[0].value
-            
+
         return base_expr
 
     def _has_spread_attribute(self, nodes: List[TemplateNode]) -> bool:
@@ -304,25 +363,32 @@ class TemplateCodegen:
         if for_attr:
             loop_vars_str = for_attr.loop_vars
             new_locals = local_vars.copy()
-            
+
             # Parse loop vars to handle tuple unpacking
             # "x, y" -> targets
             loop_targets_node = ast.parse(f"{loop_vars_str} = 1").body[0].targets[0]
-            
+
             def extract_names(n):
                 if isinstance(n, ast.Name):
                     new_locals.add(n.id)
                 elif isinstance(n, (ast.Tuple, ast.List)):
                     for elt in n.elts:
                         extract_names(elt)
+
             extract_names(loop_targets_node)
 
-            iterable_expr = self._transform_expr(for_attr.iterable, local_vars, known_globals, line_offset=node.line, col_offset=node.column)
-            
+            iterable_expr = self._transform_expr(
+                for_attr.iterable,
+                local_vars,
+                known_globals,
+                line_offset=node.line,
+                col_offset=node.column,
+            )
+
             for_body = []
-            
+
             new_attrs = [a for a in node.special_attributes if a is not for_attr]
-            if node.tag == 'template':
+            if node.tag == "template":
                 for child in node.children:
                     self._add_node(child, for_body, new_locals, bound_var, layout_id, known_methods, known_globals, async_methods, component_map, scope_id, parts_var=parts_var)
             else:
@@ -331,16 +397,13 @@ class TemplateCodegen:
             
             # Wrap iterable in ensure_async_iterator
             wrapped_iterable = ast.Call(
-                func=ast.Name(id='ensure_async_iterator', ctx=ast.Load()),
+                func=ast.Name(id="ensure_async_iterator", ctx=ast.Load()),
                 args=[iterable_expr],
-                keywords=[]
+                keywords=[],
             )
-            
+
             for_stmt = ast.AsyncFor(
-                target=loop_targets_node,
-                iter=wrapped_iterable,
-                body=for_body,
-                orelse=[]
+                target=loop_targets_node, iter=wrapped_iterable, body=for_body, orelse=[]
             )
             # Tag with line number
             self._set_line(for_stmt, node)
@@ -350,8 +413,14 @@ class TemplateCodegen:
         # 2. Handle $if
         if_attr = next((a for a in node.special_attributes if isinstance(a, IfAttribute)), None)
         if if_attr:
-            cond_expr = self._transform_expr(if_attr.condition, local_vars, known_globals, line_offset=node.line, col_offset=node.column)
-            
+            cond_expr = self._transform_expr(
+                if_attr.condition,
+                local_vars,
+                known_globals,
+                line_offset=node.line,
+                col_offset=node.column,
+            )
+
             if_body = []
             new_attrs = [a for a in node.special_attributes if a is not if_attr]
             new_node = dataclasses.replace(node, special_attributes=new_attrs)
@@ -362,39 +431,51 @@ class TemplateCodegen:
                 body=if_body,
                 orelse=[]
             )
+
+            if_stmt = ast.If(test=cond_expr, body=if_body, orelse=[])
             self._set_line(if_stmt, node)
             body.append(if_stmt)
             return
-        
+
         # --- Handle <slot> ---
-        if node.tag == 'slot':
-            slot_name = node.attributes.get('name', 'default')
-            is_head_slot = '$head' in node.attributes
-            
+        if node.tag == "slot":
+            slot_name = node.attributes.get("name", "default")
+            is_head_slot = "$head" in node.attributes
+
             default_renderer_arg = ast.Constant(value=None)
             if node.children:
                 self._slot_default_counter += 1
-                func_name = f'_render_slot_default_{slot_name}_{self._slot_default_counter}'
+                func_name = f"_render_slot_default_{slot_name}_{self._slot_default_counter}"
                 aux_func = self._generate_function(node.children, func_name, is_async=True)
                 self.auxiliary_functions.append(aux_func)
                 default_renderer_arg = ast.Attribute(
-                    value=ast.Name(id='self', ctx=ast.Load()),
-                    attr=func_name,
-                    ctx=ast.Load()
+                    value=ast.Name(id="self", ctx=ast.Load()), attr=func_name, ctx=ast.Load()
                 )
-            
+
             call_kwargs = [
                 ast.keyword(arg='default_renderer', value=default_renderer_arg),
                 ast.keyword(arg='layout_id', value=ast.Constant(value=layout_id) if layout_id else ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value='LAYOUT_ID'), ast.Constant(value=None)], keywords=[]))
             ]
 
             if is_head_slot:
-                call_kwargs.append(ast.keyword(arg='append', value=ast.Constant(value=True)))
+                call_kwargs.append(ast.keyword(arg="append", value=ast.Constant(value=True)))
 
             render_call = ast.Call(
-                func=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='render_slot', ctx=ast.Load()),
+                func=ast.Attribute(
+                    value=ast.Name(id="self", ctx=ast.Load()), attr="render_slot", ctx=ast.Load()
+                ),
                 args=[ast.Constant(value=slot_name)],
-                keywords=call_kwargs
+                keywords=call_kwargs,
+            )
+
+            append_stmt = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="parts", ctx=ast.Load()), attr="append", ctx=ast.Load()
+                    ),
+                    args=[ast.Await(value=render_call)],
+                    keywords=[],
+                )
             )
             
             append_stmt = ast.Expr(value=ast.Call(
@@ -685,22 +766,32 @@ class TemplateCodegen:
                 else:
                     # Mixed parts: construct concatenation
                     current_concat = None
-                    
+
                     for part in parts:
                         if isinstance(part, str):
                             term = ast.Constant(value=part)
                         else:
                             term = ast.Call(
-                                func=ast.Name(id='str', ctx=ast.Load()),
-                                args=[self._transform_expr(part.expression, local_vars, known_globals, line_offset=part.line, col_offset=part.column)],
-                                keywords=[]
+                                func=ast.Name(id="str", ctx=ast.Load()),
+                                args=[
+                                    self._transform_expr(
+                                        part.expression,
+                                        local_vars,
+                                        known_globals,
+                                        line_offset=part.line,
+                                        col_offset=part.column,
+                                    )
+                                ],
+                                keywords=[],
                             )
-                        
+
                         if current_concat is None:
                             current_concat = term
                         else:
-                            current_concat = ast.BinOp(left=current_concat, op=ast.Add(), right=term)
-                            
+                            current_concat = ast.BinOp(
+                                left=current_concat, op=ast.Add(), right=term
+                            )
+
                     if current_concat:
                         append_stmt = ast.Expr(value=ast.Call(
                             func=ast.Attribute(value=ast.Name(id=parts_var, ctx=ast.Load()), attr='append', ctx=ast.Load()),
@@ -727,38 +818,50 @@ class TemplateCodegen:
             pass
         else:
             # Element
-            bind_attr = next((a for a in node.special_attributes if isinstance(a, BindAttribute)), None)
-            bindings = {} 
-            new_bound_var = bound_var 
-            
+            bind_attr = next(
+                (a for a in node.special_attributes if isinstance(a, BindAttribute)), None
+            )
+            bindings = {}
+            new_bound_var = bound_var
+
             if bind_attr:
                 var_name = bind_attr.variable
                 self._binding_counter += 1
-                handler_name = f'_handle_bind_{self._binding_counter}'
-                
+                handler_name = f"_handle_bind_{self._binding_counter}"
+
                 tag = node.tag.lower()
-                input_type = node.attributes.get('type', 'text')
-                
-                if tag == 'input' and input_type == 'file':
-                     self.has_file_inputs = True
-                
-                if bind_attr.binding_type == 'progress':
-                    self.generated_bindings.append(BindingDef(handler_name, var_name, 'upload-progress'))
-                    bindings['data-on-upload-progress'] = ast.Constant(value=handler_name)
-                    
+                input_type = node.attributes.get("type", "text")
+
+                if tag == "input" and input_type == "file":
+                    self.has_file_inputs = True
+
+                if bind_attr.binding_type == "progress":
+                    self.generated_bindings.append(
+                        BindingDef(handler_name, var_name, "upload-progress")
+                    )
+                    bindings["data-on-upload-progress"] = ast.Constant(value=handler_name)
+
                 else:
-                    event_type = 'input'
-                    val_prop = 'value'
-                    
-                    if tag == 'input' and input_type in ('checkbox', 'radio'):
-                         event_type = 'change'
-                         val_prop = 'checked'
-                    
-                    target_var_expr = self._transform_expr(var_name, local_vars, known_globals, line_offset=node.line, col_offset=node.column)
-                    
+                    event_type = "input"
+                    val_prop = "value"
+
+                    if tag == "input" and input_type in ("checkbox", "radio"):
+                        event_type = "change"
+                        val_prop = "checked"
+
+                    target_var_expr = self._transform_expr(
+                        var_name,
+                        local_vars,
+                        known_globals,
+                        line_offset=node.line,
+                        col_offset=node.column,
+                    )
+
                     bindings[val_prop] = target_var_expr
-                    if tag == 'select': 
-                        new_bound_var = target_var_expr # AST node passed as bound_var? No, logic expects expr
+                    if tag == "select":
+                        new_bound_var = (
+                            target_var_expr  # AST node passed as bound_var? No, logic expects expr
+                        )
                         # But bound_var is passed recursively.
                         # Wait, logic for <option> uses bound_var which is currently a string in old code?
                         # "if str(attrs['value']) == str({bound_var}):"
@@ -767,17 +870,28 @@ class TemplateCodegen:
                         new_bound_var = target_var_expr
 
                     self.generated_bindings.append(BindingDef(handler_name, var_name, event_type))
-                    bindings[f'data-on-{event_type}'] = ast.Constant(value=handler_name)
+                    bindings[f"data-on-{event_type}"] = ast.Constant(value=handler_name)
 
+            show_attr = next(
+                (a for a in node.special_attributes if isinstance(a, ShowAttribute)), None
+            )
+            key_attr = next(
+                (a for a in node.special_attributes if isinstance(a, KeyAttribute)), None
+            )
 
-            show_attr = next((a for a in node.special_attributes if isinstance(a, ShowAttribute)), None)
-            key_attr = next((a for a in node.special_attributes if isinstance(a, KeyAttribute)), None)
-            
             if key_attr:
-                bindings['id'] = ast.Call(
-                    func=ast.Name(id='str', ctx=ast.Load()),
-                    args=[self._transform_expr(key_attr.expr, local_vars, known_globals, line_offset=node.line, col_offset=node.column)],
-                    keywords=[]
+                bindings["id"] = ast.Call(
+                    func=ast.Name(id="str", ctx=ast.Load()),
+                    args=[
+                        self._transform_expr(
+                            key_attr.expr,
+                            local_vars,
+                            known_globals,
+                            line_offset=node.line,
+                            col_offset=node.column,
+                        )
+                    ],
+                    keywords=[],
                 )
 
             # attrs = {}
@@ -850,7 +964,7 @@ class TemplateCodegen:
 
             # Static attrs
             for k, v in node.attributes.items():
-                if '{' in v and '}' in v:
+                if "{" in v and "}" in v:
                     parts = self.interpolation_parser.parse(v, node.line, node.column)
                     current_concat = None
                     for part in parts:
@@ -858,249 +972,529 @@ class TemplateCodegen:
                             term = ast.Constant(value=part)
                         else:
                             term = ast.Call(
-                                func=ast.Name(id='str', ctx=ast.Load()),
-                                args=[self._transform_expr(part.expression, local_vars, known_globals)],
-                                keywords=[]
+                                func=ast.Name(id="str", ctx=ast.Load()),
+                                args=[
+                                    self._transform_expr(part.expression, local_vars, known_globals)
+                                ],
+                                keywords=[],
                             )
-                        if current_concat is None: current_concat = term
-                        else: current_concat = ast.BinOp(left=current_concat, op=ast.Add(), right=term)
-                    
+                        if current_concat is None:
+                            current_concat = term
+                        else:
+                            current_concat = ast.BinOp(
+                                left=current_concat, op=ast.Add(), right=term
+                            )
+
                     val_expr = current_concat if current_concat else ast.Constant(value="")
                 else:
                     val_expr = ast.Constant(value=v)
-                
-                body.append(ast.Assign(
-                    targets=[ast.Subscript(
-                        value=ast.Name(id='attrs', ctx=ast.Load()),
-                        slice=ast.Constant(value=k),
-                        ctx=ast.Store()
-                    )],
-                    value=val_expr
-                ))
+
+                body.append(
+                    ast.Assign(
+                        targets=[
+                            ast.Subscript(
+                                value=ast.Name(id="attrs", ctx=ast.Load()),
+                                slice=ast.Constant(value=k),
+                                ctx=ast.Store(),
+                            )
+                        ],
+                        value=val_expr,
+                    )
+                )
 
             # Bindings
             for k, v in bindings.items():
-                if k == 'checked':
-                     # if v: attrs['checked'] = ""
-                     body.append(ast.If(
-                         test=v,
-                         body=[ast.Assign(
-                             targets=[ast.Subscript(
-                                 value=ast.Name(id='attrs', ctx=ast.Load()),
-                                 slice=ast.Constant(value='checked'),
-                                 ctx=ast.Store()
-                             )],
-                             value=ast.Constant(value="")
-                         )],
-                         orelse=[]
-                     ))
+                if k == "checked":
+                    # if v: attrs['checked'] = ""
+                    body.append(
+                        ast.If(
+                            test=v,
+                            body=[
+                                ast.Assign(
+                                    targets=[
+                                        ast.Subscript(
+                                            value=ast.Name(id="attrs", ctx=ast.Load()),
+                                            slice=ast.Constant(value="checked"),
+                                            ctx=ast.Store(),
+                                        )
+                                    ],
+                                    value=ast.Constant(value=""),
+                                )
+                            ],
+                            orelse=[],
+                        )
+                    )
                 else:
-                    # attrs[k] = str(v) usually? 
+                    # attrs[k] = str(v) usually?
                     # If v is AST expression (from target_var_expr), wrap in str()
                     # If v is Constant string, direct.
                     # Warning: bindings[k] contains AST nodes now.
-                    
+
                     wrapper = v
                     if not isinstance(v, ast.Constant):
-                        wrapper = ast.Call(func=ast.Name(id='str', ctx=ast.Load()), args=[v], keywords=[])
-                    
-                    body.append(ast.Assign(
-                        targets=[ast.Subscript(
-                            value=ast.Name(id='attrs', ctx=ast.Load()),
-                            slice=ast.Constant(value=k),
-                            ctx=ast.Store()
-                        )],
-                        value=wrapper
-                    ))
+                        wrapper = ast.Call(
+                            func=ast.Name(id="str", ctx=ast.Load()), args=[v], keywords=[]
+                        )
 
+                    body.append(
+                        ast.Assign(
+                            targets=[
+                                ast.Subscript(
+                                    value=ast.Name(id="attrs", ctx=ast.Load()),
+                                    slice=ast.Constant(value=k),
+                                    ctx=ast.Store(),
+                                )
+                            ],
+                            value=wrapper,
+                        )
+                    )
 
             # Group and generate event attributes (handling multiples via JSON)
             event_attrs_by_type = defaultdict(list)
             for attr in node.special_attributes:
                 if isinstance(attr, EventAttribute):
                     event_attrs_by_type[attr.event_type].append(attr)
-            
+
             for event_type, attrs_list in event_attrs_by_type.items():
                 if len(attrs_list) == 1:
                     # Single handler
                     attr = attrs_list[0]
                     # attrs["data-on-X"] = "handler"
-                    body.append(ast.Assign(
-                        targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=f'data-on-{event_type}'), ctx=ast.Store())],
-                        value=ast.Constant(value=attr.handler_name)
-                    ))
-                    
+                    body.append(
+                        ast.Assign(
+                            targets=[
+                                ast.Subscript(
+                                    value=ast.Name(id="attrs", ctx=ast.Load()),
+                                    slice=ast.Constant(value=f"data-on-{event_type}"),
+                                    ctx=ast.Store(),
+                                )
+                            ],
+                            value=ast.Constant(value=attr.handler_name),
+                        )
+                    )
+
                     # Add modifiers if present
                     if attr.modifiers:
                         modifiers_str = " ".join(attr.modifiers)
-                        body.append(ast.Assign(
-                            targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=f'data-modifiers-{event_type}'), ctx=ast.Store())],
-                            value=ast.Constant(value=modifiers_str)
-                        ))
-                    
+                        body.append(
+                            ast.Assign(
+                                targets=[
+                                    ast.Subscript(
+                                        value=ast.Name(id="attrs", ctx=ast.Load()),
+                                        slice=ast.Constant(value=f"data-modifiers-{event_type}"),
+                                        ctx=ast.Store(),
+                                    )
+                                ],
+                                value=ast.Constant(value=modifiers_str),
+                            )
+                        )
+
                     # Add args
                     for i, arg_expr in enumerate(attr.args):
-                        val = self._transform_expr(arg_expr, local_vars, known_globals, line_offset=node.line, col_offset=node.column)
-                        dump_call = ast.Call(
-                            func=ast.Attribute(value=ast.Name(id='json', ctx=ast.Load()), attr='dumps', ctx=ast.Load()),
-                            args=[val], keywords=[]
+                        val = self._transform_expr(
+                            arg_expr,
+                            local_vars,
+                            known_globals,
+                            line_offset=node.line,
+                            col_offset=node.column,
                         )
-                        body.append(ast.Assign(
-                            targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=f'data-arg-{i}'), ctx=ast.Store())],
-                            value=dump_call
-                        ))
+                        dump_call = ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="json", ctx=ast.Load()),
+                                attr="dumps",
+                                ctx=ast.Load(),
+                            ),
+                            args=[val],
+                            keywords=[],
+                        )
+                        body.append(
+                            ast.Assign(
+                                targets=[
+                                    ast.Subscript(
+                                        value=ast.Name(id="attrs", ctx=ast.Load()),
+                                        slice=ast.Constant(value=f"data-arg-{i}"),
+                                        ctx=ast.Store(),
+                                    )
+                                ],
+                                value=dump_call,
+                            )
+                        )
                 else:
                     # Multiple handlers - JSON format
                     # _handlers_X = []
-                    handler_list_name = f'_handlers_{event_type}'
-                    body.append(ast.Assign(
-                        targets=[ast.Name(id=handler_list_name, ctx=ast.Store())],
-                        value=ast.List(elts=[], ctx=ast.Load())
-                    ))
-                    
+                    handler_list_name = f"_handlers_{event_type}"
+                    body.append(
+                        ast.Assign(
+                            targets=[ast.Name(id=handler_list_name, ctx=ast.Store())],
+                            value=ast.List(elts=[], ctx=ast.Load()),
+                        )
+                    )
+
                     all_modifiers = set()
                     for attr in attrs_list:
                         modifiers = attr.modifiers or []
                         all_modifiers.update(modifiers)
-                        
+
                         # _h = {"handler": "...", "modifiers": [...]}
                         handler_dict = ast.Dict(
                             keys=[ast.Constant(value="handler"), ast.Constant(value="modifiers")],
-                            values=[ast.Constant(value=attr.handler_name), ast.List(elts=[ast.Constant(value=m) for m in modifiers], ctx=ast.Load())]
+                            values=[
+                                ast.Constant(value=attr.handler_name),
+                                ast.List(
+                                    elts=[ast.Constant(value=m) for m in modifiers], ctx=ast.Load()
+                                ),
+                            ],
                         )
-                        body.append(ast.Assign(
-                            targets=[ast.Name(id='_h', ctx=ast.Store())],
-                            value=handler_dict
-                        ))
-                        
+                        body.append(
+                            ast.Assign(
+                                targets=[ast.Name(id="_h", ctx=ast.Store())], value=handler_dict
+                            )
+                        )
+
                         if attr.args:
                             # _args = [...]
                             args_list = []
                             for arg_expr in attr.args:
-                                val = self._transform_expr(arg_expr, local_vars, known_globals, line_offset=node.line, col_offset=node.column)
+                                val = self._transform_expr(
+                                    arg_expr,
+                                    local_vars,
+                                    known_globals,
+                                    line_offset=node.line,
+                                    col_offset=node.column,
+                                )
                                 args_list.append(val)
-                            body.append(ast.Assign(
-                                targets=[ast.Subscript(value=ast.Name(id='_h', ctx=ast.Load()), slice=ast.Constant(value="args"), ctx=ast.Store())],
-                                value=ast.List(elts=args_list, ctx=ast.Load())
-                            ))
-                        
+                            body.append(
+                                ast.Assign(
+                                    targets=[
+                                        ast.Subscript(
+                                            value=ast.Name(id="_h", ctx=ast.Load()),
+                                            slice=ast.Constant(value="args"),
+                                            ctx=ast.Store(),
+                                        )
+                                    ],
+                                    value=ast.List(elts=args_list, ctx=ast.Load()),
+                                )
+                            )
+
                         # _handlers_X.append(_h)
-                        body.append(ast.Expr(value=ast.Call(
-                            func=ast.Attribute(value=ast.Name(id=handler_list_name, ctx=ast.Load()), attr='append', ctx=ast.Load()),
-                            args=[ast.Name(id='_h', ctx=ast.Load())],
-                            keywords=[]
-                        )))
-                    
-                    # attrs["data-on-X"] = json.dumps(_handlers_X)
-                    body.append(ast.Assign(
-                        targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=f'data-on-{event_type}'), ctx=ast.Store())],
-                        value=ast.Call(
-                            func=ast.Attribute(value=ast.Name(id='json', ctx=ast.Load()), attr='dumps', ctx=ast.Load()),
-                            args=[ast.Name(id=handler_list_name, ctx=ast.Load())],
-                            keywords=[]
+                        body.append(
+                            ast.Expr(
+                                value=ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id=handler_list_name, ctx=ast.Load()),
+                                        attr="append",
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[ast.Name(id="_h", ctx=ast.Load())],
+                                    keywords=[],
+                                )
+                            )
                         )
-                    ))
-                    
+
+                    # attrs["data-on-X"] = json.dumps(_handlers_X)
+                    body.append(
+                        ast.Assign(
+                            targets=[
+                                ast.Subscript(
+                                    value=ast.Name(id="attrs", ctx=ast.Load()),
+                                    slice=ast.Constant(value=f"data-on-{event_type}"),
+                                    ctx=ast.Store(),
+                                )
+                            ],
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ast.Name(id="json", ctx=ast.Load()),
+                                    attr="dumps",
+                                    ctx=ast.Load(),
+                                ),
+                                args=[ast.Name(id=handler_list_name, ctx=ast.Load())],
+                                keywords=[],
+                            ),
+                        )
+                    )
+
                     if all_modifiers:
                         modifiers_str = " ".join(all_modifiers)
-                        body.append(ast.Assign(
-                            targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=f'data-modifiers-{event_type}'), ctx=ast.Store())],
-                            value=ast.Constant(value=modifiers_str)
-                        ))
+                        body.append(
+                            ast.Assign(
+                                targets=[
+                                    ast.Subscript(
+                                        value=ast.Name(id="attrs", ctx=ast.Load()),
+                                        slice=ast.Constant(value=f"data-modifiers-{event_type}"),
+                                        ctx=ast.Store(),
+                                    )
+                                ],
+                                value=ast.Constant(value=modifiers_str),
+                            )
+                        )
 
             # Handle other special attributes
             for attr in node.special_attributes:
                 if isinstance(attr, EventAttribute):
                     continue
                 elif isinstance(attr, ReactiveAttribute):
-                    val_expr = self._transform_reactive_expr(attr.expr, local_vars, known_methods, known_globals, async_methods, line_offset=node.line, col_offset=node.column)
-                    
+                    val_expr = self._transform_reactive_expr(
+                        attr.expr,
+                        local_vars,
+                        known_methods,
+                        known_globals,
+                        async_methods,
+                        line_offset=node.line,
+                        col_offset=node.column,
+                    )
+
                     # _r_val = val_expr
-                    body.append(ast.Assign(
-                        targets=[ast.Name(id='_r_val', ctx=ast.Store())],
-                        value=val_expr
-                    ))
-                    
-                    html_booleans = {'checked', 'disabled', 'selected', 'readonly', 'required', 'multiple', 'autofocus', 'novalidate', 'formnovalidate', 'hidden'}
-                    is_aria = attr.name.lower().startswith('aria-')
+                    body.append(
+                        ast.Assign(targets=[ast.Name(id="_r_val", ctx=ast.Store())], value=val_expr)
+                    )
+
+                    html_booleans = {
+                        "checked",
+                        "disabled",
+                        "selected",
+                        "readonly",
+                        "required",
+                        "multiple",
+                        "autofocus",
+                        "novalidate",
+                        "formnovalidate",
+                        "hidden",
+                    }
+                    is_aria = attr.name.lower().startswith("aria-")
                     is_bool = attr.name.lower() in html_booleans
 
                     if is_aria:
                         # if _r_val is True: attrs["X"] = "true"
                         # elif _r_val is False: attrs["X"] = "false"
                         # elif _r_val is not None: attrs["X"] = str(_r_val)
-                        
-                        body.append(ast.If(
-                            test=ast.Compare(left=ast.Name(id='_r_val', ctx=ast.Load()), ops=[ast.Is()], comparators=[ast.Constant(value=True)]),
-                            body=[ast.Assign(targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=attr.name), ctx=ast.Store())], value=ast.Constant(value="true"))],
-                            orelse=[ast.If(
-                                test=ast.Compare(left=ast.Name(id='_r_val', ctx=ast.Load()), ops=[ast.Is()], comparators=[ast.Constant(value=False)]),
-                                body=[ast.Assign(targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=attr.name), ctx=ast.Store())], value=ast.Constant(value="false"))],
-                                orelse=[ast.If(
-                                    test=ast.Compare(left=ast.Name(id='_r_val', ctx=ast.Load()), ops=[ast.IsNot()], comparators=[ast.Constant(value=None)]),
-                                    body=[ast.Assign(targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=attr.name), ctx=ast.Store())], value=ast.Call(func=ast.Name(id='str', ctx=ast.Load()), args=[ast.Name(id='_r_val', ctx=ast.Load())], keywords=[]))],
-                                    orelse=[]
-                                )]
-                            )]
-                        ))
+
+                        body.append(
+                            ast.If(
+                                test=ast.Compare(
+                                    left=ast.Name(id="_r_val", ctx=ast.Load()),
+                                    ops=[ast.Is()],
+                                    comparators=[ast.Constant(value=True)],
+                                ),
+                                body=[
+                                    ast.Assign(
+                                        targets=[
+                                            ast.Subscript(
+                                                value=ast.Name(id="attrs", ctx=ast.Load()),
+                                                slice=ast.Constant(value=attr.name),
+                                                ctx=ast.Store(),
+                                            )
+                                        ],
+                                        value=ast.Constant(value="true"),
+                                    )
+                                ],
+                                orelse=[
+                                    ast.If(
+                                        test=ast.Compare(
+                                            left=ast.Name(id="_r_val", ctx=ast.Load()),
+                                            ops=[ast.Is()],
+                                            comparators=[ast.Constant(value=False)],
+                                        ),
+                                        body=[
+                                            ast.Assign(
+                                                targets=[
+                                                    ast.Subscript(
+                                                        value=ast.Name(id="attrs", ctx=ast.Load()),
+                                                        slice=ast.Constant(value=attr.name),
+                                                        ctx=ast.Store(),
+                                                    )
+                                                ],
+                                                value=ast.Constant(value="false"),
+                                            )
+                                        ],
+                                        orelse=[
+                                            ast.If(
+                                                test=ast.Compare(
+                                                    left=ast.Name(id="_r_val", ctx=ast.Load()),
+                                                    ops=[ast.IsNot()],
+                                                    comparators=[ast.Constant(value=None)],
+                                                ),
+                                                body=[
+                                                    ast.Assign(
+                                                        targets=[
+                                                            ast.Subscript(
+                                                                value=ast.Name(
+                                                                    id="attrs", ctx=ast.Load()
+                                                                ),
+                                                                slice=ast.Constant(value=attr.name),
+                                                                ctx=ast.Store(),
+                                                            )
+                                                        ],
+                                                        value=ast.Call(
+                                                            func=ast.Name(id="str", ctx=ast.Load()),
+                                                            args=[
+                                                                ast.Name(
+                                                                    id="_r_val", ctx=ast.Load()
+                                                                )
+                                                            ],
+                                                            keywords=[],
+                                                        ),
+                                                    )
+                                                ],
+                                                orelse=[],
+                                            )
+                                        ],
+                                    )
+                                ],
+                            )
+                        )
                     else:
                         # Default bool behavior
                         # if _r_val is True: attrs["X"] = ""
                         # elif _r_val is not False and _r_val is not None: attrs["X"] = str(_r_val)
-                        
-                        body.append(ast.If(
-                            test=ast.Compare(left=ast.Name(id='_r_val', ctx=ast.Load()), ops=[ast.Is()], comparators=[ast.Constant(value=True)]),
-                            body=[ast.Assign(targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=attr.name), ctx=ast.Store())], value=ast.Constant(value=""))],
-                            orelse=[ast.If(
-                                test=ast.BoolOp(op=ast.And(), values=[
-                                    ast.Compare(left=ast.Name(id='_r_val', ctx=ast.Load()), ops=[ast.IsNot()], comparators=[ast.Constant(value=False)]),
-                                    ast.Compare(left=ast.Name(id='_r_val', ctx=ast.Load()), ops=[ast.IsNot()], comparators=[ast.Constant(value=None)])
-                                ]),
-                                body=[ast.Assign(targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value=attr.name), ctx=ast.Store())], value=ast.Call(func=ast.Name(id='str', ctx=ast.Load()), args=[ast.Name(id='_r_val', ctx=ast.Load())], keywords=[]))],
-                                orelse=[]
-                            )]
-                        ))
 
-            if show_attr:
-                cond = self._transform_expr(show_attr.condition, local_vars, known_globals, line_offset=node.line, col_offset=node.column)
-                # if not cond: attrs['style'] = ...
-                body.append(ast.If(
-                    test=ast.UnaryOp(op=ast.Not(), operand=cond),
-                    body=[
-                        ast.Assign(
-                            targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value='style'), ctx=ast.Store())],
-                            value=ast.BinOp(
-                                left=ast.Call(
-                                    func=ast.Attribute(value=ast.Name(id='attrs', ctx=ast.Load()), attr='get', ctx=ast.Load()),
-                                    args=[ast.Constant(value='style'), ast.Constant(value='')], keywords=[]
+                        body.append(
+                            ast.If(
+                                test=ast.Compare(
+                                    left=ast.Name(id="_r_val", ctx=ast.Load()),
+                                    ops=[ast.Is()],
+                                    comparators=[ast.Constant(value=True)],
                                 ),
-                                op=ast.Add(),
-                                right=ast.Constant(value='; display: none')
+                                body=[
+                                    ast.Assign(
+                                        targets=[
+                                            ast.Subscript(
+                                                value=ast.Name(id="attrs", ctx=ast.Load()),
+                                                slice=ast.Constant(value=attr.name),
+                                                ctx=ast.Store(),
+                                            )
+                                        ],
+                                        value=ast.Constant(value=""),
+                                    )
+                                ],
+                                orelse=[
+                                    ast.If(
+                                        test=ast.BoolOp(
+                                            op=ast.And(),
+                                            values=[
+                                                ast.Compare(
+                                                    left=ast.Name(id="_r_val", ctx=ast.Load()),
+                                                    ops=[ast.IsNot()],
+                                                    comparators=[ast.Constant(value=False)],
+                                                ),
+                                                ast.Compare(
+                                                    left=ast.Name(id="_r_val", ctx=ast.Load()),
+                                                    ops=[ast.IsNot()],
+                                                    comparators=[ast.Constant(value=None)],
+                                                ),
+                                            ],
+                                        ),
+                                        body=[
+                                            ast.Assign(
+                                                targets=[
+                                                    ast.Subscript(
+                                                        value=ast.Name(id="attrs", ctx=ast.Load()),
+                                                        slice=ast.Constant(value=attr.name),
+                                                        ctx=ast.Store(),
+                                                    )
+                                                ],
+                                                value=ast.Call(
+                                                    func=ast.Name(id="str", ctx=ast.Load()),
+                                                    args=[ast.Name(id="_r_val", ctx=ast.Load())],
+                                                    keywords=[],
+                                                ),
+                                            )
+                                        ],
+                                        orelse=[],
+                                    )
+                                ],
                             )
                         )
-                    ],
-                    orelse=[]
-                ))
 
-            if node.tag.lower() == 'option' and bound_var:
+            if show_attr:
+                cond = self._transform_expr(
+                    show_attr.condition,
+                    local_vars,
+                    known_globals,
+                    line_offset=node.line,
+                    col_offset=node.column,
+                )
+                # if not cond: attrs['style'] = ...
+                body.append(
+                    ast.If(
+                        test=ast.UnaryOp(op=ast.Not(), operand=cond),
+                        body=[
+                            ast.Assign(
+                                targets=[
+                                    ast.Subscript(
+                                        value=ast.Name(id="attrs", ctx=ast.Load()),
+                                        slice=ast.Constant(value="style"),
+                                        ctx=ast.Store(),
+                                    )
+                                ],
+                                value=ast.BinOp(
+                                    left=ast.Call(
+                                        func=ast.Attribute(
+                                            value=ast.Name(id="attrs", ctx=ast.Load()),
+                                            attr="get",
+                                            ctx=ast.Load(),
+                                        ),
+                                        args=[ast.Constant(value="style"), ast.Constant(value="")],
+                                        keywords=[],
+                                    ),
+                                    op=ast.Add(),
+                                    right=ast.Constant(value="; display: none"),
+                                ),
+                            )
+                        ],
+                        orelse=[],
+                    )
+                )
+
+            if node.tag.lower() == "option" and bound_var:
                 # if "value" in attrs and str(attrs["value"]) == str(bound_var): attrs["selected"] = ""
                 # bound_var is AST node here
                 # We need to reuse bound_var AST node carefully (if it's complex, it might be evaluated multiple times, but usually it's just Name or Attribute)
-                
+
                 check = ast.If(
-                    test=ast.BoolOp(op=ast.And(), values=[
-                        ast.Compare(left=ast.Constant(value='value'), ops=[ast.In()], comparators=[ast.Name(id='attrs', ctx=ast.Load())]),
-                        ast.Compare(
-                            left=ast.Call(func=ast.Name(id='str', ctx=ast.Load()), args=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value='value'), ctx=ast.Load())], keywords=[]),
-                            ops=[ast.Eq()],
-                            comparators=[ast.Call(func=ast.Name(id='str', ctx=ast.Load()), args=[bound_var], keywords=[])]
+                    test=ast.BoolOp(
+                        op=ast.And(),
+                        values=[
+                            ast.Compare(
+                                left=ast.Constant(value="value"),
+                                ops=[ast.In()],
+                                comparators=[ast.Name(id="attrs", ctx=ast.Load())],
+                            ),
+                            ast.Compare(
+                                left=ast.Call(
+                                    func=ast.Name(id="str", ctx=ast.Load()),
+                                    args=[
+                                        ast.Subscript(
+                                            value=ast.Name(id="attrs", ctx=ast.Load()),
+                                            slice=ast.Constant(value="value"),
+                                            ctx=ast.Load(),
+                                        )
+                                    ],
+                                    keywords=[],
+                                ),
+                                ops=[ast.Eq()],
+                                comparators=[
+                                    ast.Call(
+                                        func=ast.Name(id="str", ctx=ast.Load()),
+                                        args=[bound_var],
+                                        keywords=[],
+                                    )
+                                ],
+                            ),
+                        ],
+                    ),
+                    body=[
+                        ast.Assign(
+                            targets=[
+                                ast.Subscript(
+                                    value=ast.Name(id="attrs", ctx=ast.Load()),
+                                    slice=ast.Constant(value="selected"),
+                                    ctx=ast.Store(),
+                                )
+                            ],
+                            value=ast.Constant(value=""),
                         )
-                    ]),
-                    body=[ast.Assign(
-                        targets=[ast.Subscript(value=ast.Name(id='attrs', ctx=ast.Load()), slice=ast.Constant(value='selected'), ctx=ast.Store())],
-                        value=ast.Constant(value="")
-                    )],
-                    orelse=[]
+                    ],
+                    orelse=[],
                 )
                 body.append(check)
 
