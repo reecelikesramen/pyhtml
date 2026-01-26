@@ -185,13 +185,28 @@ class TemplateCodegen:
         class AddSelfTransformer(ast.NodeTransformer):
             def visit_Name(self, node):
                 import builtins
-                if node.id not in dir(builtins) and node.id not in local_vars and (known_globals is None or node.id not in known_globals):
-                    return ast.Attribute(
+                # 1. If explicitly known as global/instance var, transform to self.<name>
+                if known_globals and node.id in known_globals:
+                     return ast.Attribute(
                         value=ast.Name(id='self', ctx=ast.Load()),
                         attr=node.id,
                         ctx=node.ctx
                     )
-                return node
+                
+                # 2. If locally defined, keep as is
+                if node.id in local_vars:
+                    return node
+                    
+                # 3. If builtin, keep as is (unless matched by step 1)
+                if node.id in dir(builtins):
+                    return node
+                    
+                # 4. Otherwise, assume implicit instance attribute
+                return ast.Attribute(
+                    value=ast.Name(id='self', ctx=ast.Load()),
+                    attr=node.id,
+                    ctx=node.ctx
+                )
         
         new_tree = AddSelfTransformer().visit(tree)
         # Returns the expression node

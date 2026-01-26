@@ -103,8 +103,10 @@ class PyHTML:
         
         # Prepare exception handlers
         exception_handlers = {}
-        if not self.debug:
-            exception_handlers[500] = self._handle_500
+        # Prepare exception handlers
+        exception_handlers = {}
+        # Always register our handler to check for custom error pages
+        exception_handlers[500] = self._handle_500
 
         # Build routes list
         routes = [
@@ -313,12 +315,29 @@ class PyHTML:
         # Scan pages directory
         # We need to sort files to ensure deterministic order but scanning is recursive
         self._scan_directory(self.pages_dir)
+        
+        # Explicitly check for __error__.pyhtml in root pages dir
+        # (It is skipped by _scan_directory because it starts with _)
+        error_page_path = self.pages_dir / "__error__.pyhtml"
+        if error_page_path.exists():
+             try:
+                 root_layout = None
+                 if (self.pages_dir / "__layout__.pyhtml").exists():
+                     root_layout = str((self.pages_dir / "__layout__.pyhtml").resolve())
+                     
+                 page_class = self.loader.load(error_page_path, implicit_layout=root_layout)
+                 self.router.add_route("/__error__", page_class)
+             except Exception as e:
+                 print(f"Failed to load error page {error_page_path}: {e}")
+                 traceback.print_exc()
 
     def _scan_directory(self, dir_path: Path, layout_path: Optional[str] = None, url_prefix: str = ""):
         """Recursively scan directory for pages and layouts."""
-        # 1. Check for layout.pyhtml in this directory
         current_layout = layout_path
-        potential_layout = dir_path / "layout.pyhtml"
+        
+        # Priority: __layout__.pyhtml ONLY
+        potential_layout = dir_path / "__layout__.pyhtml"
+        
         if potential_layout.exists():
             # Compile layout first (it might use the parent layout!)
             try:
@@ -359,7 +378,13 @@ class PyHTML:
                 
             elif entry.is_file() and entry.suffix == '.pyhtml':
                 if entry.name == 'layout.pyhtml':
-                    continue # Already handled
+                     # Previously supported layout file, now ignored (or treated as normal page? No, starts with l)
+                     # Wait, layout.pyhtml doesn't start with _. So it would be registered as /layout
+                     # We should probably explicitly IGNORE it if we want strictness?
+                     # The prompt says: "absolutely NOT layout.pyhtml". 
+                     # If it's not a layout, is it a page? Usually layout.pyhtml has slots and shouldn't be a page.
+                     # Let's Skip it to be safe/clean.
+                    continue
                 
                 # Determine route path
                 name = entry.stem # filename without .pyhtml
@@ -402,10 +427,6 @@ class PyHTML:
                     elif self.path_based_routing:
                          # No explicit !path, use file-based route ONLY if enabled
                          self.router.add_route(route_path, page_class)
-                    elif name in ('404', '500'):
-                         # Special case: error pages (404.pyhtml, 500.pyhtml) are always registered
-                         # at their conventional routes regardless of path_based_routing setting
-                         self.router.add_route(f"/{name}", page_class)
                          
                 except Exception as e:
                     print(f"Failed to load page {entry}: {e}")
@@ -522,23 +543,39 @@ class PyHTML:
              
         return route_path
 
-    def _get_implicit_layout_for_path(self, file_path: Path) -> Optional[str]:
-        """Find the applicable layout.pyhtml for a given file path by walking up the directory tree."""
+    def _resolve_implicit_layout(self, page_path: Path) -> Optional[str]:
+        """Resolve the implicit layout path for a given page."""
+        # Traverse up from page directory to pages_dir
+        current_dir = page_path.parent
+        
+        # Ensure we don't traverse above pages_dir
         try:
-             # Start from the file's directory
-             current_dir = file_path.parent
-             # Stop if we go above pages_dir
-             while self.pages_dir in current_dir.parents or current_dir == self.pages_dir:
-                 potential_layout = current_dir / "layout.pyhtml"
-                 if potential_layout.exists() and potential_layout != file_path:
-                     return str(potential_layout.resolve())
-                 
-                 if current_dir == self.pages_dir:
-                     break
-                 current_dir = current_dir.parent
-                 
-        except Exception:
-            pass
+             # Check if page is within pages_dir
+             current_dir.relative_to(self.pages_dir)
+        except ValueError:
+             # Page is outside pages_dir? Should not happen normally.
+             return None
+
+        while True:
+            # Check for layout files
+            layout = current_dir / "__layout__.pyhtml"
+            
+            if layout.exists():
+                 # Don't use layout if it is the file itself (e.g. reloading a layout file)
+                 if layout.resolve() == page_path.resolve():
+                     pass 
+                 else:
+                     return str(layout.resolve())
+            
+            if current_dir == self.pages_dir:
+                break
+                
+            current_dir = current_dir.parent
+            
+            # Safety check: stop at root
+            if current_dir == current_dir.parent:
+                break
+                
         return None
 
     def reload_page(self, path: Path):
@@ -551,33 +588,14 @@ class PyHTML:
         if str_path not in invalidated_paths:
              invalidated_paths.add(str_path)
         
-        # Sort to ensure dependents are loaded after dependencies? 
-        # Actually loader handles recursion, but for re-adding to router, order might not matter 
-        # provided we load them.
-        
         for file_path_str in invalidated_paths:
             file_path = Path(file_path_str)
             try:
+                # Resolve implicit layout for re-compilation
+                implicit_layout = self._resolve_implicit_layout(file_path)
+                
                 # Recompile
-                # Note: If this is a component file (not a page), load might return a Page class
-                # but we shouldn't necessarily add it to the router unless it Was a page.
-                # However, our loader treats everything as a BasePage.
-                # How do we know if it was a route?
-                # We can try to load it.
-                
-                # Calculate implicit layout to ensure consistency with initial load
-                implicit_layout = self._get_implicit_layout_for_path(file_path)
-                
                 new_page_class = self.loader.load(file_path, implicit_layout=implicit_layout)
-                
-                # Check if it should be in the router?
-                # Using _scan_directory logic locally?
-                # Simplification: If it has __routes__ or acts as a page (e.g. in pages dir), add it.
-                # If it's just a component in components dir, usually we don't add routes.
-                # But current router implementation blindly adds routes if we call add_page/add_route.
-                
-                # If we remove existing routes for this file, we should only add back if appropriate.
-                # For now, let's aggressively reload everything, but maybe filter by 'pages_dir'?
                 
                 is_in_pages = False
                 try:
@@ -587,8 +605,11 @@ class PyHTML:
                     is_in_pages = False
                 
                 self.router.remove_routes_for_file(str(file_path))
-                
-                if is_in_pages:
+
+                # Special handling for __error__.pyhtml
+                if file_path.name == '__error__.pyhtml':
+                     self.router.add_route("/__error__", new_page_class)
+                elif is_in_pages:
                     self.router.add_page(new_page_class)
                     
                     # Re-apply implicit routing if not explicitly defined
@@ -605,7 +626,7 @@ class PyHTML:
                 traceback.print_exc()
                 
                 # If it was a page, show error
-                if is_in_pages:
+                if is_in_pages or file_path.name == '__error__.pyhtml':
                     self.router.remove_routes_for_file(str(file_path))
                     self._register_error_page(file_path, e)
                 
@@ -616,21 +637,35 @@ class PyHTML:
 
     async def _handle_500(self, request: Request, exc: Exception) -> Response:
         """Handle 500 errors with custom page if available."""
-        # Try to find /500 page
-        match = self.router.match("/500")
+        # Try to find /__error__ page
+        match = self.router.match("/__error__")
+            
         if match:
             try:
                 page_class, params, variant_name = match
                 # Minimal context
                 page = page_class(request, params, {}, path={'main': True}, url=None)
+                # Inject error code
+                page.error_code = 500
+                # Inject exception details if debug mode?
+                if self.debug:
+                    page.error_detail = str(exc)
+                    page.error_trace = traceback.format_exc()
+                    
                 response = await page.render()
                 # Force 500 status
                 response.status_code = 500
                 return response
-            except Exception:
+            except Exception as e:
                 # If 500 page fails, fall back
+                print(f"Error rendering 500 page: {e}")
                 pass
         
+        # If no custom page or it failed:
+        if self.debug:
+            # Re-raise to let Starlette/Server show debug traceback
+            raise exc
+            
         return PlainTextResponse("Internal Server Error", status_code=500)
 
     async def _handle_request(self, request: Request) -> Response:
@@ -641,11 +676,12 @@ class PyHTML:
         path = request.url.path
         match = self.router.match(path)
         if not match:
-             # Try custom 404
-             match_404 = self.router.match("/404")
-             if match_404:
-                 page_class, params, variant_name = match_404
-                 # Render 404 page
+             # Try custom __error__
+             match_error = self.router.match("/__error__")
+                 
+             if match_error:
+                 page_class, params, variant_name = match_error
+                 # Render 404/error page
                  # Note: We pass original request so URL is preserved?
                  # Yes, user checking request.url on 404 page might want to know what failed.
                  
@@ -667,10 +703,15 @@ class PyHTML:
                  
                  try:
                      page = page_class(request, {}, query, path=path_info, url=url_helper)
+                     # Inject error code
+                     page.error_code = 404
                      response = await page.render()
                      response.status_code = 404
                      return response
-                 except Exception:
+                 except Exception as e:
+                     print(f"Failed to render custom error page {page_class}: {e}")
+                     import traceback
+                     traceback.print_exc()
                      pass # Fallback
                      
              # Default 404 with client script

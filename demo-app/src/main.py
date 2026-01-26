@@ -4,6 +4,6 @@ from pyhtml import PyHTML
 # Create app instance
 app = PyHTML(
     path_based_routing=False,
-    static_dir="src/static",
+    static_dir="static",
     debug=True
 )

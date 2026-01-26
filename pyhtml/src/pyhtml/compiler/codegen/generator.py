@@ -72,6 +72,7 @@ class CodeGenerator:
 
     def generate(self, parsed: ParsedPyHTML) -> ast.Module:
         """Generate complete module AST."""
+        self.file_path = parsed.file_path
         module_body = []
 
         # Imports
@@ -320,9 +321,8 @@ class CodeGenerator:
         # Pass ALL globals to avoid auto-calling variables and prefixing imports
         all_globals = known_methods.union(known_vars).union(known_imports)
         
-        
         render_func, binding_funcs = self._generate_render_template_method(
-            parsed, known_methods, known_imports, async_methods, component_map
+            parsed, known_methods, all_globals, async_methods, component_map
         )
         if render_func:
             class_body.append(render_func)
@@ -361,11 +361,38 @@ class CodeGenerator:
                  value=ast.Constant(value=layout_id_to_inject)
             ))
 
-        # ADDED: LAYOUT_ID class attribute to identify components/layouts
-        # But only if it's not already in user code?
-        # Actually, let's only add it if it's explicitly a component or has no parent?
-        # For simplicity and to avoid clashing with existing tests, let's only add if needed.
+        # Lifecycle hooks calculation
+        init_hooks = []
+        # If we found @mount decorated methods
+        if hasattr(self, '_collected_mount_hooks') and self._collected_mount_hooks:
+            init_hooks.extend(self._collected_mount_hooks)
         
+        # If we have top-level init code
+        if hasattr(self, '_has_top_level_init') and self._has_top_level_init:
+            init_hooks.insert(0, '__top_level_init__')
+
+        # Ensure 'on_before_load' and 'on_load' are present
+        final_init_hooks = []
+        
+        # Prepend generated top-level init
+        if hasattr(self, '_has_top_level_init') and self._has_top_level_init:
+             final_init_hooks.append('__top_level_init__')
+             
+        # Standard hooks - REMOVED per user request
+        # final_init_hooks.append('on_before_load')
+        # final_init_hooks.append('on_load')
+        
+        # Add mount hooks
+        if hasattr(self, '_collected_mount_hooks') and self._collected_mount_hooks:
+            final_init_hooks.extend(self._collected_mount_hooks)
+            
+        class_body.append(ast.Assign(
+             targets=[ast.Name(id='INIT_HOOKS', ctx=ast.Store())],
+             value=ast.List(
+                 elts=[ast.Constant(value=h) for h in final_init_hooks],
+                 ctx=ast.Load()
+             )
+        ))
         cls_def = ast.ClassDef(
             name=self._get_class_name(parsed),
 
@@ -383,7 +410,7 @@ class CodeGenerator:
            Returns: (method_names, variable_names, async_method_names)
         """
         methods = set()
-        variables = {'path', 'params', 'query', 'url', 'request'}
+        variables = {'path', 'params', 'query', 'url', 'request', 'error_code', 'error_detail', 'error_trace'}
         async_methods = set()
         
         if python_ast:
@@ -400,6 +427,18 @@ class CodeGenerator:
                 elif isinstance(node, ast.AnnAssign):
                      if isinstance(node.target, ast.Name):
                          variables.add(node.target.id)
+        
+        # Add implicit params from filename if available
+        if hasattr(self, 'file_path') and self.file_path:
+            import re
+            from pathlib import Path
+            path_obj = Path(self.file_path)
+            # Check current file name and parent directories for [param] syntax
+            for part in path_obj.parts:
+                match = re.match(r'^\[(.*?)\]$', part.replace('.pyhtml', ''))
+                if match:
+                    variables.add(match.group(1))
+        
         return methods, variables, async_methods
 
     def _process_handlers(self, parsed: ParsedPyHTML, known_methods: Set[str], async_methods: Set[str]) -> List[ast.AsyncFunctionDef]:
@@ -1191,6 +1230,12 @@ class CodeGenerator:
         transformed = []
         if known_globals is None:
             known_globals = set()
+            
+        # Collect hooks
+        self._collected_mount_hooks = []
+        self._has_top_level_init = False
+        
+        top_level_statements = []
         
         for node in python_ast.body:
             if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -1198,23 +1243,118 @@ class CodeGenerator:
                 continue
             elif isinstance(node, ast.Assign):
                 # Module-level assignments become class attributes
-                # Initialize in __init__
-                transformed.append(node)
+                # UNLESS they target 'self' (e.g. self.x = 1), which makes no sense at class level
+                # and implies instance initialization.
+                
+                is_instance_assign = False
+                for target in node.targets:
+                    # Check if target is Attribute(value=Name(id='self'))
+                    if isinstance(target, ast.Attribute) and \
+                       isinstance(target.value, ast.Name) and \
+                       target.value.id == 'self':
+                        is_instance_assign = True
+                        break
+                        
+                if is_instance_assign:
+                    top_level_statements.append(node)
+                else:
+                    # BUT, if they rely on runtime values (like other vars), they should be in __init__
+                    # For now, we assume static assignments. 
+                    # If the value calls a function, it might be safer in __top_level_init__.
+                    # Heuristic: Check if value is constant?
+                    # "top level statements will be considered on_load... obviously not each RTT request"
+                    # "execute on first load" -> init=True.
+                    
+                    # So executable statements (Calls, Loops, Ifs) definitely go to `__top_level_init__`.
+                    # Simple assignments `x = 1`?
+                    # If `x = 1`, it stays class attr (default user expectation for python scripts?).
+                    transformed.append(node)
+                     
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                # Check for decorators
+                is_mount = False
+                new_decorators = []
+                for dec in node.decorator_list:
+                    if isinstance(dec, ast.Name) and dec.id == 'mount':
+                        is_mount = True
+                        self._collected_mount_hooks.append(node.name)
+                    elif isinstance(dec, ast.Name) and dec.id == 'unmount':
+                        # Placeholder for future unmount
+                        pass 
+                    else:
+                        new_decorators.append(dec)
+                
+                node.decorator_list = new_decorators
+                
                 # Functions become methods - transform them
                 transformed.append(self._transform_to_method(node, known_globals))
             elif isinstance(node, ast.ClassDef):
                 # Classes are moved to module level, skip here
                 continue
             else:
-                # Other statements (keep as-is for now)
-                transformed.append(node)
+                # Other statements (Expr, If, For, While, Try)
+                # Move to top-level init
+                top_level_statements.append(node)
+
+        if top_level_statements:
+            self._has_top_level_init = True
+            transformed.append(self._generate_top_level_init(top_level_statements, known_globals))
 
         return transformed
 
+    def _generate_top_level_init(self, statements: List[ast.stmt], known_globals: Set[str]) -> ast.AsyncFunctionDef:
+        """Generate __top_level_init__ method from top-level statements."""
+        
+        # 1. Collect all variables assigned in this scope to promote them to instance attributes.
+        # This ensures 'x = 1' inside match/if/for becomes 'self.x = 1'.
+        local_assignments = set()
+        
+        class AssignmentCollector(ast.NodeVisitor):
+            def visit_FunctionDef(self, node):
+                # Do not recurse into nested functions
+                pass
+            def visit_AsyncFunctionDef(self, node):
+                pass
+            def visit_ClassDef(self, node):
+                pass
+            
+            def visit_Name(self, node):
+                # If name is being stored (assigned to), collect it
+                if isinstance(node.ctx, ast.Store):
+                    local_assignments.add(node.id)
+
+        collector = AssignmentCollector()
+        for stmt in statements:
+            collector.visit(stmt)
+            
+        # Combine with explicit known globals
+        # We start with a copy to avoid mutating the passed set if it's used elsewhere (though it seems local usually)
+        combined_globals = set(known_globals)
+        combined_globals.update(local_assignments)
+
+        # Wrap statements in async method
+        # Transform variables to self.X
+        
+        wrapper = ast.AsyncFunctionDef(
+            name='__top_level_init__',
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg='self')],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[]
+            ),
+            body=statements,
+            decorator_list=[],
+            returns=None
+        )
+        
+        return self._transform_to_method(wrapper, combined_globals)
+
     def _transform_to_method(self, node, known_methods: Set[str] = None):
         """Transform a function into a method (add self, handle globals)."""
-        # 1. Add self argument
+        # 1. Add self argument if not present
         if not (node.args.args and node.args.args[0].arg == 'self'):
             node.args.args.insert(0, ast.arg(arg='self'))
         

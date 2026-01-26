@@ -400,17 +400,23 @@ class WebSocketHandler:
                 if match:
                     print(f"Relocate: Route not found for {pathname}, serving /404")
                 else:
-                    # Fallback to generic ErrorPage if no custom 404
-                    # We need to construct a bound ErrorPage class
-                    print(f"Relocate: Route not found for {pathname}, serving generic 404")
-                    from pyhtml.runtime.error_page import ErrorPage
+                    # Try /__error__ fallback
+                    match = self.app.router.match("/__error__")
                     
-                    # Create a closure helper
-                    class BoundErrorPage(ErrorPage):
-                        def __init__(self, request: Request, *args, **kwargs):
-                            super().__init__(request, "404 Not Found", f"The path '{pathname}' could not be found.")
-                    
-                    match = (BoundErrorPage, {}, 'main')
+                    if match:
+                        print(f"Relocate: Route not found for {pathname}, serving /__error__")
+                    else:
+                        # Fallback to generic ErrorPage if no custom 404
+                        # We need to construct a bound ErrorPage class
+                        print(f"Relocate: Route not found for {pathname}, serving generic 404")
+                        from pyhtml.runtime.error_page import ErrorPage
+                        
+                        # Create a closure helper
+                        class BoundErrorPage(ErrorPage):
+                            def __init__(self, request: Request, *args, **kwargs):
+                                super().__init__(request, "404 Not Found", f"The path '{pathname}' could not be found.")
+                        
+                        match = (BoundErrorPage, {}, 'main')
 
             page_class, params, variant_name = match
             
@@ -462,6 +468,10 @@ class WebSocketHandler:
     
             # Instantiate new page
             new_page = page_class(request, params, query, path=path_info, url=url_helper)
+            
+            # If this is an error page (match failed originally), inject error code
+            if not self.app.router.match(pathname):
+                new_page.error_code = 404
             
             # Migrate persistent user state
             new_page.user = getattr(page, 'user', None)
