@@ -1,0 +1,34 @@
+!component '../components/Badge.pyhtml' as Badge
+!component '../components/Card.pyhtml' as Card
+!component '../components/Button.pyhtml' as Button
+!component '../components/Alert.pyhtml' as Alert
+!component '../components/test_inject.pyhtml' as TestInject
+
+!provide { 'COUNT': count }
+
+<div>
+    <h1>Component Test</h1>
+    
+    <Badge label="New" type="primary" />
+    <Badge label="Old" type="secondary">
+        (Refurbished)
+    </Badge>
+
+    <Button @click={count += 1}>Count: {count}</Button>
+    <hr />
+    <TestInject></TestInject>
+    
+    <hr />
+
+    <Alert title="Information">This is an informational alert.</Alert>
+
+    <hr />
+    
+    <Card>
+        <slot name="header">Card Header</slot>
+        Card Body Content
+    </Card>
+</div>
+
+---
+count = 0

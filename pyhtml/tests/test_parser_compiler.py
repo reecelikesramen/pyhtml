@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 from pyhtml.compiler.parser import PyHTMLParser
-from pyhtml.compiler.ast_nodes import TemplateNode, InterpolationNode, LayoutDirective
+from pyhtml.compiler.ast_nodes import TemplateNode, InterpolationNode, LayoutDirective, ComponentDirective, PropsDirective, ProvideDirective, InjectDirective
 
 class TestParserCompiler(unittest.TestCase):
     def setUp(self):
@@ -58,6 +58,37 @@ class TestParserCompiler(unittest.TestCase):
         self.assertTrue(fields["email"].required)
         self.assertEqual(fields["email"].minlength, 5)
         self.assertEqual(fields["age"].min_value, "18")
+
+    def test_parse_component_directive(self):
+        content = "!component 'components/button' as Button"
+        parsed = self.parser.parse(content)
+        self.assertEqual(len(parsed.directives), 1)
+        d = parsed.directives[0]
+        self.assertIsInstance(d, ComponentDirective)
+        self.assertEqual(d.path, "components/button")
+        self.assertEqual(d.component_name, "Button")
+
+    def test_parse_props_directive(self):
+        content = "!props(title: str, count: int = 0)"
+        parsed = self.parser.parse(content)
+        self.assertEqual(len(parsed.directives), 1)
+        d = parsed.directives[0]
+        self.assertIsInstance(d, PropsDirective)
+        self.assertEqual(len(d.args), 2)
+        self.assertEqual(d.args[0], ("title", "str", None))
+        self.assertEqual(d.args[1], ("count", "int", "0"))
+
+    def test_parse_provide_inject(self):
+        # Provide
+        content = "!provide { 'theme': 'dark' }\n!inject { theme: 'theme' }\n<div></div>"
+        parsed = self.parser.parse(content)
+        self.assertEqual(len(parsed.directives), 2)
+        self.assertIsInstance(parsed.directives[0], ProvideDirective)
+        self.assertIsInstance(parsed.directives[1], InjectDirective)
+        self.assertEqual(parsed.directives[0].mapping, {"theme": "'dark'"})
+        self.assertEqual(parsed.directives[1].mapping, {"theme": "theme"})
+
+
 
 if __name__ == "__main__":
     unittest.main()

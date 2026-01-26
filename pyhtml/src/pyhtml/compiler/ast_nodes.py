@@ -1,7 +1,7 @@
 """AST node definitions for PyHTML compiler."""
 import ast
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Tuple
 
 
 @dataclass
@@ -42,6 +42,44 @@ class LayoutDirective(Directive):
 
     def __str__(self) -> str:
         return f"LayoutDirective(path={self.layout_path})"
+
+
+@dataclass
+class ComponentDirective(Directive):
+    """!component 'path/to/component' as Name"""
+    path: str
+    component_name: str  # PascalCase name (e.g. 'Badge')
+
+    def __str__(self) -> str:
+        return f"ComponentDirective(name={self.component_name}, path={self.path})"
+
+
+@dataclass
+class PropsDirective(Directive):
+    """!props(name: type, arg=default)"""
+    # List of (name, type_hint_str, default_value_str_or_None)
+    args: List[Tuple[str, str, Optional[str]]]
+
+    def __str__(self) -> str:
+        return f"PropsDirective(args={self.args})"
+
+
+@dataclass
+class InjectDirective(Directive):
+    """!inject { local: 'GLOBAL' }"""
+    mapping: Dict[str, str]  # {local_var: global_key}
+
+    def __str__(self) -> str:
+        return f"InjectDirective(mapping={self.mapping})"
+
+
+@dataclass
+class ProvideDirective(Directive):
+    """!provide { 'GLOBAL': local }"""
+    mapping: Dict[str, str]  # {global_key: local_var_expr}
+
+    def __str__(self) -> str:
+        return f"ProvideDirective(mapping={self.mapping})"
 
 
 @dataclass
@@ -159,13 +197,25 @@ class EventAttribute(SpecialAttribute):
 @dataclass
 class ReactiveAttribute(SpecialAttribute):
     """
-    :attr="expression"
+    :attr="expression" or attr="{expression}"
     Represents a reactive attribute where the value is a python expression.
     """
     expr: str
 
     def __str__(self) -> str:
         return f"ReactiveAttribute(name={self.name}, expr={self.expr})"
+
+
+@dataclass
+class SpreadAttribute(SpecialAttribute):
+    """
+    {**attrs} (preprocessed to __pyhtml_spread__="{**attrs}")
+    Represents a spread of attributes.
+    """
+    expr: str
+
+    def __str__(self) -> str:
+        return f"SpreadAttribute(expr={self.expr})"
 
 
 @dataclass

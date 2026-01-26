@@ -1,7 +1,7 @@
 import unittest
 import ast
 from pyhtml.compiler.codegen.template import TemplateCodegen
-from pyhtml.compiler.ast_nodes import TemplateNode, IfAttribute, InterpolationNode
+from pyhtml.compiler.ast_nodes import TemplateNode, IfAttribute, InterpolationNode, EventAttribute
 
 class TestCodegenTemplate(unittest.TestCase):
     def setUp(self):
@@ -98,6 +98,66 @@ class TestCodegenTemplate(unittest.TestCase):
         
         self.assertIn("async def _render_slot_fill_header_", code)
         self.assertIn("parts.append('Header content')", code)
+
+    def test_codegen_component_instantiation(self):
+        node = TemplateNode(tag='MyComp', attributes={'title': 'Hello'}, line=1, column=0)
+        comp_map = {'MyComp': 'MyComponent'}
+        func_def, _ = self.codegen.generate_render_method([node], component_map=comp_map)
+        
+        self.normalize_ast(func_def)
+        code = ast.unparse(func_def)
+        self.assertIn("MyComponent", code)
+        self.assertIn("'title': 'Hello'", code)
+        self.assertIn("'__is_component__': True", code)
+        self.assertIn("'_style_collector': self._style_collector", code)
+
+    def test_codegen_component_slots(self):
+        child1 = TemplateNode(tag='div', attributes={'slot': 'header'}, line=1, column=0)
+        child2 = TemplateNode(tag='span', attributes={}, line=1, column=0)
+        node = TemplateNode(tag='MyComp', attributes={}, children=[child1, child2], line=1, column=0)
+        comp_map = {'MyComp': 'MyComponent'}
+        
+        func_def, _ = self.codegen.generate_render_method([node], component_map=comp_map)
+        self.normalize_ast(func_def)
+        code = ast.unparse(func_def)
+        self.assertIn("slots={'header':", code)
+        self.assertIn("'default':", code)
+
+    def test_codegen_component_events(self):
+        event_attr = EventAttribute(
+            line=1, column=0, name='@click', value='handleClick',
+            event_type='click', handler_name='handleClick',
+            args=[], modifiers=[]
+        )
+        node = TemplateNode(tag='MyComp', attributes={}, special_attributes=[event_attr], line=1, column=0)
+        comp_map = {'MyComp': 'MyComponent'}
+        
+        func_def, _ = self.codegen.generate_render_method([node], component_map=comp_map)
+        self.normalize_ast(func_def)
+        code = ast.unparse(func_def)
+        self.assertIn("'data-on-click': 'handleClick'", code)
+
+    def test_element_attribute_injection(self):
+        node = TemplateNode(tag='div', attributes={}, line=1, column=0)
+        scope_id = 'xyz123'
+        func_def, _ = self.codegen.generate_render_method([node], scope_id=scope_id)
+        
+        self.normalize_ast(func_def)
+        code = ast.unparse(func_def)
+        self.assertIn("attrs['data-ph-xyz123'] = ''", code)
+
+    def test_scoped_style_rewriting(self):
+        css_content = ".card { color: red; }"
+        style_node = TemplateNode(tag='style', attributes={'scoped': ''}, line=1, column=0,
+            children=[TemplateNode(tag=None, text_content=css_content, line=1, column=0)])
+        scope_id = 'xyz123'
+        
+        func_def, _ = self.codegen.generate_render_method([style_node], scope_id=scope_id)
+        self.normalize_ast(func_def)
+        code = ast.unparse(func_def)
+        self.assertIn("self._style_collector.add('xyz123'", code)
+        self.assertIn(".card[data-ph-xyz123]", code)
+
 
 if __name__ == "__main__":
     unittest.main()

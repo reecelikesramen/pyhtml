@@ -477,41 +477,142 @@ class PyHTML:
         except Exception as e:
             print(f"Failed to register error page for {file_path}: {e}")
 
-    def reload_page(self, path: Path):
-        """Reload and recompile a specific page."""
-        # Invalidate cache for this file (could be page or layout)
-        self.loader.invalidate_cache(path)
+    def _get_implicit_route(self, file_path: Path) -> Optional[str]:
+        """Calculate implicit route path from file path."""
         try:
-            # Recompile
-            new_page_class = self.loader.load(path)
+            rel_path = file_path.relative_to(self.pages_dir)
+        except ValueError:
+            return None
             
-            # Update router
-            # Note: This is tricky because we need to replace the old route
-            # For now, simplistic approach: add it again (router generally uses latest)
-            # Better approach: remove old routes for this file first?
-            # Implementation detail of router.add_page needed.
+        segments = []
+        for i, part in enumerate(rel_path.parts):
+             if part.startswith('_') or part.startswith('.'):
+                 return None
+                 
+             name = part
+             is_file = (i == len(rel_path.parts) - 1)
+             
+             if is_file:
+                 if not name.endswith('.pyhtml'):
+                     return None
+                 if name == 'layout.pyhtml':
+                     return None
+                 name = Path(name).stem
+
+             segment = name
+             if name == 'index':
+                 segment = ""
+             
+             param_match = re.match(r'^\[(.*?)\]$', name)
+             if param_match:
+                 param_name = param_match.group(1)
+                 segment = f"{{{param_name}}}"
+                 
+             segments.append(segment)
+             
+        route_path = "/" + "/".join(segments)
+        while '//' in route_path:
+            route_path = route_path.replace('//', '/')
             
-            # Ideally we clear routes associated with this file_path first
-            self.router.remove_routes_for_file(str(path))
-            self.router.add_page(new_page_class)
-            
-            print(f"Reloaded page: {path}")
-            return True
-        except Exception as e:
-            print(f"Failed to reload page {path}: {e}")
-            traceback.print_exc()
-            
-            # Register error page for this file so user sees the error on refresh
-            self.router.remove_routes_for_file(str(path))
-            self._register_error_page(path, e)
-            
-            # If we have a websocket connection on this page, we should push the error?!
-            # The watcher in dev_server.py catches this exception.
-            # We should probably re-raise or handle it there to broadcast 'reload' 
-            # so the client reloads and sees the error page.
-            
-            # Re-raise so dev_server knows it failed
-            raise e
+        if route_path != "/" and route_path.endswith('/'):
+             route_path = route_path.rstrip('/')
+             
+        if not route_path:
+             route_path = "/"
+             
+        return route_path
+
+    def _get_implicit_layout_for_path(self, file_path: Path) -> Optional[str]:
+        """Find the applicable layout.pyhtml for a given file path by walking up the directory tree."""
+        try:
+             # Start from the file's directory
+             current_dir = file_path.parent
+             # Stop if we go above pages_dir
+             while self.pages_dir in current_dir.parents or current_dir == self.pages_dir:
+                 potential_layout = current_dir / "layout.pyhtml"
+                 if potential_layout.exists() and potential_layout != file_path:
+                     return str(potential_layout.resolve())
+                 
+                 if current_dir == self.pages_dir:
+                     break
+                 current_dir = current_dir.parent
+                 
+        except Exception:
+            pass
+        return None
+
+    def reload_page(self, path: Path):
+        """Reload and recompile a specific page and its dependents."""
+        # Invalidate cache for this file and dependents
+        invalidated_paths = self.loader.invalidate_cache(path)
+        
+        # Always include the original path even if not in cache (to trigger load)
+        str_path = str(path.resolve())
+        if str_path not in invalidated_paths:
+             invalidated_paths.add(str_path)
+        
+        # Sort to ensure dependents are loaded after dependencies? 
+        # Actually loader handles recursion, but for re-adding to router, order might not matter 
+        # provided we load them.
+        
+        for file_path_str in invalidated_paths:
+            file_path = Path(file_path_str)
+            try:
+                # Recompile
+                # Note: If this is a component file (not a page), load might return a Page class
+                # but we shouldn't necessarily add it to the router unless it Was a page.
+                # However, our loader treats everything as a BasePage.
+                # How do we know if it was a route?
+                # We can try to load it.
+                
+                # Calculate implicit layout to ensure consistency with initial load
+                implicit_layout = self._get_implicit_layout_for_path(file_path)
+                
+                new_page_class = self.loader.load(file_path, implicit_layout=implicit_layout)
+                
+                # Check if it should be in the router?
+                # Using _scan_directory logic locally?
+                # Simplification: If it has __routes__ or acts as a page (e.g. in pages dir), add it.
+                # If it's just a component in components dir, usually we don't add routes.
+                # But current router implementation blindly adds routes if we call add_page/add_route.
+                
+                # If we remove existing routes for this file, we should only add back if appropriate.
+                # For now, let's aggressively reload everything, but maybe filter by 'pages_dir'?
+                
+                is_in_pages = False
+                try:
+                    file_path.relative_to(self.pages_dir)
+                    is_in_pages = True
+                except ValueError:
+                    is_in_pages = False
+                
+                self.router.remove_routes_for_file(str(file_path))
+                
+                if is_in_pages:
+                    self.router.add_page(new_page_class)
+                    
+                    # Re-apply implicit routing if not explicitly defined
+                    has_explicit = hasattr(new_page_class, '__routes__') or hasattr(new_page_class, '__route__')
+                    if not has_explicit and self.path_based_routing:
+                        route_path = self._get_implicit_route(file_path)
+                        if route_path:
+                            self.router.add_route(route_path, new_page_class)
+                
+                print(f"Reloaded: {file_path}")
+                
+            except Exception as e:
+                print(f"Failed to reload {file_path}: {e}")
+                traceback.print_exc()
+                
+                # If it was a page, show error
+                if is_in_pages:
+                    self.router.remove_routes_for_file(str(file_path))
+                    self._register_error_page(file_path, e)
+                
+                # If original file failed, re-raise because the watcher expects it
+                if str(file_path) == str_path:
+                    raise e
+        return True
 
     async def _handle_500(self, request: Request, exc: Exception) -> Response:
         """Handle 500 errors with custom page if available."""

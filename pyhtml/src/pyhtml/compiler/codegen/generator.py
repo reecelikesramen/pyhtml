@@ -4,10 +4,13 @@ from typing import Dict, List, Type, Tuple, Set, Optional
 
 from pyhtml.compiler.ast_nodes import (
     Directive, ParsedPyHTML, PathDirective, NoSpaDirective, SpecialAttribute, 
-    EventAttribute, LayoutDirective, FormValidationSchema, FieldValidationRules, ModelAttribute
+    EventAttribute, LayoutDirective, FormValidationSchema, FieldValidationRules, ModelAttribute,
+    ComponentDirective, PropsDirective, InjectDirective, ProvideDirective, TemplateNode
 )
+
 from pyhtml.compiler.codegen.attributes.base import AttributeCodegen
 from pyhtml.compiler.codegen.attributes.events import EventAttributeCodegen
+
 from pyhtml.compiler.codegen.directives.base import DirectiveCodegen
 from pyhtml.compiler.codegen.directives.path import PathDirectiveCodegen
 from pyhtml.compiler.codegen.template import TemplateCodegen
@@ -29,6 +32,44 @@ class CodeGenerator:
 
         self.template_codegen = TemplateCodegen()
 
+    def _generate_component_loading(self, parsed: ParsedPyHTML) -> Tuple[List[ast.stmt], Dict[str, str]]:
+        """
+        Generate code to load components and return Tag -> ClassName map.
+        Returns: (stmts, component_map)
+        """
+        stmts = []
+        component_map = {}
+        
+        for directive in parsed.directives:
+            if isinstance(directive, ComponentDirective):
+                # Name = load_component("path", __file_path__)
+                
+                # Check for "as Name" collision with imports or other components?
+                # Python handles it (overwrite), but maybe warn?
+                
+                target_name = directive.component_name
+                path = directive.path
+                
+                # component_map[target_name] = target_name (class is assigned to this var)
+                # Parse lowercases HTML tags, so we map lowercase name to actual class name
+                component_map[target_name.lower()] = target_name
+                
+                stmts.append(ast.Assign(
+                    targets=[ast.Name(id=target_name, ctx=ast.Store())],
+                    value=ast.Call(
+                        func=ast.Name(id='load_component', ctx=ast.Load()),
+                        args=[
+                            ast.Constant(value=path),
+                            ast.Constant(value=parsed.file_path)
+                        ],
+                        keywords=[]
+                    )
+                ))
+                
+                
+        
+        return stmts, component_map
+
     def generate(self, parsed: ParsedPyHTML) -> ast.Module:
         """Generate complete module AST."""
         module_body = []
@@ -40,6 +81,10 @@ class CodeGenerator:
         module_body.append(
             ast.Import(names=[ast.alias(name='asyncio', asname=None)])
         )
+        
+        # Component loading (early, so they are available)
+        comp_stmts, component_map = self._generate_component_loading(parsed)
+        module_body.extend(comp_stmts)
 
         # Layout logic
         layout_directive = parsed.get_directive_by_type(LayoutDirective)
@@ -80,6 +125,10 @@ class CodeGenerator:
 
         # Extract method names early for binding logic
         known_methods, known_vars, async_methods = self._collect_global_names(parsed.python_ast)
+        
+        # Include explicit variable assignments
+        known_vars.update(self._extract_user_variables(parsed.python_ast))
+        
         known_imports = self._extract_import_names(parsed.python_ast)
         all_globals = known_methods.union(known_vars).union(known_imports)
         
@@ -91,11 +140,20 @@ class CodeGenerator:
         handlers = self._process_handlers(parsed, all_globals, async_methods)
         
         # Page class
-        page_class = self._generate_page_class(parsed, handlers, known_methods, known_vars, known_imports, async_methods)
+        page_class = self._generate_page_class(
+            parsed, handlers, known_methods, known_vars, known_imports, async_methods, component_map
+        )
         module_body.append(page_class)
+        
+        # Export reference to main class
+        module_body.append(ast.Assign(
+            targets=[ast.Name(id='__page_class__', ctx=ast.Store())],
+            value=ast.Name(id=page_class.name, ctx=ast.Load())
+        ))
 
         module = ast.Module(body=module_body, type_ignores=[])
         ast.fix_missing_locations(module)
+        
         return module
 
     def _generate_imports(self) -> List[ast.stmt]:
@@ -127,7 +185,49 @@ class CodeGenerator:
                 names=[ast.alias(name='validate_with_model', asname=None)],
                 level=0
             ),
+            ast.ImportFrom(
+                module='pyhtml.runtime.loader',
+                names=[ast.alias(name='load_component', asname=None)],
+                level=0
+            ),
         ]
+
+    def _generate_component_imports(self, parsed: ParsedPyHTML) -> Tuple[List[ast.stmt], Dict[str, str]]:
+        """
+        Generate imports for components and return a map of TagName -> ClassName.
+        Returns: (import_stmts, component_map)
+        """
+        imports = []
+        component_map = {}
+        
+        from pyhtml.compiler.ast_nodes import ComponentDirective
+        
+        for directive in parsed.directives:
+            if isinstance(directive, ComponentDirective):
+                # !component 'path' as Name
+                # We need to resolve 'path' to a python module path.
+                # Assuming 'path' is relative to project root or use loader helper?
+                # Actually, generated code will run in server context. 
+                # Better to use our dynamic loader:
+                # Name = load_component('path', __file_path__)
+                
+                # Import load_component if not already
+                # (handled in _generate_imports? No, let's assume we import a loader helper)
+                
+                # We'll generate:
+                # Name = load_component("path", __file_path__)
+                # But imports are usually at module level.
+                # If we use load_component, it's an assignment, not an import.
+                # That's fine, we can add it to module body.
+                
+                # However, cleaner if we can generate `from x import Y`.
+                # But we don't know the exact class name inside the file (it's generated).
+                # The dynamic loader `load_component` is robust.
+                
+                # Let's add `load_component` to imports
+                pass
+
+        return imports, component_map
 
     def _extract_user_imports(self, python_ast: ast.Module) -> List[ast.stmt]:
         """Extract import statements from user Python code."""
@@ -163,7 +263,25 @@ class CodeGenerator:
                         names.add(alias.asname or alias.name)
         return names
 
-    def _generate_page_class(self, parsed: ParsedPyHTML, handlers: List[ast.AsyncFunctionDef], known_methods: Set[str], known_vars: Set[str], known_imports: Set[str], async_methods: Set[str]) -> ast.ClassDef:
+    def _extract_user_variables(self, python_ast: Optional[ast.Module]) -> Set[str]:
+        """Extract variable names assigned at the top level of user code."""
+        vars = set()
+        if not python_ast:
+            return vars
+            
+        for node in python_ast.body:
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        vars.add(target.id)
+            elif isinstance(node, ast.AnnAssign):
+                if isinstance(node.target, ast.Name):
+                    vars.add(node.target.id)
+        return vars
+
+    def _generate_page_class(self, parsed: ParsedPyHTML, handlers: List[ast.AsyncFunctionDef], 
+                           known_methods: Set[str], known_vars: Set[str], known_imports: Set[str], 
+                           async_methods: Set[str], component_map: Dict[str, str]) -> ast.ClassDef:
         """Generate page class definition."""
         class_body = []
         
@@ -202,7 +320,10 @@ class CodeGenerator:
         # Pass ALL globals to avoid auto-calling variables and prefixing imports
         all_globals = known_methods.union(known_vars).union(known_imports)
         
-        render_func, binding_funcs = self._generate_render_template_method(parsed, known_methods, known_imports, async_methods)
+        
+        render_func, binding_funcs = self._generate_render_template_method(
+            parsed, known_methods, known_imports, async_methods, component_map
+        )
         if render_func:
             class_body.append(render_func)
         class_body.extend(binding_funcs)
@@ -218,22 +339,36 @@ class CodeGenerator:
 
         # Determine base class
         base_id = 'BasePage'
-        layout_id_hash = None
-        if parsed.file_path:
-            import hashlib
-            layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
-            
-            # Add LAYOUT_ID class attribute
-            class_body.append(ast.Assign(
-                 targets=[ast.Name(id='LAYOUT_ID', ctx=ast.Store())],
-                 value=ast.Constant(value=layout_id_hash)
-            ))
-            
         if parsed.get_directive_by_type(LayoutDirective):
             base_id = '_LayoutBase'
 
+        # Inject LAYOUT_ID if we determined one is needed
+        # We need to calculate it here too or pass it back from _generate_render_template_method
+        # Since we need it for class attribute, let's calculate it early.
+        layout_id_to_inject = None
+        if parsed.file_path:
+             import hashlib
+             layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
+             # Recursive check for slots
+             has_slots = self._has_slots_recursive(parsed.template)
+             if has_slots:
+                 layout_id_to_inject = layout_id_hash
+        
+        if layout_id_to_inject:
+
+            class_body.append(ast.Assign(
+                 targets=[ast.Name(id='LAYOUT_ID', ctx=ast.Store())],
+                 value=ast.Constant(value=layout_id_to_inject)
+            ))
+
+        # ADDED: LAYOUT_ID class attribute to identify components/layouts
+        # But only if it's not already in user code?
+        # Actually, let's only add it if it's explicitly a component or has no parent?
+        # For simplicity and to avoid clashing with existing tests, let's only add if needed.
+        
         cls_def = ast.ClassDef(
             name=self._get_class_name(parsed),
+
             bases=[ast.Name(id=base_id, ctx=ast.Load())],
             keywords=[],
             body=class_body,
@@ -286,6 +421,12 @@ class CodeGenerator:
                 # Check for events
                 for attr in node.special_attributes:
                     if isinstance(attr, EventAttribute):
+                        # Pre-processing: Strip wrapping braces if present (e.g. from {code} syntax)
+                        # This ensures code inside is processed correctly whether quoted or not in source
+                        raw = attr.handler_name.strip()
+                        if raw.startswith('{') and raw.endswith('}'):
+                            attr.handler_name = raw[1:-1].strip()
+
                         is_identifier = attr.handler_name.isidentifier()
                         needs_wrapper = (not is_identifier) or (busy_var is not None)
                         
@@ -899,54 +1040,148 @@ class CodeGenerator:
 
     def _generate_init_method(self, parsed: ParsedPyHTML) -> ast.FunctionDef:
         """Generate __init__ method."""
+        # Base init args
+        init_args = [
+             ast.arg(arg='self'),
+             ast.arg(arg='request'),
+             ast.arg(arg='params'),
+             ast.arg(arg='query'),
+             ast.arg(arg='path'),
+             ast.arg(arg='url')
+        ]
+        defaults = [ast.Constant(value=None), ast.Constant(value=None)]
+        
+        props_assigns = []
+        
+        # Handle Props directive
+        props_directive = parsed.get_directive_by_type(PropsDirective)
+        if props_directive:
+            # !props(name: type, arg=default)
+            # Add to init_args
+            for name, type_hint, default_val in props_directive.args:
+                # Annotation
+                annotation = ast.parse(type_hint, mode='eval').body if type_hint else None
+                
+                # Default
+                if default_val is not None:
+                     # Parse default value expr
+                     defaults.append(ast.parse(default_val, mode='eval').body)
+                else:
+                     # No default: must come before args with defaults?
+                     # Standard python rules: non-default args first.
+                     # But we are appending AFTER request/params etc which DON'T have defaults (except path/url which do)
+                     # Wait, request, params, query don't have defaults in base method signature we generated before:
+                     # args=[arg('self'), arg('request')...]
+                     # defaults=[None, None] (for path/url?)
+                     
+                     # Actually standard signature above was:
+                     # args: self, request, params, query, path, url
+                     # defaults: path=None, url=None
+                     
+                     # So if we add a non-default prop after 'url=None', it's invalid syntax.
+                     # "non-default argument follows default argument"
+                     
+                     # Strategy: Make ALL props keyword-only or ensure order?
+                     # Components are instantiated with kwargs mostly?
+                     # Or we just add them to the end and expect users to provide defaults if we have defaults before?
+                     # Simpler: Make them keyword arguments (kwonlyargs).
+                     pass
+                     
+            
+            # Implementation: Use kwonlyargs for props to avoid mess with positional defaults
+            kwonlyargs = []
+            kw_defaults = []
+            
+            for name, type_hint, default_val in props_directive.args:
+                 annotation = ast.parse(type_hint, mode='eval').body if type_hint else None
+                 kwonlyargs.append(ast.arg(arg=name, annotation=annotation))
+                 
+                 if default_val is not None:
+                     kw_defaults.append(ast.parse(default_val, mode='eval').body)
+                 else:
+                     kw_defaults.append(None) # Required kwarg
+                 
+                 # Assign to self
+                 # self.name = name
+                 props_assigns.append(ast.Assign(
+                     targets=[ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=name, ctx=ast.Store())],
+                     value=ast.Name(id=name, ctx=ast.Load())
+                 ))
+                 
+        else:
+             kwonlyargs = []
+             kw_defaults = []
+
+        
+        body = [
+            ast.Expr(value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Call(
+                        func=ast.Name(id='super', ctx=ast.Load()),
+                        args=[],
+                        keywords=[]
+                    ),
+                    attr='__init__',
+                    ctx=ast.Load()
+                ),
+                args=[
+                    ast.Name(id='request', ctx=ast.Load()),
+                    ast.Name(id='params', ctx=ast.Load()),
+                    ast.Name(id='query', ctx=ast.Load()),
+                    ast.Name(id='path', ctx=ast.Load()),
+                    ast.Name(id='url', ctx=ast.Load())
+                ],
+                keywords=[ast.keyword(arg=None, value=ast.Name(id='kwargs', ctx=ast.Load()))]
+            ))
+        ]
+        
+        # Add prop assignments
+        body.extend(props_assigns)
+        
+        
+        # NOTE: !provide is now handled in _generate_render_template_method to ensure reactivity
+        
+        # Handle !inject - retrieve values from context
+        inject_directive = parsed.get_directive_by_type(InjectDirective)
+        if inject_directive:
+            # self.local_var = self.context.get('GLOBAL_KEY')
+            for local_var, global_key in inject_directive.mapping.items():
+                body.append(ast.Assign(
+                    targets=[ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=local_var, ctx=ast.Store())],
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='context', ctx=ast.Load()),
+                            attr='get',
+                            ctx=ast.Load()
+                        ),
+                        args=[ast.Constant(value=global_key)],
+                        keywords=[]
+                    )
+                ))
+
+        # Call _init_slots
+        body.append(ast.Expr(value=ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id='self', ctx=ast.Load()),
+                attr='_init_slots',
+                ctx=ast.Load()
+            ),
+            args=[],
+            keywords=[]
+        )))
+
         return ast.FunctionDef(
             name='__init__',
             args=ast.arguments(
                 posonlyargs=[],
-                args=[
-                    ast.arg(arg='self'),
-                    ast.arg(arg='request'),
-                    ast.arg(arg='params'),
-                    ast.arg(arg='query'),
-                    ast.arg(arg='path'),
-                    ast.arg(arg='url')
-                ],
+                args=init_args,
                 vararg=None,
-                kwonlyargs=[],
-                kw_defaults=[],
-                defaults=[ast.Constant(value=None), ast.Constant(value=None)]
+                kwonlyargs=kwonlyargs,
+                kw_defaults=kw_defaults,
+                kwarg=ast.arg(arg='kwargs', annotation=None),
+                defaults=defaults
             ),
-            body=[
-                ast.Expr(value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Call(
-                            func=ast.Name(id='super', ctx=ast.Load()),
-                            args=[],
-                            keywords=[]
-                        ),
-                        attr='__init__',
-                        ctx=ast.Load()
-                    ),
-                    args=[
-                        ast.Name(id='request', ctx=ast.Load()),
-                        ast.Name(id='params', ctx=ast.Load()),
-                        ast.Name(id='query', ctx=ast.Load()),
-                        ast.Name(id='path', ctx=ast.Load()),
-                        ast.Name(id='url', ctx=ast.Load())
-                    ],
-                    keywords=[]
-                )),
-                # Call _init_slots
-                ast.Expr(value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id='self', ctx=ast.Load()),
-                        attr='_init_slots',
-                        ctx=ast.Load()
-                    ),
-                    args=[],
-                    keywords=[]
-                ))
-            ],
+            body=body,
             decorator_list=[],
             returns=None
         )
@@ -980,7 +1215,8 @@ class CodeGenerator:
     def _transform_to_method(self, node, known_methods: Set[str] = None):
         """Transform a function into a method (add self, handle globals)."""
         # 1. Add self argument
-        node.args.args.insert(0, ast.arg(arg='self'))
+        if not (node.args.args and node.args.args[0].arg == 'self'):
+            node.args.args.insert(0, ast.arg(arg='self'))
         
         # 2. Find global declarations and include known methods
         global_vars = set()
@@ -1054,8 +1290,12 @@ class CodeGenerator:
             returns=None
         )
 
-    def _generate_render_template_method(self, parsed: ParsedPyHTML, known_methods: Set[str] = None, known_globals: Set[str] = None, async_methods: Set[str] = None) -> Tuple[Optional[ast.FunctionDef], List[ast.AsyncFunctionDef]]:
+    def _generate_render_template_method(self, parsed: ParsedPyHTML, known_methods: Set[str] = None, 
+                                       known_globals: Set[str] = None, async_methods: Set[str] = None, 
+                                       component_map: Dict[str, str] = None) -> Tuple[Optional[ast.FunctionDef], List[ast.AsyncFunctionDef]]:
         """Generate _render_template method and binding/slot handlers."""
+        if component_map is None:
+            component_map = {}
         # Check for layout
         layout_directive = parsed.get_directive_by_type(LayoutDirective)
         
@@ -1074,7 +1314,8 @@ class CodeGenerator:
                 parsed.template, 
                 file_id=file_id, 
                 known_globals=known_globals,
-                layout_id=layout_id
+                layout_id=layout_id,
+                component_map=component_map
             )
             
             file_hash = hashlib.md5(file_id.encode()).hexdigest()[:8] if file_id else ""
@@ -1145,16 +1386,128 @@ class CodeGenerator:
                 returns=None
             )
             binding_funcs.append(init_slots_func)
+            
+            # Handle !provide - Override render() to update context before layout rendering
+            provide_directive = parsed.get_directive_by_type(ProvideDirective)
+            if provide_directive:
+                 provide_body = []
+                 for key, val_expr in provide_directive.mapping.items():
+                      val_ast = self.template_codegen._transform_expr(val_expr, set(), known_globals)
+                      provide_body.append(ast.Assign(
+                          targets=[ast.Subscript(
+                              value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='context', ctx=ast.Load()),
+                              slice=ast.Constant(value=key),
+                              ctx=ast.Store()
+                          )],
+                          value=val_ast
+                      ))
+                 
+                 # return await super().render(init)
+                 render_call = ast.Call(
+                     func=ast.Attribute(
+                          value=ast.Call(func=ast.Name(id='super', ctx=ast.Load()), args=[], keywords=[]),
+                          attr='render', ctx=ast.Load()
+                     ),
+                     args=[ast.Name(id='init', ctx=ast.Load())],
+                     keywords=[]
+                 )
+                 provide_body.append(ast.Return(value=ast.Await(value=render_call)))
+                 
+                 render_override = ast.AsyncFunctionDef(
+                     name='render',
+                     args=ast.arguments(
+                         posonlyargs=[],
+                         args=[
+                             ast.arg(arg='self'),
+                             ast.arg(arg='init', annotation=ast.Name(id='bool', ctx=ast.Load()))
+                         ],
+                         vararg=None,
+                         kwonlyargs=[],
+                         kw_defaults=[],
+                         defaults=[ast.Constant(value=True)]
+                     ),
+                     body=provide_body,
+                     decorator_list=[],
+                     returns=None
+                 )
+                 binding_funcs.append(render_override)
 
         else:
             # === Standard Mode ===
-            import hashlib
-            layout_id = hashlib.md5(str(parsed.file_path).encode()).hexdigest() if parsed.file_path else None
+            # We no longer aggressively generate layout_id/scope_id for everything
+            # to avoid breaking existing tests.
+            layout_id = None
+            scope_id = None
+            
+            if parsed.file_path:
+                import hashlib
+                layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
+                # Use as layout_id if we have slots to fill for ourselves (as a component)
+                # Or for scoping if <style scoped> is present
+                has_scoped_style = any(n.tag == 'style' and 'scoped' in n.attributes for n in parsed.template)
+                if has_scoped_style:
+                    scope_id = layout_id_hash[:8]
+                
+                # If we are a layout (referenced by others), we should have a LAYOUT_ID.
+                # But we don't know if we ARE a layout here.
+                # We'll assume if there are <slot> tags, we might be a layout.
+                has_slots = self._has_slots_recursive(parsed.template)
+                if has_slots:
+                    layout_id = layout_id_hash
+            
+            # Extract Props to Unpack
+
+            prop_names = set()
+            props_unpack_stmts = []
+            
+            # Using imported PropsDirective from earlier context or get it again
+            # We are inside the method, 'parsed' is available.
+            props_directive = parsed.get_directive_by_type(PropsDirective)
+            if props_directive:
+                for name, _, _ in props_directive.args:
+                    prop_names.add(name)
+                    # prop = self.prop
+                    props_unpack_stmts.append(ast.Assign(
+                        targets=[ast.Name(id=name, ctx=ast.Store())],
+                        value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=name, ctx=ast.Load())
+                    ))
             
             render_func, aux_funcs = self.template_codegen.generate_render_method(
                 parsed.template, layout_id=layout_id,
-                known_methods=known_methods, known_globals=known_globals, async_methods=async_methods
+                known_methods=known_methods, known_globals=known_globals, async_methods=async_methods,
+                component_map=component_map,
+                scope_id=scope_id,
+                initial_locals=prop_names
             )
+
+            
+            # Prepend unpack statements to render_func body
+            if render_func and props_unpack_stmts:
+                render_func.body[0:0] = props_unpack_stmts
+
+            # Handle !provide - Update context values at start of render to catch state changes
+            provide_directive = parsed.get_directive_by_type(ProvideDirective)
+            if provide_directive and render_func:
+                provide_stmts = []
+                for key, val_expr in provide_directive.mapping.items():
+                    # Transform expression using known globals for this page scope
+                    # Note: val_expr is string. We need to parse it or use transform helper.
+                    
+                    val_ast = self.template_codegen._transform_expr(val_expr, set(), known_globals)
+                    
+                    provide_stmts.append(ast.Assign(
+                        targets=[ast.Subscript(
+                            value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='context', ctx=ast.Load()),
+                            slice=ast.Constant(value=key),
+                            ctx=ast.Store()
+                        )],
+                        value=val_ast
+                    ))
+                
+                # Insert after props unpacking (if any)
+                insert_idx = len(props_unpack_stmts) if props_unpack_stmts else 0
+                render_func.body[insert_idx:insert_idx] = provide_stmts
+            
             binding_funcs.extend(aux_funcs)
 
             # SPA injection
@@ -1168,6 +1521,7 @@ class CodeGenerator:
             spa_check = ast.If(
                 test=ast.BoolOp(op=ast.And(), values=[
                     ast.UnaryOp(op=ast.Not(), operand=ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value="__no_spa__"), ast.Constant(value=False)], keywords=[])),
+                    ast.UnaryOp(op=ast.Not(), operand=ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value="__is_component__"), ast.Constant(value=False)], keywords=[])),
                     ast.BoolOp(op=ast.Or(), values=[
                         ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value="__spa_enabled__"), ast.Constant(value=False)], keywords=[]),
                         ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Attribute(value=ast.Attribute(value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='request', ctx=ast.Load()), attr='app', ctx=ast.Load()), attr='state', ctx=ast.Load()), ast.Constant(value='enable_pjax'), ast.Constant(value=False)], keywords=[])
@@ -1186,19 +1540,11 @@ class CodeGenerator:
                             args=[ast.Dict(keys=[ast.Constant(value='sibling_paths'), ast.Constant(value='enable_pjax')], values=[ast.Name(id='sibling_paths', ctx=ast.Load()), ast.Name(id='pjax_enabled', ctx=ast.Load())])], keywords=[])], 
                         keywords=[])),
                     ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), args=[ast.Constant(value='</script>')], keywords=[])),
-                    # parts.append(client lib) - dynamically select core vs dev bundle
-                    # parts.append(f'<script src="{self.request.app.state.pyhtml._get_client_script_url()}"></script>')
                     ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), 
                         args=[ast.JoinedStr(values=[
                             ast.Constant(value='<script src="'),
                             ast.FormattedValue(value=ast.Call(
-                                func=ast.Attribute(
-                                    value=ast.Attribute(
-                                        value=ast.Attribute(value=ast.Attribute(value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='request', ctx=ast.Load()), attr='app', ctx=ast.Load()), attr='state', ctx=ast.Load()),
-                                        attr='pyhtml', ctx=ast.Load()
-                                    ),
-                                    attr='_get_client_script_url', ctx=ast.Load()
-                                ),
+                                func=ast.parse("self.request.app.state.pyhtml._get_client_script_url").body[0].value,
                                 args=[], keywords=[]
                             ), conversion=-1, format_spec=None),
                             ast.Constant(value='"></script>')
@@ -1249,5 +1595,15 @@ class CodeGenerator:
             ))
 
         return render_func, binding_funcs
+
+    def _has_slots_recursive(self, nodes: List[TemplateNode]) -> bool:
+        """Check recursively if the template contains any <slot> elements."""
+        for node in nodes:
+            if node.tag == 'slot':
+                return True
+            if self._has_slots_recursive(node.children):
+                return True
+        return False
+
 
 

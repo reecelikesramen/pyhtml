@@ -129,5 +129,76 @@ class TestPageRendering(unittest.TestCase):
         finally:
             loop.close()
 
+    def test_page_style_initialization(self):
+        from pyhtml.runtime.style_collector import StyleCollector
+        request = MagicMock()
+        page = BasePage(request, {}, {})
+        self.assertIsInstance(page._style_collector, StyleCollector)
+
+    def test_page_shared_style_collector(self):
+        from pyhtml.runtime.style_collector import StyleCollector
+        collector = StyleCollector()
+        request = MagicMock()
+        page = BasePage(request, {}, {}, _style_collector=collector)
+        self.assertIs(page._style_collector, collector)
+
+    def test_page_injects_styles_into_head(self):
+        class StylePage(BasePage):
+            async def _render_template(self):
+                return "<html><head></head><body></body></html>"
+        
+        request = MagicMock()
+        page = StylePage(request, {}, {})
+        page._style_collector.add('s1', '.test { color: red; }')
+        
+        loop = asyncio.new_event_loop()
+        try:
+            # Response is a mock from self.mocks['starlette.responses'].Response
+            # page.render() returns a mock response object
+            response_mock = loop.run_until_complete(page.render())
+            
+            # The HTML is passed to the Response constructor
+            from starlette.responses import Response
+            html_passed = Response.call_args[0][0]
+            self.assertIn("<style>.test { color: red; }</style></head>", html_passed)
+        finally:
+            loop.close()
+
+    def test_render_head_slot_append(self):
+        request = MagicMock()
+        page = BasePage(request, {}, {})
+        page.register_head_slot('main', lambda: "<meta 1>")
+        page.register_head_slot('main', lambda: "<meta 2>")
+        
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(page.render_slot('$head', layout_id='main', append=True))
+            self.assertIn("<meta 1>", result)
+            self.assertIn("<meta 2>", result)
+        finally:
+            loop.close()
+
+    def test_handle_event_arg_normalization(self):
+        # We need Response to be available for the class definition
+        from starlette.responses import Response
+        class HandlerPage(BasePage):
+             def on_click(self, arg0=None):
+                 self.last_arg0 = arg0
+             async def render(self, init=True):
+                 return Response("ok")
+
+        request = MagicMock()
+        page = HandlerPage(request, {}, {})
+        
+        loop = asyncio.new_event_loop()
+        try:
+            # handle_event calls render() but we don't need to check its return value here
+            loop.run_until_complete(page.handle_event('on_click', {'args': {'arg-0': 42}}))
+            self.assertEqual(page.last_arg0, 42)
+        finally:
+            loop.close()
+
+
+
 if __name__ == '__main__':
     unittest.main()

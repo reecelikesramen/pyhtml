@@ -118,8 +118,11 @@ class TestCodeGenerator(unittest.TestCase):
         )
         module = self.generator.generate(parsed)
         
+        # Find Page Class
+        page_class = next(n for n in module.body if isinstance(n, ast.ClassDef))
         # Find _render_template method
-        render_func = next(n for n in module.body[-1].body if isinstance(n, ast.AsyncFunctionDef) and n.name == "_render_template")
+        render_func = next(n for n in page_class.body if isinstance(n, ast.AsyncFunctionDef) and n.name == "_render_template")
+
         
         # DEBUG
         # print(ast.dump(render_func))

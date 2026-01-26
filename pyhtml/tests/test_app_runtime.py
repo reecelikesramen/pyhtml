@@ -86,5 +86,29 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
         # Should register the custom route if found via regex
         self.app.router.add_route.assert_any_call("/broken", unittest.mock.ANY)
 
+    def test_reload_page_implicit_routing(self):
+        # Create a page that relies on implicit routing
+        page_path = self.pages_dir / "implicit.pyhtml"
+        page_path.write_text("<h1>Implicit</h1>")
+        
+        # Mock loader to return a class without explicit routes
+        page_class = type('Page', (object,), {})
+        self.app.loader.load = MagicMock(return_value=page_class)
+        self.app.loader.invalidate_cache = MagicMock()
+        
+        # Mock router
+        self.app.router = MagicMock()
+        self.app.router.routes = []
+        
+        # Enable path based routing
+        self.app.path_based_routing = True
+        
+        # Call reload_page
+        self.app.reload_page(page_path)
+        
+        # Verify that add_route was called with the implicit path
+        # /implicit.pyhtml -> /implicit
+        self.app.router.add_route.assert_called_with("/implicit", page_class)
+
 if __name__ == "__main__":
     unittest.main()

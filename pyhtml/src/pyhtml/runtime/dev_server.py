@@ -163,7 +163,17 @@ async def run_dev_server(
             
             files_to_watch = [pages_dir, pyhtml_src_dir]
             if app_module_path:
-                files_to_watch.append(app_module_path.parent) # Watch the dir containing main.py? Or just the file? awatch takes paths.
+                files_to_watch.append(app_module_path.parent)
+
+            # Explicitly look for a components directory
+            # Common pattern: pages/../components OR pages/components??
+            # Usually components are siblings to pages or in root.
+            # Start with pages_dir parent
+            components_dir = pages_dir.parent / 'components'
+            if components_dir.exists():
+                files_to_watch.append(components_dir)
+            
+            print(f"PyHTML: files_to_watch: {files_to_watch}")
             
             async for changes in awatch(*files_to_watch, stop_event=shutdown_event):
                 # Check what changed
