@@ -138,7 +138,7 @@ class TestFileRouting(unittest.TestCase):
 
     def test_scan_layouts(self):
         """Test layout discovery and injection."""
-        layout = self.tmp_path / "layout.pyhtml"
+        layout = self.tmp_path / "__layout__.pyhtml"
         layout.touch()
         
         (self.tmp_path / "index.pyhtml").touch()
@@ -148,7 +148,7 @@ class TestFileRouting(unittest.TestCase):
         (sub / "page.pyhtml").touch()
         
         # Sub layout
-        sub_layout = sub / "layout.pyhtml"
+        sub_layout = sub / "__layout__.pyhtml"
         sub_layout.touch()
         
         self.app._scan_directory(self.tmp_path)

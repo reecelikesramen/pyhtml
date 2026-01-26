@@ -1,7 +1,7 @@
 !path {
     'counter': '/basic/counter'
 }
-!layout "layout.pyhtml"
+!layout "__layout__.pyhtml"
 
 <slot name="title">Counter Example</slot>
 
