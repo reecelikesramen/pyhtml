@@ -24,7 +24,7 @@ class BindAttributeParser(AttributeParser):
                 f"Value for '{attr_name}' must be wrapped in brackets: {attr_name}={{expr}}",
                 line=line,
             )
-        
+
         # Strip brackets
         expr = attr_value[1:-1].strip()
 

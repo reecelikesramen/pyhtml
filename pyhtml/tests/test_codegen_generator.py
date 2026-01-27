@@ -2,7 +2,6 @@ import ast
 import unittest
 
 from pyhtml.compiler.ast_nodes import (
-    BindAttribute,
     EventAttribute,
     FieldValidationRules,
     FormValidationSchema,

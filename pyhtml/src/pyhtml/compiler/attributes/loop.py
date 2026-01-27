@@ -20,7 +20,8 @@ class LoopAttributeParser(AttributeParser):
         """Parse $for attribute."""
         if not (attr_value.startswith("{") and attr_value.endswith("}")):
             raise PyHTMLSyntaxError(
-                f"Value for '{attr_name}' must be wrapped in brackets: {attr_name}={{item in items}}",
+                f"Value for '{attr_name}' must be wrapped in brackets: "
+                f"{attr_name}={{item in items}}",
                 line=line,
             )
 
@@ -69,6 +70,4 @@ class KeyAttributeParser(AttributeParser):
             )
 
         expr = attr_value[1:-1].strip()
-        return KeyAttribute(
-            name=attr_name, value=attr_value, expr=expr, line=line, column=col
-        )
+        return KeyAttribute(name=attr_name, value=attr_value, expr=expr, line=line, column=col)

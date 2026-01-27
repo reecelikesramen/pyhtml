@@ -185,7 +185,7 @@ class TemplateCodegen:
             initial_locals = set()
         else:
             initial_locals = initial_locals.copy()
-        
+
         # 'json' is imported in the body, so we treat it as local to avoid transforming to self.json
         initial_locals.add("json")
 

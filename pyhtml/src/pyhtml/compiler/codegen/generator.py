@@ -478,7 +478,7 @@ class CodeGenerator:
         """Extract inline handlers and wrap handlers for bindings."""
         handlers = []
         handler_count = 0
-        from pyhtml.compiler.ast_nodes import BindAttribute, EventAttribute
+        from pyhtml.compiler.ast_nodes import EventAttribute
 
         def visit_nodes(nodes):
             nonlocal handler_count
@@ -821,7 +821,8 @@ class CodeGenerator:
                                 args=[],
                                 keywords=[],
                             ),
-                            # Locals: just self, because _transform_expr converts other names to self.x
+                            # Locals: just self, because _transform_expr converts other names
+                            # to self.x
                             ast.Dict(
                                 keys=[ast.Constant(value="self")],
                                 values=[ast.Name(id="self", ctx=ast.Load())],

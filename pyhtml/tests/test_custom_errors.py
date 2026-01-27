@@ -1,4 +1,3 @@
-import pytest
 from pyhtml.runtime.app import PyHTML
 from starlette.testclient import TestClient
 

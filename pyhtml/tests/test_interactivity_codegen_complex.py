@@ -35,7 +35,7 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
 
     def test_multiple_handlers_complex(self):
         """Verify behavior with multiple handlers having arguments and modifiers."""
-        template = '<button @click.stop={foo(id1)} @click.prevent={bar(id2)}>Click</button>'
+        template = "<button @click.stop={foo(id1)} @click.prevent={bar(id2)}>Click</button>"
         parsed = self.parser.parse(template)
 
         module_ast = self.generator.generate(parsed)
@@ -51,7 +51,6 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         ][0]
         self.assertIn("stop", modifiers_line)
         self.assertIn("prevent", modifiers_line)
-
 
     def test_form_validation_wrapper(self):
         """Test that @submit on a form with validation schema generates a wrapper."""

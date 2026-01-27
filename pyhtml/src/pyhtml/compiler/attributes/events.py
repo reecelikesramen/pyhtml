@@ -30,7 +30,8 @@ class EventAttributeParser(AttributeParser):
 
         if not (attr_value.startswith("{") and attr_value.endswith("}")):
             raise PyHTMLSyntaxError(
-                f"Event handler for '{attr_name}' must be wrapped in brackets: {attr_name}={{expr}}",
+                f"Event handler for '{attr_name}' must be wrapped in brackets: "
+                f"{attr_name}={{expr}}",
                 line=line,
             )
 

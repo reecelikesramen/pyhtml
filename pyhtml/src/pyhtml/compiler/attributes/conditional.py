@@ -23,7 +23,7 @@ class ConditionalAttributeParser(AttributeParser):
                 f"Value for '{attr_name}' must be wrapped in brackets: {attr_name}={{expr}}",
                 line=line,
             )
-        
+
         expr = attr_value[1:-1].strip()
 
         if attr_name == "$if":

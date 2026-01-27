@@ -11,29 +11,29 @@ class TestInteractivityCompiler(unittest.TestCase):
         self.codegen = EventAttributeCodegen()
 
     def test_parser_basic(self):
-        attr = self.parser.parse("@click", '{handler}', 1, 1)
+        attr = self.parser.parse("@click", "{handler}", 1, 1)
         self.assertIsNotNone(attr)
         self.assertEqual(attr.event_type, "click")
         self.assertEqual(attr.handler_name, "handler")
         self.assertEqual(attr.modifiers, [])
 
     def test_parser_single_modifier(self):
-        attr = self.parser.parse("@click.prevent", '{handler}', 1, 1)
+        attr = self.parser.parse("@click.prevent", "{handler}", 1, 1)
         self.assertIsNotNone(attr)
         self.assertEqual(attr.event_type, "click")
         self.assertEqual(attr.modifiers, ["prevent"])
 
     def test_parser_multiple_modifiers(self):
-        attr = self.parser.parse("@keyup.enter.stop", '{handler}', 1, 1)
+        attr = self.parser.parse("@keyup.enter.stop", "{handler}", 1, 1)
         self.assertIsNotNone(attr)
         self.assertEqual(attr.event_type, "keyup")
         self.assertEqual(attr.modifiers, ["enter", "stop"])
 
     def test_parser_performance_modifiers(self):
-        attr = self.parser.parse("@input.debounce", '{handler}', 1, 1)
+        attr = self.parser.parse("@input.debounce", "{handler}", 1, 1)
         self.assertEqual(attr.modifiers, ["debounce"])
 
-        attr = self.parser.parse("@scroll.throttle", '{handler}', 1, 1)
+        attr = self.parser.parse("@scroll.throttle", "{handler}", 1, 1)
         self.assertEqual(attr.modifiers, ["throttle"])
 
     def test_codegen_no_modifiers(self):

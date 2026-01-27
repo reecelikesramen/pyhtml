@@ -6,7 +6,7 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from pyhtml.compiler.ast_nodes import BindAttribute, EventAttribute, ParsedPyHTML, TemplateNode
+from pyhtml.compiler.ast_nodes import EventAttribute, ParsedPyHTML, TemplateNode
 from pyhtml.compiler.codegen.generator import CodeGenerator
 
 
@@ -62,7 +62,6 @@ async def my_async_task(self):
         source = ast.unparse(handler)
         self.assertIn("await self.my_async_task()", source)
         print("\nTest Implicit Async Await Source:\n", source)
-
 
 
 if __name__ == "__main__":

@@ -23,7 +23,6 @@ from pyhtml.compiler.attributes.conditional import ConditionalAttributeParser
 from pyhtml.compiler.attributes.events import EventAttributeParser
 from pyhtml.compiler.attributes.form import ModelAttributeParser
 from pyhtml.compiler.attributes.loop import KeyAttributeParser, LoopAttributeParser
-
 from pyhtml.compiler.directives.base import DirectiveParser
 from pyhtml.compiler.directives.component import ComponentDirectiveParser
 from pyhtml.compiler.directives.context import ContextDirectiveParser
@@ -235,7 +234,7 @@ class PyHTMLParser:
                 return f'{attr}="{{{value}}}"'
 
             template_html = re.sub(
-                r'([a-zA-Z0-9_:@$-]+)=\{([^{}]*)\}', quote_wrapper, template_html
+                r"([a-zA-Z0-9_:@$-]+)=\{([^{}]*)\}", quote_wrapper, template_html
             )
 
             # Pre-process: Handle {**spread} syntax
@@ -303,7 +302,7 @@ class PyHTMLParser:
                             )
                             if tail_nodes:
                                 template_nodes.extend(tail_nodes)
-            
+
             except PyHTMLSyntaxError:
                 raise
             except Exception:
