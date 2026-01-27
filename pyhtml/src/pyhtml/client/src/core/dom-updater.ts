@@ -22,6 +22,13 @@ export class DOMUpdater {
      * Event handlers should check this to avoid triggering events during updates.
      */
     static isUpdating = false;
+
+    private debug: boolean;
+
+    constructor(debug: boolean = false) {
+        this.debug = debug;
+    }
+
     /**
      * Generate a stable key for an element.
      * Used by morphdom to match elements between old and new DOM.
@@ -187,7 +194,9 @@ export class DOMUpdater {
     update(newHtml: string): void {
         // Set flag to suppress focus/blur events during update
         DOMUpdater.isUpdating = true;
-        console.log('[DOMUpdater] Starting update, isUpdating =', DOMUpdater.isUpdating);
+        if (this.debug) {
+            console.log('[DOMUpdater] Starting update, isUpdating =', DOMUpdater.isUpdating);
+        }
 
         try {
             // Capture focus before morphdom runs

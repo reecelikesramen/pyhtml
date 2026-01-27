@@ -15,29 +15,6 @@ class TestGeneratorExhaustive(unittest.TestCase):
     def setUp(self):
         self.generator = CodeGenerator()
 
-    def test_process_handlers_busy_binding(self):
-        # Trigger a wrapper by using a busy binding
-        from pyhtml.compiler.ast_nodes import BindAttribute
-
-        node = TemplateNode(tag="input", line=1, column=0)
-        node.special_attributes = [
-            EventAttribute(
-                name="@input",
-                value="update",
-                event_type="input",
-                handler_name="update",
-                line=1,
-                column=0,
-            ),
-            BindAttribute(
-                name="$bind", value="busy", variable="is_忙", binding_type="busy", line=1, column=0
-            ),
-        ]
-        parsed = ParsedPyHTML(template=[node])
-
-        handlers = self.generator._process_handlers(parsed, set(), set())
-        self.assertEqual(len(handlers), 1)
-
     def test_generate_form_validation_complex(self):
         # Form with validation and model
         schema = FormValidationSchema(

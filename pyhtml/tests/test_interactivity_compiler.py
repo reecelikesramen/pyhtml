@@ -11,35 +11,35 @@ class TestInteractivityCompiler(unittest.TestCase):
         self.codegen = EventAttributeCodegen()
 
     def test_parser_basic(self):
-        attr = self.parser.parse("@click", '"handler"', 1, 1)
+        attr = self.parser.parse("@click", '{handler}', 1, 1)
         self.assertIsNotNone(attr)
         self.assertEqual(attr.event_type, "click")
         self.assertEqual(attr.handler_name, "handler")
         self.assertEqual(attr.modifiers, [])
 
     def test_parser_single_modifier(self):
-        attr = self.parser.parse("@click.prevent", '"handler"', 1, 1)
+        attr = self.parser.parse("@click.prevent", '{handler}', 1, 1)
         self.assertIsNotNone(attr)
         self.assertEqual(attr.event_type, "click")
         self.assertEqual(attr.modifiers, ["prevent"])
 
     def test_parser_multiple_modifiers(self):
-        attr = self.parser.parse("@keyup.enter.stop", '"handler"', 1, 1)
+        attr = self.parser.parse("@keyup.enter.stop", '{handler}', 1, 1)
         self.assertIsNotNone(attr)
         self.assertEqual(attr.event_type, "keyup")
         self.assertEqual(attr.modifiers, ["enter", "stop"])
 
     def test_parser_performance_modifiers(self):
-        attr = self.parser.parse("@input.debounce", '"handler"', 1, 1)
+        attr = self.parser.parse("@input.debounce", '{handler}', 1, 1)
         self.assertEqual(attr.modifiers, ["debounce"])
 
-        attr = self.parser.parse("@scroll.throttle", '"handler"', 1, 1)
+        attr = self.parser.parse("@scroll.throttle", '{handler}', 1, 1)
         self.assertEqual(attr.modifiers, ["throttle"])
 
     def test_codegen_no_modifiers(self):
         attr = EventAttribute(
             name="@click",
-            value='"handler"',
+            value="{handler}",
             event_type="click",
             handler_name="handler",
             modifiers=[],
@@ -52,7 +52,7 @@ class TestInteractivityCompiler(unittest.TestCase):
     def test_codegen_with_modifiers(self):
         attr = EventAttribute(
             name="@click.prevent.stop",
-            value='"handler"',
+            value="{handler}",
             event_type="click",
             handler_name="handler",
             modifiers=["prevent", "stop"],
@@ -65,7 +65,7 @@ class TestInteractivityCompiler(unittest.TestCase):
         self.assertIn('data-modifiers-click="prevent stop"', html)
 
     def test_parser_strip_quotes(self):
-        attr = self.parser.parse("@click", "'handler'", 1, 1)
+        attr = self.parser.parse("@click", "{handler}", 1, 1)
         self.assertEqual(attr.handler_name, "handler")
 
     def test_can_parse_validation(self):
@@ -76,11 +76,11 @@ class TestInteractivityCompiler(unittest.TestCase):
 
     def test_parser_edge_cases(self):
         # Multiple dots
-        attr = self.parser.parse("@click..stop", '"h"', 1, 1)
+        attr = self.parser.parse("@click..stop", "{h}", 1, 1)
         self.assertIn("stop", attr.modifiers)
 
         # Only @
-        attr = self.parser.parse("@", '"h"', 1, 1)
+        attr = self.parser.parse("@", "{h}", 1, 1)
         self.assertEqual(attr.event_type, "")
         self.assertEqual(attr.modifiers, [])
 

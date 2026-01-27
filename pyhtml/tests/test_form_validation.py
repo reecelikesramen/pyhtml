@@ -132,7 +132,7 @@ class TestFormParsing(unittest.TestCase):
         parser = PyHTMLParser()
 
         content = """
-<form @submit="handle_form">
+<form @submit={handle_form}>
     <input name="username" required minlength="3" maxlength="20">
     <input name="email" type="email" required>
     <input name="age" type="number" min="18" max="100">
@@ -200,7 +200,7 @@ class TestFormCodegen(unittest.TestCase):
         generator = CodeGenerator()
 
         content = """
-<form @submit="handle_form">
+<form @submit={handle_form}>
     <input name="username" required minlength="3">
     <button type="submit">Submit</button>
 </form>

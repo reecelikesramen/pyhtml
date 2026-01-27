@@ -7,7 +7,7 @@
 
 <h1>Counter</h1>
 <p>Current count: {count}</p>
-<button @click="increment_count()">Click me</button>
+<button @click={increment_count()}>Click me</button>
 
 ---
 count = 0

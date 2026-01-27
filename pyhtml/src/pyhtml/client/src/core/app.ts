@@ -6,13 +6,16 @@ import { UnifiedEventHandler } from '../events/handler';
 export interface PyHTMLConfig extends TransportConfig {
     /** Auto-initialize on DOMContentLoaded */
     autoInit?: boolean;
+    /** Enable verbose debug logging */
+    debug?: boolean;
 }
 
 const DEFAULT_CONFIG: PyHTMLConfig = {
     autoInit: true,
     enableWebTransport: true,
     enableWebSocket: true,
-    enableHTTP: true
+    enableHTTP: true,
+    debug: false
 };
 
 /**
@@ -34,8 +37,12 @@ export class PyHTMLApp {
     constructor(config: Partial<PyHTMLConfig> = {}) {
         this.config = { ...DEFAULT_CONFIG, ...config };
         this.transport = new TransportManager(this.config);
-        this.updater = new DOMUpdater();
+        this.updater = new DOMUpdater(this.config.debug);
         this.eventHandler = new UnifiedEventHandler(this);
+    }
+
+    getConfig(): PyHTMLConfig {
+        return this.config;
     }
 
     /**
@@ -84,6 +91,9 @@ export class PyHTMLApp {
                 const meta = JSON.parse(metaScript.textContent || '{}');
                 this.siblingPaths = meta.sibling_paths || [];
                 this.pjaxEnabled = !!meta.enable_pjax;
+                if (meta.debug !== undefined) {
+                    this.config.debug = !!meta.debug;
+                }
                 // Convert path patterns to regexes for matching
                 this.pathRegexes = this.siblingPaths.map(p => this.patternToRegex(p));
             } catch (e) {

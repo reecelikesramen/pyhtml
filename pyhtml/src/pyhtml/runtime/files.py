@@ -27,7 +27,7 @@ class FileUpload:
                 # Fallback or raw base64
                 try:
                     content_bytes = base64.b64decode(content_data)
-                except:
+                except Exception:
                     content_bytes = content_data.encode("utf-8")
         else:
             content_bytes = content_data

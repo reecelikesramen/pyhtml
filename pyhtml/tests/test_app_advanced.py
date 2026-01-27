@@ -9,11 +9,11 @@ from starlette.responses import JSONResponse, Response
 
 class TestAppAdvanced(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.pages_dir = Path("/tmp/empty_pages")
+        self.pages_dir = Path("/tmp/empty_pages").resolve()
         self.pages_dir.mkdir(exist_ok=True)
         with (
             patch("starlette.applications.Starlette"),
-            patch("pyhtml.runtime.app.PageLoader"),
+            patch("pyhtml.runtime.loader.PageLoader"),
             patch("pyhtml.runtime.app.HTTPTransportHandler"),
             patch("pyhtml.runtime.app.WebSocketHandler"),
             patch("pyhtml.runtime.webtransport_handler.WebTransportHandler"),

@@ -4,28 +4,35 @@ from typing import Optional
 
 from pyhtml.compiler.ast_nodes import BindAttribute, SpecialAttribute
 from pyhtml.compiler.attributes.base import AttributeParser
+from pyhtml.compiler.exceptions import PyHTMLSyntaxError
 
 
 class BindAttributeParser(AttributeParser):
     """Parses $bind attribute."""
 
     def can_parse(self, attr_name: str) -> bool:
-        """Check if attribute is $bind or $bind:busy."""
-        return attr_name == "$bind" or attr_name.startswith("$bind:")
+        """Check if attribute is $bind."""
+        return attr_name == "$bind"
 
     def parse(
         self, attr_name: str, attr_value: str, line: int, col: int
     ) -> Optional[SpecialAttribute]:
         """Parse $bind attribute."""
-        binding_type = None
-        if ":" in attr_name:
-            binding_type = attr_name.split(":", 1)[1]
+        """Parse $bind attribute."""
+        if not (attr_value.startswith("{") and attr_value.endswith("}")):
+            raise PyHTMLSyntaxError(
+                f"Value for '{attr_name}' must be wrapped in brackets: {attr_name}={{expr}}",
+                line=line,
+            )
+        
+        # Strip brackets
+        expr = attr_value[1:-1].strip()
 
         return BindAttribute(
             name=attr_name,
             value=attr_value,
-            variable=attr_value,
-            binding_type=binding_type,
+            variable=expr,
+            binding_type=None,
             line=line,
             column=col,
         )

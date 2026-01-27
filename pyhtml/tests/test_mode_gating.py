@@ -11,7 +11,8 @@ def test_source_endpoint_requires_dev_mode_and_debug(tmp_path):
     response = client.get("/_pyhtml/source?path=/etc/passwd")
     assert response.status_code == 404
 
-    # Case 2: debug=False, _is_dev_mode=True (should not happen practically if logic aligns, but technically possible)
+    # Case 2: debug=False, _is_dev_mode=True (should not happen practically if
+    # logic aligns, but technically possible)
     app = PyHTML(debug=False, pages_dir=str(tmp_path))
     app._is_dev_mode = True
     client = TestClient(app)

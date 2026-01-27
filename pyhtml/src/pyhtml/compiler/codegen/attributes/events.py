@@ -12,7 +12,7 @@ class EventAttributeCodegen(AttributeCodegen):
 
     def generate_html(self, attr: EventAttribute) -> str:
         """Generate HTML data attribute for event."""
-        # @click.prevent="handler" → data-on-click="handler" data-modifiers-click="prevent"
+        # @click.prevent={handler} → data-on-click="handler" data-modifiers-click="prevent"
         attrs = [f'data-on-{attr.event_type}="{attr.handler_name}"']
         if attr.modifiers:
             attrs.append(f'data-modifiers-{attr.event_type}="{" ".join(attr.modifiers)}"')

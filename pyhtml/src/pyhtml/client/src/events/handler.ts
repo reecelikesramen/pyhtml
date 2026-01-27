@@ -23,6 +23,12 @@ export class UnifiedEventHandler {
         this.app = app;
     }
 
+    private debugLog(...args: any[]): void {
+        if (this.app.getConfig().debug) {
+            console.log(...args);
+        }
+    }
+
     /**
      * Initialize global event listeners.
      * Uses event delegation on document body.
@@ -75,11 +81,11 @@ export class UnifiedEventHandler {
 
         // Skip focus/blur/mouseenter/mouseleave events during DOM updates to prevent loops
         if (DOMUpdater.isUpdating && this.suppressDuringUpdate.includes(eventType)) {
-            console.log('[Handler] SUPPRESSING event during update:', eventType, 'isUpdating=', DOMUpdater.isUpdating);
+            this.debugLog('[Handler] SUPPRESSING event during update:', eventType, 'isUpdating=', DOMUpdater.isUpdating);
             return;
         }
 
-        console.log('[Handler] Processing event:', eventType, 'isUpdating=', DOMUpdater.isUpdating);
+        this.debugLog('[Handler] Processing event:', eventType, 'isUpdating=', DOMUpdater.isUpdating);
 
         // 1. Delegated handlers (standard path walk with bubbling)
         const path = e.composedPath ? e.composedPath() : [];
@@ -93,7 +99,7 @@ export class UnifiedEventHandler {
                 const handlers = this.getHandlers(element, eventType);
 
                 if (handlers.length > 0) {
-                    console.log('[handleEvent] Found handlers on', element.tagName, handlers);
+                    this.debugLog('[handleEvent] Found handlers on', element.tagName, handlers);
 
                     for (const h of handlers) {
                         // Skip if it's a .window or .outside handler - those are handled globally
@@ -145,13 +151,13 @@ export class UnifiedEventHandler {
      * Process an event for a specific element after it has been matched.
      */
     private processEvent(element: HTMLElement, eventType: string, handlerName: string, modifiers: string[], e: Event, explicitArgs?: any[]): void {
-        console.log('[processEvent]', eventType, 'handler:', handlerName, 'modifiers:', modifiers);
+        this.debugLog('[processEvent]', eventType, 'handler:', handlerName, 'modifiers:', modifiers);
 
         // --- 1. Logic Modifers ---
 
         // .prevent
         if (modifiers.includes('prevent') || eventType === 'submit') {
-            console.log('[processEvent] Calling preventDefault');
+            this.debugLog('[processEvent] Calling preventDefault');
             e.preventDefault();
         }
 
@@ -190,7 +196,7 @@ export class UnifiedEventHandler {
 
             if (keyModifiers.length > 0) {
                 const pressedKey = e.key.toLowerCase();
-                console.log('[processEvent] Key check. Pressed:', pressedKey, 'Modifiers:', keyModifiers);
+                this.debugLog('[processEvent] Key check. Pressed:', pressedKey, 'Modifiers:', keyModifiers);
 
                 // Map for special keys
                 const keyMap: Record<string, string> = {
@@ -218,7 +224,7 @@ export class UnifiedEventHandler {
                 let match = false;
                 for (const constraint of keyModifiers) {
                     const targetKey = keyMap[constraint] || constraint;
-                    console.log('[processEvent] Comparing constraint:', constraint, '->', targetKey, 'vs', normalizedPressedKey, 'code:', e.code);
+                    this.debugLog('[processEvent] Comparing constraint:', constraint, '->', targetKey, 'vs', normalizedPressedKey, 'code:', e.code);
 
                     // Match against key (normalized)
                     if (targetKey === normalizedPressedKey) {
@@ -234,7 +240,7 @@ export class UnifiedEventHandler {
                     }
                 }
                 if (!match) {
-                    console.log('[processEvent] No key match found.');
+                    this.debugLog('[processEvent] No key match found.');
                     return;
                 }
             }

@@ -18,12 +18,14 @@ class ReactiveAttributeParser(AttributeParser):
         But @ and $ are handled by other parsers anyway.
         So we just check for starting with :
         """
-        return attr_name.startswith(":") and len(attr_name) > 1
+        # Disabled: :prop="val" syntax is deprecated.
+        # Reactive attributes must use prop={expr} syntax which is handled by parser fallback.
+        return False
 
     def parse(
         self, attr_name: str, attr_value: str, line: int, col: int
     ) -> Optional[SpecialAttribute]:
-        """Parse :attr="expr"."""
+        """Parse attr={expr}"."""
         # Strip the leading :
         real_name = attr_name[1:]
 

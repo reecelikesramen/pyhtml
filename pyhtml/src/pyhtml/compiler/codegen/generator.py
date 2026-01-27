@@ -4,14 +4,22 @@ import ast
 from typing import Dict, List, Optional, Set, Tuple, Type
 
 from pyhtml.compiler.ast_nodes import (
-    Directive, ParsedPyHTML, PathDirective, NoSpaDirective, SpecialAttribute, 
-    EventAttribute, LayoutDirective, FormValidationSchema, FieldValidationRules, ModelAttribute,
-    ComponentDirective, PropsDirective, InjectDirective, ProvideDirective, TemplateNode
+    ComponentDirective,
+    Directive,
+    EventAttribute,
+    FormValidationSchema,
+    InjectDirective,
+    LayoutDirective,
+    NoSpaDirective,
+    ParsedPyHTML,
+    PathDirective,
+    PropsDirective,
+    ProvideDirective,
+    SpecialAttribute,
+    TemplateNode,
 )
-
 from pyhtml.compiler.codegen.attributes.base import AttributeCodegen
 from pyhtml.compiler.codegen.attributes.events import EventAttributeCodegen
-
 from pyhtml.compiler.codegen.directives.base import DirectiveCodegen
 from pyhtml.compiler.codegen.directives.path import PathDirectiveCodegen
 from pyhtml.compiler.codegen.template import TemplateCodegen
@@ -33,42 +41,41 @@ class CodeGenerator:
 
         self.template_codegen = TemplateCodegen()
 
-    def _generate_component_loading(self, parsed: ParsedPyHTML) -> Tuple[List[ast.stmt], Dict[str, str]]:
+    def _generate_component_loading(
+        self, parsed: ParsedPyHTML
+    ) -> Tuple[List[ast.stmt], Dict[str, str]]:
         """
         Generate code to load components and return Tag -> ClassName map.
         Returns: (stmts, component_map)
         """
         stmts = []
         component_map = {}
-        
+
         for directive in parsed.directives:
             if isinstance(directive, ComponentDirective):
                 # Name = load_component("path", __file_path__)
-                
+
                 # Check for "as Name" collision with imports or other components?
                 # Python handles it (overwrite), but maybe warn?
-                
+
                 target_name = directive.component_name
                 path = directive.path
-                
+
                 # component_map[target_name] = target_name (class is assigned to this var)
                 # Parse lowercases HTML tags, so we map lowercase name to actual class name
                 component_map[target_name.lower()] = target_name
-                
-                stmts.append(ast.Assign(
-                    targets=[ast.Name(id=target_name, ctx=ast.Store())],
-                    value=ast.Call(
-                        func=ast.Name(id='load_component', ctx=ast.Load()),
-                        args=[
-                            ast.Constant(value=path),
-                            ast.Constant(value=parsed.file_path)
-                        ],
-                        keywords=[]
+
+                stmts.append(
+                    ast.Assign(
+                        targets=[ast.Name(id=target_name, ctx=ast.Store())],
+                        value=ast.Call(
+                            func=ast.Name(id="load_component", ctx=ast.Load()),
+                            args=[ast.Constant(value=path), ast.Constant(value=parsed.file_path)],
+                            keywords=[],
+                        ),
                     )
-                ))
-                
-                
-        
+                )
+
         return stmts, component_map
 
     def generate(self, parsed: ParsedPyHTML) -> ast.Module:
@@ -80,17 +87,14 @@ class CodeGenerator:
         module_body.extend(self._generate_imports())
 
         # Add asyncio import for handle_event
-        module_body.append(
-            ast.Import(names=[ast.alias(name='asyncio', asname=None)])
-        )
-        
+        module_body.append(ast.Import(names=[ast.alias(name="asyncio", asname=None)]))
+
         # Component loading (early, so they are available)
         comp_stmts, component_map = self._generate_component_loading(parsed)
         module_body.extend(comp_stmts)
 
         # Layout logic
         layout_directive = parsed.get_directive_by_type(LayoutDirective)
-        base_class_name = "BasePage"
 
         if layout_directive:
             # Import load_layout
@@ -118,9 +122,7 @@ class CodeGenerator:
                     ),
                 )
             )
-            base_class_name = "_LayoutBase"
-
-        # Extract user imports from Python section
+            # Extract user imports from Python section
         if parsed.python_ast:
             module_body.extend(self._extract_user_imports(parsed.python_ast))
             # Extract user classes to module level (Pydantic models, etc.)
@@ -128,10 +130,10 @@ class CodeGenerator:
 
         # Extract method names early for binding logic
         known_methods, known_vars, async_methods = self._collect_global_names(parsed.python_ast)
-        
+
         # Include explicit variable assignments
         known_vars.update(self._extract_user_variables(parsed.python_ast))
-        
+
         known_imports = self._extract_import_names(parsed.python_ast)
         all_globals = known_methods.union(known_vars).union(known_imports)
 
@@ -147,16 +149,18 @@ class CodeGenerator:
             parsed, handlers, known_methods, known_vars, known_imports, async_methods, component_map
         )
         module_body.append(page_class)
-        
+
         # Export reference to main class
-        module_body.append(ast.Assign(
-            targets=[ast.Name(id='__page_class__', ctx=ast.Store())],
-            value=ast.Name(id=page_class.name, ctx=ast.Load())
-        ))
+        module_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="__page_class__", ctx=ast.Store())],
+                value=ast.Name(id=page_class.name, ctx=ast.Load()),
+            )
+        )
 
         module = ast.Module(body=module_body, type_ignores=[])
         ast.fix_missing_locations(module)
-        
+
         return module
 
     def _generate_imports(self) -> List[ast.stmt]:
@@ -189,44 +193,46 @@ class CodeGenerator:
                 level=0,
             ),
             ast.ImportFrom(
-                module='pyhtml.runtime.loader',
-                names=[ast.alias(name='load_component', asname=None)],
-                level=0
+                module="pyhtml.runtime.loader",
+                names=[ast.alias(name="load_component", asname=None)],
+                level=0,
             ),
         ]
 
-    def _generate_component_imports(self, parsed: ParsedPyHTML) -> Tuple[List[ast.stmt], Dict[str, str]]:
+    def _generate_component_imports(
+        self, parsed: ParsedPyHTML
+    ) -> Tuple[List[ast.stmt], Dict[str, str]]:
         """
         Generate imports for components and return a map of TagName -> ClassName.
         Returns: (import_stmts, component_map)
         """
         imports = []
         component_map = {}
-        
+
         from pyhtml.compiler.ast_nodes import ComponentDirective
-        
+
         for directive in parsed.directives:
             if isinstance(directive, ComponentDirective):
                 # !component 'path' as Name
                 # We need to resolve 'path' to a python module path.
                 # Assuming 'path' is relative to project root or use loader helper?
-                # Actually, generated code will run in server context. 
+                # Actually, generated code will run in server context.
                 # Better to use our dynamic loader:
                 # Name = load_component('path', __file_path__)
-                
+
                 # Import load_component if not already
                 # (handled in _generate_imports? No, let's assume we import a loader helper)
-                
+
                 # We'll generate:
                 # Name = load_component("path", __file_path__)
                 # But imports are usually at module level.
                 # If we use load_component, it's an assignment, not an import.
                 # That's fine, we can add it to module body.
-                
+
                 # However, cleaner if we can generate `from x import Y`.
                 # But we don't know the exact class name inside the file (it's generated).
                 # The dynamic loader `load_component` is robust.
-                
+
                 # Let's add `load_component` to imports
                 pass
 
@@ -271,7 +277,7 @@ class CodeGenerator:
         vars = set()
         if not python_ast:
             return vars
-            
+
         for node in python_ast.body:
             if isinstance(node, ast.Assign):
                 for target in node.targets:
@@ -282,9 +288,16 @@ class CodeGenerator:
                     vars.add(node.target.id)
         return vars
 
-    def _generate_page_class(self, parsed: ParsedPyHTML, handlers: List[ast.AsyncFunctionDef], 
-                           known_methods: Set[str], known_vars: Set[str], known_imports: Set[str], 
-                           async_methods: Set[str], component_map: Dict[str, str]) -> ast.ClassDef:
+    def _generate_page_class(
+        self,
+        parsed: ParsedPyHTML,
+        handlers: List[ast.AsyncFunctionDef],
+        known_methods: Set[str],
+        known_vars: Set[str],
+        known_imports: Set[str],
+        async_methods: Set[str],
+        component_map: Dict[str, str],
+    ) -> ast.ClassDef:
         """Generate page class definition."""
         class_body = []
 
@@ -324,7 +337,7 @@ class CodeGenerator:
         # Generate _render_template method AND binding methods
         # Pass ALL globals to avoid auto-calling variables and prefixing imports
         all_globals = known_methods.union(known_vars).union(known_imports)
-        
+
         render_func, binding_funcs = self._generate_render_template_method(
             parsed, known_methods, all_globals, async_methods, component_map
         )
@@ -342,7 +355,7 @@ class CodeGenerator:
             )
 
         # Determine base class
-        base_id = 'BasePage'
+        base_id = "BasePage"
         if parsed.get_directive_by_type(LayoutDirective):
             base_id = "_LayoutBase"
 
@@ -351,55 +364,57 @@ class CodeGenerator:
         # Since we need it for class attribute, let's calculate it early.
         layout_id_to_inject = None
         if parsed.file_path:
-             import hashlib
-             layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
-             # Recursive check for slots
-             has_slots = self._has_slots_recursive(parsed.template)
-             if has_slots:
-                 layout_id_to_inject = layout_id_hash
-        
-        if layout_id_to_inject:
+            import hashlib
 
-            class_body.append(ast.Assign(
-                 targets=[ast.Name(id='LAYOUT_ID', ctx=ast.Store())],
-                 value=ast.Constant(value=layout_id_to_inject)
-            ))
+            layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
+            # Recursive check for slots
+            has_slots = self._has_slots_recursive(parsed.template)
+            if has_slots:
+                layout_id_to_inject = layout_id_hash
+
+        if layout_id_to_inject:
+            class_body.append(
+                ast.Assign(
+                    targets=[ast.Name(id="LAYOUT_ID", ctx=ast.Store())],
+                    value=ast.Constant(value=layout_id_to_inject),
+                )
+            )
 
         # Lifecycle hooks calculation
         init_hooks = []
         # If we found @mount decorated methods
-        if hasattr(self, '_collected_mount_hooks') and self._collected_mount_hooks:
+        if hasattr(self, "_collected_mount_hooks") and self._collected_mount_hooks:
             init_hooks.extend(self._collected_mount_hooks)
-        
+
         # If we have top-level init code
-        if hasattr(self, '_has_top_level_init') and self._has_top_level_init:
-            init_hooks.insert(0, '__top_level_init__')
+        if hasattr(self, "_has_top_level_init") and self._has_top_level_init:
+            init_hooks.insert(0, "__top_level_init__")
 
         # Ensure 'on_before_load' and 'on_load' are present
         final_init_hooks = []
-        
+
         # Prepend generated top-level init
-        if hasattr(self, '_has_top_level_init') and self._has_top_level_init:
-             final_init_hooks.append('__top_level_init__')
-             
+        if hasattr(self, "_has_top_level_init") and self._has_top_level_init:
+            final_init_hooks.append("__top_level_init__")
+
         # Standard hooks - REMOVED per user request
         # final_init_hooks.append('on_before_load')
         # final_init_hooks.append('on_load')
-        
+
         # Add mount hooks
-        if hasattr(self, '_collected_mount_hooks') and self._collected_mount_hooks:
+        if hasattr(self, "_collected_mount_hooks") and self._collected_mount_hooks:
             final_init_hooks.extend(self._collected_mount_hooks)
-            
-        class_body.append(ast.Assign(
-             targets=[ast.Name(id='INIT_HOOKS', ctx=ast.Store())],
-             value=ast.List(
-                 elts=[ast.Constant(value=h) for h in final_init_hooks],
-                 ctx=ast.Load()
-             )
-        ))
+
+        class_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="INIT_HOOKS", ctx=ast.Store())],
+                value=ast.List(
+                    elts=[ast.Constant(value=h) for h in final_init_hooks], ctx=ast.Load()
+                ),
+            )
+        )
         cls_def = ast.ClassDef(
             name=self._get_class_name(parsed),
-
             bases=[ast.Name(id=base_id, ctx=ast.Load())],
             keywords=[],
             body=class_body,
@@ -416,7 +431,16 @@ class CodeGenerator:
         Returns: (method_names, variable_names, async_method_names)
         """
         methods = set()
-        variables = {'path', 'params', 'query', 'url', 'request', 'error_code', 'error_detail', 'error_trace'}
+        variables = {
+            "path",
+            "params",
+            "query",
+            "url",
+            "request",
+            "error_code",
+            "error_detail",
+            "error_trace",
+        }
         async_methods = set()
 
         if python_ast:
@@ -431,20 +455,21 @@ class CodeGenerator:
                             if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
                                 variables.add(child.id)
                 elif isinstance(node, ast.AnnAssign):
-                     if isinstance(node.target, ast.Name):
-                         variables.add(node.target.id)
-        
+                    if isinstance(node.target, ast.Name):
+                        variables.add(node.target.id)
+
         # Add implicit params from filename if available
-        if hasattr(self, 'file_path') and self.file_path:
+        if hasattr(self, "file_path") and self.file_path:
             import re
             from pathlib import Path
+
             path_obj = Path(self.file_path)
             # Check current file name and parent directories for [param] syntax
             for part in path_obj.parts:
-                match = re.match(r'^\[(.*?)\]$', part.replace('.pyhtml', ''))
+                match = re.match(r"^\[(.*?)\]$", part.replace(".pyhtml", ""))
                 if match:
                     variables.add(match.group(1))
-        
+
         return methods, variables, async_methods
 
     def _process_handlers(
@@ -458,24 +483,18 @@ class CodeGenerator:
         def visit_nodes(nodes):
             nonlocal handler_count
             for node in nodes:
-                # Check for busy binding on this node
-                busy_var = None
-                for attr in node.special_attributes:
-                    if isinstance(attr, BindAttribute) and attr.binding_type == "busy":
-                        busy_var = attr.variable
-                        break
-
                 # Check for events
                 for attr in node.special_attributes:
                     if isinstance(attr, EventAttribute):
                         # Pre-processing: Strip wrapping braces if present (e.g. from {code} syntax)
-                        # This ensures code inside is processed correctly whether quoted or not in source
+                        # This ensures code inside is processed correctly whether quoted or not in
+                        # source
                         raw = attr.handler_name.strip()
-                        if raw.startswith('{') and raw.endswith('}'):
+                        if raw.startswith("{") and raw.endswith("}"):
                             attr.handler_name = raw[1:-1].strip()
 
                         is_identifier = attr.handler_name.isidentifier()
-                        needs_wrapper = (not is_identifier) or (busy_var is not None)
+                        needs_wrapper = not is_identifier
 
                         if needs_wrapper:
                             # Create distinct handler methods
@@ -484,113 +503,11 @@ class CodeGenerator:
 
                             try:
                                 # Transform body logic
-                                if is_identifier and busy_var:
-                                    # Just a call to existing method, but needs wrapping for busy state
-                                    # Transform loop will handle "method" -> "self.method"
-                                    # But we need to make it a call "self.method(**bound_kwargs)"?
-                                    # Actually users write @click="method".
-                                    # If we wrap it, we generate:
-                                    # async def _handler_X(self, arg0, ...):
-                                    #     await self.method(arg0...)
-                                    # BUT, handling arguments for a raw identifier wrapper is tricky because
-                                    # we don't know what args the original method expects if we just forward everything?
-                                    # Actually, if the user wrote @click="method", and we act as proxy,
-                                    # we should probably just treat "method" as the code to execute?
-                                    # "method" as a statement evaluates to the function object, it doesn't CALL it.
-                                    # Wait, existing `handle_event` calls the function.
-                                    # If we generate a wrapper, the wrapper becomes the handler.
-                                    # The wrapper body must CALL the original function.
-                                    # So if @click="method", code is "method()".
-                                    # If @click="method(arg)", code is "method(arg)".
-
-                                    if is_identifier:
-                                        # Logic change: simpler to explicitly call it with captured event data?
-                                        # The wrapper receives (self, event_data) if we change the signature?
-                                        # NO, existing logic extracts args from implicit calls.
-                                        # If we have @click="method" and we wrap it, we don't easily know arguments.
-                                        # COMPROMISE: If busy binding is used, we only support explicit calls or 0-arg calls easily
-                                        # unless we change the wrapper signature to accept `**kwargs` and forward them.
-
-                                        # Let's try treating it as an explicit call "method()" for now?
-                                        # Or better: "await self.method()" and "self.method()"
-                                        # But what if it takes args?
-                                        # If the user uses @click="method" with busy binding, they probably expect args to potentially work.
-                                        # However, getting that right is hard.
-                                        # Let's assume for now `method()` (no args) or force user to use `@click="method()"` if they want busy binding?
-                                        # actually `handle_event` passes args.
-                                        # Let's stick to: if it's an identifier, code = f"{attr.handler_name}()"
-                                        # This risks missing args but is safe for parameterless methods.
-                                        code_to_transform = f"{attr.handler_name}()"
-                                else:
-                                    code_to_transform = attr.handler_name
+                                code_to_transform = attr.handler_name
 
                                 body, args = self._transform_inline_code(
                                     code_to_transform, known_methods, async_methods
                                 )
-
-                                # If busy binding, wrap body in try/finally
-                                if busy_var:
-                                    # self.busy_var = True
-                                    set_busy = ast.Assign(
-                                        targets=[
-                                            ast.Attribute(
-                                                value=ast.Name(id="self", ctx=ast.Load()),
-                                                attr=busy_var,
-                                                ctx=ast.Store(),
-                                            )
-                                        ],
-                                        value=ast.Constant(value=True),
-                                    )
-
-                                    # await self._on_update()
-                                    update_call = ast.Expr(
-                                        value=ast.Await(
-                                            value=ast.Call(
-                                                func=ast.Attribute(
-                                                    value=ast.Name(id="self", ctx=ast.Load()),
-                                                    attr="_on_update",
-                                                    ctx=ast.Load(),
-                                                ),
-                                                args=[],
-                                                keywords=[],
-                                            )
-                                        )
-                                    )
-
-                                    # Check if _on_update exists before calling? Runtime handles it, but safer to check?
-                                    # "if self._on_update: await self._on_update()"
-                                    check_update = ast.If(
-                                        test=ast.Attribute(
-                                            value=ast.Name(id="self", ctx=ast.Load()),
-                                            attr="_on_update",
-                                            ctx=ast.Load(),
-                                        ),
-                                        body=[update_call],
-                                        orelse=[],
-                                    )
-
-                                    # finally: self.busy_var = False
-                                    unset_busy = ast.Assign(
-                                        targets=[
-                                            ast.Attribute(
-                                                value=ast.Name(id="self", ctx=ast.Load()),
-                                                attr=busy_var,
-                                                ctx=ast.Store(),
-                                            )
-                                        ],
-                                        value=ast.Constant(value=False),
-                                    )
-
-                                    body = [
-                                        set_busy,
-                                        check_update,
-                                        ast.Try(
-                                            body=body,
-                                            handlers=[],
-                                            orelse=[],
-                                            finalbody=[unset_busy],
-                                        ),
-                                    ]
 
                                 # Store extracted args
                                 attr.args = args
@@ -898,32 +815,16 @@ class CodeGenerator:
                         func=ast.Name(id="eval", ctx=ast.Load()),
                         args=[
                             ast.Name(id="expr", ctx=ast.Load()),
+                            # Use module globals (imports, classes)
                             ast.Call(
-                                func=ast.Attribute(
-                                    value=ast.Attribute(
-                                        value=ast.Name(id="self", ctx=ast.Load()),
-                                        attr="__dict__",
-                                        ctx=ast.Load(),
-                                    ),
-                                    attr="copy",
-                                    ctx=ast.Load(),
-                                ),
+                                func=ast.Name(id="globals", ctx=ast.Load()),
                                 args=[],
                                 keywords=[],
                             ),
-                            # Make 'self' and global imports available
+                            # Locals: just self, because _transform_expr converts other names to self.x
                             ast.Dict(
-                                keys=[ast.Constant(value="self")]
-                                + [ast.Constant(value=name) for name in known_globals],
-                                values=[ast.Name(id="self", ctx=ast.Load())]
-                                + [
-                                    ast.Attribute(
-                                        value=ast.Name(id="self", ctx=ast.Load()),
-                                        attr=name,
-                                        ctx=ast.Load(),
-                                    )
-                                    for name in known_globals
-                                ],
+                                keys=[ast.Constant(value="self")],
+                                values=[ast.Name(id="self", ctx=ast.Load())],
                             ),
                         ],
                         keywords=[],
@@ -935,7 +836,9 @@ class CodeGenerator:
         )
         body.append(state_getter)
 
-        # cleaned_data, self.errors = form_validator.validate_form(form_data, self._form_schema_X.fields, get_state)
+        # cleaned_data, self.errors = form_validator.validate_form(
+        #     form_data, self._form_schema_X.fields, get_state
+        # )
         # Note: pass .fields from the schema object
         body.append(
             ast.Assign(
@@ -978,7 +881,9 @@ class CodeGenerator:
 
         # If Pydantic model is used:
         # if not self.errors and self._form_schema_X.model_name:
-        #    model_instance, pydantic_errors = validate_with_model(cleaned_data, globals()[self._form_schema_X.model_name])
+        #    model_instance, pydantic_errors = validate_with_model(
+        #        cleaned_data, globals()[self._form_schema_X.model_name]
+        #    )
         #    if pydantic_errors:
         #        self.errors.update(pydantic_errors)
         #    else:
@@ -1176,17 +1081,17 @@ class CodeGenerator:
         """Generate __init__ method."""
         # Base init args
         init_args = [
-             ast.arg(arg='self'),
-             ast.arg(arg='request'),
-             ast.arg(arg='params'),
-             ast.arg(arg='query'),
-             ast.arg(arg='path'),
-             ast.arg(arg='url')
+            ast.arg(arg="self"),
+            ast.arg(arg="request"),
+            ast.arg(arg="params"),
+            ast.arg(arg="query"),
+            ast.arg(arg="path"),
+            ast.arg(arg="url"),
         ]
         defaults = [ast.Constant(value=None), ast.Constant(value=None)]
-        
+
         props_assigns = []
-        
+
         # Handle Props directive
         props_directive = parsed.get_directive_by_type(PropsDirective)
         if props_directive:
@@ -1194,115 +1099,139 @@ class CodeGenerator:
             # Add to init_args
             for name, type_hint, default_val in props_directive.args:
                 # Annotation
-                annotation = ast.parse(type_hint, mode='eval').body if type_hint else None
-                
+                annotation = ast.parse(type_hint, mode="eval").body if type_hint else None
+
                 # Default
                 if default_val is not None:
-                     # Parse default value expr
-                     defaults.append(ast.parse(default_val, mode='eval').body)
+                    # Parse default value expr
+                    defaults.append(ast.parse(default_val, mode="eval").body)
                 else:
-                     # No default: must come before args with defaults?
-                     # Standard python rules: non-default args first.
-                     # But we are appending AFTER request/params etc which DON'T have defaults (except path/url which do)
-                     # Wait, request, params, query don't have defaults in base method signature we generated before:
-                     # args=[arg('self'), arg('request')...]
-                     # defaults=[None, None] (for path/url?)
-                     
-                     # Actually standard signature above was:
-                     # args: self, request, params, query, path, url
-                     # defaults: path=None, url=None
-                     
-                     # So if we add a non-default prop after 'url=None', it's invalid syntax.
-                     # "non-default argument follows default argument"
-                     
-                     # Strategy: Make ALL props keyword-only or ensure order?
-                     # Components are instantiated with kwargs mostly?
-                     # Or we just add them to the end and expect users to provide defaults if we have defaults before?
-                     # Simpler: Make them keyword arguments (kwonlyargs).
-                     pass
-                     
-            
+                    # No default: must come before args with defaults?
+                    # Standard python rules: non-default args first.
+                    # But we are appending AFTER request/params etc which DON'T have defaults
+                    # (except path/url which do)
+                    # Wait, request, params, query don't have defaults in base method signature
+                    # we generated before:
+                    # args=[arg('self'), arg('request')...]
+                    # defaults=[None, None] (for path/url?)
+
+                    # Actually standard signature above was:
+                    # args: self, request, params, query, path, url
+                    # defaults: path=None, url=None
+
+                    # So if we add a non-default prop after 'url=None', it's invalid syntax.
+                    # "non-default argument follows default argument"
+
+                    # Strategy: Make ALL props keyword-only or ensure order?
+                    # Components are instantiated with kwargs mostly?
+                    # Or we just add them to the end and expect users to provide defaults if we
+                    # have defaults before?
+                    # Simpler: Make them keyword arguments (kwonlyargs).
+                    pass
+
             # Implementation: Use kwonlyargs for props to avoid mess with positional defaults
             kwonlyargs = []
             kw_defaults = []
-            
-            for name, type_hint, default_val in props_directive.args:
-                 annotation = ast.parse(type_hint, mode='eval').body if type_hint else None
-                 kwonlyargs.append(ast.arg(arg=name, annotation=annotation))
-                 
-                 if default_val is not None:
-                     kw_defaults.append(ast.parse(default_val, mode='eval').body)
-                 else:
-                     kw_defaults.append(None) # Required kwarg
-                 
-                 # Assign to self
-                 # self.name = name
-                 props_assigns.append(ast.Assign(
-                     targets=[ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=name, ctx=ast.Store())],
-                     value=ast.Name(id=name, ctx=ast.Load())
-                 ))
-                 
-        else:
-             kwonlyargs = []
-             kw_defaults = []
 
-        
+            for name, type_hint, default_val in props_directive.args:
+                annotation = ast.parse(type_hint, mode="eval").body if type_hint else None
+                kwonlyargs.append(ast.arg(arg=name, annotation=annotation))
+
+                if default_val is not None:
+                    kw_defaults.append(ast.parse(default_val, mode="eval").body)
+                else:
+                    kw_defaults.append(None)  # Required kwarg
+
+                # Assign to self
+                # self.name = name
+                props_assigns.append(
+                    ast.Assign(
+                        targets=[
+                            ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr=name,
+                                ctx=ast.Store(),
+                            )
+                        ],
+                        value=ast.Name(id=name, ctx=ast.Load()),
+                    )
+                )
+
+        else:
+            kwonlyargs = []
+            kw_defaults = []
+
         body = [
-            ast.Expr(value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Call(
-                        func=ast.Name(id='super', ctx=ast.Load()),
-                        args=[],
-                        keywords=[]
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Call(
+                            func=ast.Name(id="super", ctx=ast.Load()), args=[], keywords=[]
+                        ),
+                        attr="__init__",
+                        ctx=ast.Load(),
                     ),
-                    attr='__init__',
-                    ctx=ast.Load()
-                ),
-                args=[
-                    ast.Name(id='request', ctx=ast.Load()),
-                    ast.Name(id='params', ctx=ast.Load()),
-                    ast.Name(id='query', ctx=ast.Load()),
-                    ast.Name(id='path', ctx=ast.Load()),
-                    ast.Name(id='url', ctx=ast.Load())
-                ],
-                keywords=[ast.keyword(arg=None, value=ast.Name(id='kwargs', ctx=ast.Load()))]
-            ))
+                    args=[
+                        ast.Name(id="request", ctx=ast.Load()),
+                        ast.Name(id="params", ctx=ast.Load()),
+                        ast.Name(id="query", ctx=ast.Load()),
+                        ast.Name(id="path", ctx=ast.Load()),
+                        ast.Name(id="url", ctx=ast.Load()),
+                    ],
+                    keywords=[ast.keyword(arg=None, value=ast.Name(id="kwargs", ctx=ast.Load()))],
+                )
+            )
         ]
-        
+
         # Add prop assignments
         body.extend(props_assigns)
-        
-        
+
         # NOTE: !provide is now handled in _generate_render_template_method to ensure reactivity
-        
+
         # Handle !inject - retrieve values from context
         inject_directive = parsed.get_directive_by_type(InjectDirective)
         if inject_directive:
             # self.local_var = self.context.get('GLOBAL_KEY')
             for local_var, global_key in inject_directive.mapping.items():
-                body.append(ast.Assign(
-                    targets=[ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=local_var, ctx=ast.Store())],
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='context', ctx=ast.Load()),
-                            attr='get',
-                            ctx=ast.Load()
+                body.append(
+                    ast.Assign(
+                        targets=[
+                            ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr=local_var,
+                                ctx=ast.Store(),
+                            )
+                        ],
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Attribute(
+                                    value=ast.Name(id="self", ctx=ast.Load()),
+                                    attr="context",
+                                    ctx=ast.Load(),
+                                ),
+                                attr="get",
+                                ctx=ast.Load(),
+                            ),
+                            args=[ast.Constant(value=global_key)],
+                            keywords=[],
                         ),
-                        args=[ast.Constant(value=global_key)],
-                        keywords=[]
                     )
-                ))
+                )
 
         # Call _init_slots
-        body.append(ast.Expr(value=ast.Call(
-            func=ast.Attribute(
-                value=ast.Name(id='self', ctx=ast.Load()),
-                attr='_init_slots',
-                ctx=ast.Load()
-            ),
-            args=[],
-            keywords=[]
-        )))
+        body.append(
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="self", ctx=ast.Load()),
+                        attr="_init_slots",
+                        ctx=ast.Load(),
+                    ),
+                    args=[],
+                    keywords=[],
+                )
+            )
+        )
 
         return ast.FunctionDef(
             name="__init__",
@@ -1312,8 +1241,8 @@ class CodeGenerator:
                 vararg=None,
                 kwonlyargs=kwonlyargs,
                 kw_defaults=kw_defaults,
-                kwarg=ast.arg(arg='kwargs', annotation=None),
-                defaults=defaults
+                kwarg=ast.arg(arg="kwargs", annotation=None),
+                defaults=defaults,
             ),
             body=body,
             decorator_list=[],
@@ -1327,13 +1256,13 @@ class CodeGenerator:
         transformed = []
         if known_globals is None:
             known_globals = set()
-            
+
         # Collect hooks
         self._collected_mount_hooks = []
         self._has_top_level_init = False
-        
+
         top_level_statements = []
-        
+
         for node in python_ast.body:
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 # Skip imports - already handled
@@ -1342,47 +1271,52 @@ class CodeGenerator:
                 # Module-level assignments become class attributes
                 # UNLESS they target 'self' (e.g. self.x = 1), which makes no sense at class level
                 # and implies instance initialization.
-                
+
                 is_instance_assign = False
                 for target in node.targets:
                     # Check if target is Attribute(value=Name(id='self'))
-                    if isinstance(target, ast.Attribute) and \
-                       isinstance(target.value, ast.Name) and \
-                       target.value.id == 'self':
+                    if (
+                        isinstance(target, ast.Attribute)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id == "self"
+                    ):
                         is_instance_assign = True
                         break
-                        
+
                 if is_instance_assign:
                     top_level_statements.append(node)
                 else:
-                    # BUT, if they rely on runtime values (like other vars), they should be in __init__
-                    # For now, we assume static assignments. 
-                    # If the value calls a function, it might be safer in __top_level_init__.
+                    # BUT, if they rely on runtime values (like other vars), they
+                    # should be in __init__
+                    # For now, we assume static assignments.
+                    # If the value calls a function, it might be safer in
+                    # __top_level_init__.
                     # Heuristic: Check if value is constant?
-                    # "top level statements will be considered on_load... obviously not each RTT request"
+                    # "top level statements will be considered on_load...
+                    # obviously not each RTT request"
                     # "execute on first load" -> init=True.
-                    
-                    # So executable statements (Calls, Loops, Ifs) definitely go to `__top_level_init__`.
+
+                    # So executable statements (Calls, Loops, Ifs) definitely go
+                    # to `__top_level_init__`.
                     # Simple assignments `x = 1`?
-                    # If `x = 1`, it stays class attr (default user expectation for python scripts?).
+                    # If `x = 1`, it stays class attr (default user expectation
+                    # for python scripts?).
                     transformed.append(node)
-                     
+
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 # Check for decorators
-                is_mount = False
                 new_decorators = []
                 for dec in node.decorator_list:
-                    if isinstance(dec, ast.Name) and dec.id == 'mount':
-                        is_mount = True
+                    if isinstance(dec, ast.Name) and dec.id == "mount":
                         self._collected_mount_hooks.append(node.name)
-                    elif isinstance(dec, ast.Name) and dec.id == 'unmount':
+                    elif isinstance(dec, ast.Name) and dec.id == "unmount":
                         # Placeholder for future unmount
-                        pass 
+                        pass
                     else:
                         new_decorators.append(dec)
-                
+
                 node.decorator_list = new_decorators
-                
+
                 # Functions become methods - transform them
                 transformed.append(self._transform_to_method(node, known_globals))
             elif isinstance(node, ast.ClassDef):
@@ -1399,22 +1333,26 @@ class CodeGenerator:
 
         return transformed
 
-    def _generate_top_level_init(self, statements: List[ast.stmt], known_globals: Set[str]) -> ast.AsyncFunctionDef:
+    def _generate_top_level_init(
+        self, statements: List[ast.stmt], known_globals: Set[str]
+    ) -> ast.AsyncFunctionDef:
         """Generate __top_level_init__ method from top-level statements."""
-        
+
         # 1. Collect all variables assigned in this scope to promote them to instance attributes.
         # This ensures 'x = 1' inside match/if/for becomes 'self.x = 1'.
         local_assignments = set()
-        
+
         class AssignmentCollector(ast.NodeVisitor):
             def visit_FunctionDef(self, node):
                 # Do not recurse into nested functions
                 pass
+
             def visit_AsyncFunctionDef(self, node):
                 pass
+
             def visit_ClassDef(self, node):
                 pass
-            
+
             def visit_Name(self, node):
                 # If name is being stored (assigned to), collect it
                 if isinstance(node.ctx, ast.Store):
@@ -1423,38 +1361,39 @@ class CodeGenerator:
         collector = AssignmentCollector()
         for stmt in statements:
             collector.visit(stmt)
-            
+
         # Combine with explicit known globals
-        # We start with a copy to avoid mutating the passed set if it's used elsewhere (though it seems local usually)
+        # We start with a copy to avoid mutating the passed set if it's used elsewhere
+        # (though it seems local usually)
         combined_globals = set(known_globals)
         combined_globals.update(local_assignments)
 
         # Wrap statements in async method
         # Transform variables to self.X
-        
+
         wrapper = ast.AsyncFunctionDef(
-            name='__top_level_init__',
+            name="__top_level_init__",
             args=ast.arguments(
                 posonlyargs=[],
-                args=[ast.arg(arg='self')],
+                args=[ast.arg(arg="self")],
                 vararg=None,
                 kwonlyargs=[],
                 kw_defaults=[],
-                defaults=[]
+                defaults=[],
             ),
             body=statements,
             decorator_list=[],
-            returns=None
+            returns=None,
         )
-        
+
         return self._transform_to_method(wrapper, combined_globals)
 
     def _transform_to_method(self, node, known_methods: Set[str] = None):
         """Transform a function into a method (add self, handle globals)."""
         # 1. Add self argument if not present
-        if not (node.args.args and node.args.args[0].arg == 'self'):
-            node.args.args.insert(0, ast.arg(arg='self'))
-        
+        if not (node.args.args and node.args.args[0].arg == "self"):
+            node.args.args.insert(0, ast.arg(arg="self"))
+
         # 2. Find global declarations and include known methods
         global_vars = set()
         if known_methods:
@@ -1530,9 +1469,14 @@ class CodeGenerator:
             returns=None,
         )
 
-    def _generate_render_template_method(self, parsed: ParsedPyHTML, known_methods: Set[str] = None, 
-                                       known_globals: Set[str] = None, async_methods: Set[str] = None, 
-                                       component_map: Dict[str, str] = None) -> Tuple[Optional[ast.FunctionDef], List[ast.AsyncFunctionDef]]:
+    def _generate_render_template_method(
+        self,
+        parsed: ParsedPyHTML,
+        known_methods: Set[str] = None,
+        known_globals: Set[str] = None,
+        async_methods: Set[str] = None,
+        component_map: Dict[str, str] = None,
+    ) -> Tuple[Optional[ast.FunctionDef], List[ast.AsyncFunctionDef]]:
         """Generate _render_template method and binding/slot handlers."""
         if component_map is None:
             component_map = {}
@@ -1548,14 +1492,19 @@ class CodeGenerator:
 
             # Ensure layout_id is generated for intermediate layouts
             import hashlib
-            layout_id = hashlib.md5(str(parsed.file_path).encode()).hexdigest() if parsed.file_path else None
-            
+
+            layout_id = (
+                hashlib.md5(str(parsed.file_path).encode()).hexdigest()
+                if parsed.file_path
+                else None
+            )
+
             slot_funcs_methods, aux_funcs = self.template_codegen.generate_slot_methods(
-                parsed.template, 
-                file_id=file_id, 
+                parsed.template,
+                file_id=file_id,
                 known_globals=known_globals,
                 layout_id=layout_id,
-                component_map=component_map
+                component_map=component_map,
             )
 
             slot_funcs_methods, aux_funcs = self.template_codegen.generate_slot_methods(
@@ -1688,51 +1637,62 @@ class CodeGenerator:
                 returns=None,
             )
             binding_funcs.append(init_slots_func)
-            
+
             # Handle !provide - Override render() to update context before layout rendering
             provide_directive = parsed.get_directive_by_type(ProvideDirective)
             if provide_directive:
-                 provide_body = []
-                 for key, val_expr in provide_directive.mapping.items():
-                      val_ast = self.template_codegen._transform_expr(val_expr, set(), known_globals)
-                      provide_body.append(ast.Assign(
-                          targets=[ast.Subscript(
-                              value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='context', ctx=ast.Load()),
-                              slice=ast.Constant(value=key),
-                              ctx=ast.Store()
-                          )],
-                          value=val_ast
-                      ))
-                 
-                 # return await super().render(init)
-                 render_call = ast.Call(
-                     func=ast.Attribute(
-                          value=ast.Call(func=ast.Name(id='super', ctx=ast.Load()), args=[], keywords=[]),
-                          attr='render', ctx=ast.Load()
-                     ),
-                     args=[ast.Name(id='init', ctx=ast.Load())],
-                     keywords=[]
-                 )
-                 provide_body.append(ast.Return(value=ast.Await(value=render_call)))
-                 
-                 render_override = ast.AsyncFunctionDef(
-                     name='render',
-                     args=ast.arguments(
-                         posonlyargs=[],
-                         args=[
-                             ast.arg(arg='self'),
-                             ast.arg(arg='init', annotation=ast.Name(id='bool', ctx=ast.Load()))
-                         ],
-                         vararg=None,
-                         kwonlyargs=[],
-                         kw_defaults=[],
-                         defaults=[ast.Constant(value=True)]
-                     ),
-                     body=provide_body,
-                     decorator_list=[],
-                     returns=None
-                 )
-                 binding_funcs.append(render_override)
+                provide_body = []
+                for key, val_expr in provide_directive.mapping.items():
+                    val_ast = self.template_codegen._transform_expr(val_expr, set(), known_globals)
+                    provide_body.append(
+                        ast.Assign(
+                            targets=[
+                                ast.Subscript(
+                                    value=ast.Attribute(
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                        attr="context",
+                                        ctx=ast.Load(),
+                                    ),
+                                    slice=ast.Constant(value=key),
+                                    ctx=ast.Store(),
+                                )
+                            ],
+                            value=val_ast,
+                        )
+                    )
+
+                # return await super().render(init)
+                render_call = ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Call(
+                            func=ast.Name(id="super", ctx=ast.Load()), args=[], keywords=[]
+                        ),
+                        attr="render",
+                        ctx=ast.Load(),
+                    ),
+                    args=[ast.Name(id="init", ctx=ast.Load())],
+                    keywords=[],
+                )
+                provide_body.append(ast.Return(value=ast.Await(value=render_call)))
+
+                render_override = ast.AsyncFunctionDef(
+                    name="render",
+                    args=ast.arguments(
+                        posonlyargs=[],
+                        args=[
+                            ast.arg(arg="self"),
+                            ast.arg(arg="init", annotation=ast.Name(id="bool", ctx=ast.Load())),
+                        ],
+                        vararg=None,
+                        kwonlyargs=[],
+                        kw_defaults=[],
+                        defaults=[ast.Constant(value=True)],
+                    ),
+                    body=provide_body,
+                    decorator_list=[],
+                    returns=None,
+                )
+                binding_funcs.append(render_override)
 
         else:
             # === Standard Mode ===
@@ -1740,28 +1700,31 @@ class CodeGenerator:
             # to avoid breaking existing tests.
             layout_id = None
             scope_id = None
-            
+
             if parsed.file_path:
                 import hashlib
+
                 layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
                 # Use as layout_id if we have slots to fill for ourselves (as a component)
                 # Or for scoping if <style scoped> is present
-                has_scoped_style = any(n.tag == 'style' and 'scoped' in n.attributes for n in parsed.template)
+                has_scoped_style = any(
+                    n.tag == "style" and "scoped" in n.attributes for n in parsed.template
+                )
                 if has_scoped_style:
                     scope_id = layout_id_hash[:8]
-                
+
                 # If we are a layout (referenced by others), we should have a LAYOUT_ID.
                 # But we don't know if we ARE a layout here.
                 # We'll assume if there are <slot> tags, we might be a layout.
                 has_slots = self._has_slots_recursive(parsed.template)
                 if has_slots:
                     layout_id = layout_id_hash
-            
+
             # Extract Props to Unpack
 
             prop_names = set()
             props_unpack_stmts = []
-            
+
             # Using imported PropsDirective from earlier context or get it again
             # We are inside the method, 'parsed' is available.
             props_directive = parsed.get_directive_by_type(PropsDirective)
@@ -1769,20 +1732,26 @@ class CodeGenerator:
                 for name, _, _ in props_directive.args:
                     prop_names.add(name)
                     # prop = self.prop
-                    props_unpack_stmts.append(ast.Assign(
-                        targets=[ast.Name(id=name, ctx=ast.Store())],
-                        value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=name, ctx=ast.Load())
-                    ))
-            
+                    props_unpack_stmts.append(
+                        ast.Assign(
+                            targets=[ast.Name(id=name, ctx=ast.Store())],
+                            value=ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()), attr=name, ctx=ast.Load()
+                            ),
+                        )
+                    )
+
             render_func, aux_funcs = self.template_codegen.generate_render_method(
-                parsed.template, layout_id=layout_id,
-                known_methods=known_methods, known_globals=known_globals, async_methods=async_methods,
+                parsed.template,
+                layout_id=layout_id,
+                known_methods=known_methods,
+                known_globals=known_globals,
+                async_methods=async_methods,
                 component_map=component_map,
                 scope_id=scope_id,
-                initial_locals=prop_names
+                initial_locals=prop_names,
             )
 
-            
             # Prepend unpack statements to render_func body
             if render_func and props_unpack_stmts:
                 render_func.body[0:0] = props_unpack_stmts
@@ -1794,41 +1763,102 @@ class CodeGenerator:
                 for key, val_expr in provide_directive.mapping.items():
                     # Transform expression using known globals for this page scope
                     # Note: val_expr is string. We need to parse it or use transform helper.
-                    
+
                     val_ast = self.template_codegen._transform_expr(val_expr, set(), known_globals)
-                    
-                    provide_stmts.append(ast.Assign(
-                        targets=[ast.Subscript(
-                            value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='context', ctx=ast.Load()),
-                            slice=ast.Constant(value=key),
-                            ctx=ast.Store()
-                        )],
-                        value=val_ast
-                    ))
-                
+
+                    provide_stmts.append(
+                        ast.Assign(
+                            targets=[
+                                ast.Subscript(
+                                    value=ast.Attribute(
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                        attr="context",
+                                        ctx=ast.Load(),
+                                    ),
+                                    slice=ast.Constant(value=key),
+                                    ctx=ast.Store(),
+                                )
+                            ],
+                            value=val_ast,
+                        )
+                    )
+
                 # Insert after props unpacking (if any)
                 insert_idx = len(props_unpack_stmts) if props_unpack_stmts else 0
                 render_func.body[insert_idx:insert_idx] = provide_stmts
-            
+
             binding_funcs.extend(aux_funcs)
 
             # SPA injection
-            path_directive = parsed.get_directive_by_type(PathDirective)
-            no_spa = parsed.get_directive_by_type(NoSpaDirective) is not None
-            is_multi_path = path_directive and not path_directive.is_simple_string
-            spa_enabled = is_multi_path and not no_spa
+            # (path_directive search removed if unused)
 
             # Determine injection point (before final return)
 
             spa_check = ast.If(
-                test=ast.BoolOp(op=ast.And(), values=[
-                    ast.UnaryOp(op=ast.Not(), operand=ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value="__no_spa__"), ast.Constant(value=False)], keywords=[])),
-                    ast.UnaryOp(op=ast.Not(), operand=ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value="__is_component__"), ast.Constant(value=False)], keywords=[])),
-                    ast.BoolOp(op=ast.Or(), values=[
-                        ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value="__spa_enabled__"), ast.Constant(value=False)], keywords=[]),
-                        ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Attribute(value=ast.Attribute(value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='request', ctx=ast.Load()), attr='app', ctx=ast.Load()), attr='state', ctx=ast.Load()), ast.Constant(value='enable_pjax'), ast.Constant(value=False)], keywords=[])
-                    ])
-                ]),
+                test=ast.BoolOp(
+                    op=ast.And(),
+                    values=[
+                        ast.UnaryOp(
+                            op=ast.Not(),
+                            operand=ast.Call(
+                                func=ast.Name(id="getattr", ctx=ast.Load()),
+                                args=[
+                                    ast.Name(id="self", ctx=ast.Load()),
+                                    ast.Constant(value="__no_spa__"),
+                                    ast.Constant(value=False),
+                                ],
+                                keywords=[],
+                            ),
+                        ),
+                        ast.UnaryOp(
+                            op=ast.Not(),
+                            operand=ast.Call(
+                                func=ast.Name(id="getattr", ctx=ast.Load()),
+                                args=[
+                                    ast.Name(id="self", ctx=ast.Load()),
+                                    ast.Constant(value="__is_component__"),
+                                    ast.Constant(value=False),
+                                ],
+                                keywords=[],
+                            ),
+                        ),
+                        ast.BoolOp(
+                            op=ast.Or(),
+                            values=[
+                                ast.Call(
+                                    func=ast.Name(id="getattr", ctx=ast.Load()),
+                                    args=[
+                                        ast.Name(id="self", ctx=ast.Load()),
+                                        ast.Constant(value="__spa_enabled__"),
+                                        ast.Constant(value=False),
+                                    ],
+                                    keywords=[],
+                                ),
+                                ast.Call(
+                                    func=ast.Name(id="getattr", ctx=ast.Load()),
+                                    args=[
+                                        ast.Attribute(
+                                            value=ast.Attribute(
+                                                value=ast.Attribute(
+                                                    value=ast.Name(id="self", ctx=ast.Load()),
+                                                    attr="request",
+                                                    ctx=ast.Load(),
+                                                ),
+                                                attr="app",
+                                                ctx=ast.Load(),
+                                            ),
+                                            attr="state",
+                                            ctx=ast.Load(),
+                                        ),
+                                        ast.Constant(value="enable_pjax"),
+                                        ast.Constant(value=False),
+                                    ],
+                                    keywords=[],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
                 body=[
                     # sibling_paths = ...
                     ast.Assign(
@@ -1868,6 +1898,31 @@ class CodeGenerator:
                             keywords=[],
                         ),
                     ),
+                    # debug = ...
+                    ast.Assign(
+                        targets=[ast.Name(id="debug", ctx=ast.Store())],
+                        value=ast.Call(
+                            func=ast.Name(id="getattr", ctx=ast.Load()),
+                            args=[
+                                ast.Attribute(
+                                    value=ast.Attribute(
+                                        value=ast.Attribute(
+                                            value=ast.Name(id="self", ctx=ast.Load()),
+                                            attr="request",
+                                            ctx=ast.Load(),
+                                        ),
+                                        attr="app",
+                                        ctx=ast.Load(),
+                                    ),
+                                    attr="state",
+                                    ctx=ast.Load(),
+                                ),
+                                ast.Constant(value="debug"),
+                                ast.Constant(value=False),
+                            ],
+                            keywords=[],
+                        ),
+                    ),
                     # parts.append(script tag)
                     ast.Expr(
                         value=ast.Call(
@@ -1885,21 +1940,82 @@ class CodeGenerator:
                         )
                     ),
                     # parts.append(json.dumps(...))
-                    ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), 
-                        args=[ast.Call(func=ast.Attribute(value=ast.Name(id='json', ctx=ast.Load()), attr='dumps', ctx=ast.Load()), 
-                            args=[ast.Dict(keys=[ast.Constant(value='sibling_paths'), ast.Constant(value='enable_pjax')], values=[ast.Name(id='sibling_paths', ctx=ast.Load()), ast.Name(id='pjax_enabled', ctx=ast.Load())])], keywords=[])], 
-                        keywords=[])),
-                    ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), args=[ast.Constant(value='</script>')], keywords=[])),
-                    ast.Expr(value=ast.Call(func=ast.Attribute(value=ast.Name(id='parts', ctx=ast.Load()), attr='append', ctx=ast.Load()), 
-                        args=[ast.JoinedStr(values=[
-                            ast.Constant(value='<script src="'),
-                            ast.FormattedValue(value=ast.Call(
-                                func=ast.parse("self.request.app.state.pyhtml._get_client_script_url").body[0].value,
-                                args=[], keywords=[]
-                            ), conversion=-1, format_spec=None),
-                            ast.Constant(value='"></script>')
-                        ])], 
-                        keywords=[]))
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="parts", ctx=ast.Load()),
+                                attr="append",
+                                ctx=ast.Load(),
+                            ),
+                            args=[
+                                ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id="json", ctx=ast.Load()),
+                                        attr="dumps",
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[
+                                        ast.Dict(
+                                            keys=[
+                                                ast.Constant(value="sibling_paths"),
+                                                ast.Constant(value="enable_pjax"),
+                                                ast.Constant(value="debug"),
+                                            ],
+                                            values=[
+                                                ast.Name(id="sibling_paths", ctx=ast.Load()),
+                                                ast.Name(id="pjax_enabled", ctx=ast.Load()),
+                                                ast.Name(id="debug", ctx=ast.Load()),
+                                            ],
+                                        )
+                                    ],
+                                    keywords=[],
+                                )
+                            ],
+                            keywords=[],
+                        )
+                    ),
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="parts", ctx=ast.Load()),
+                                attr="append",
+                                ctx=ast.Load(),
+                            ),
+                            args=[ast.Constant(value="</script>")],
+                            keywords=[],
+                        )
+                    ),
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="parts", ctx=ast.Load()),
+                                attr="append",
+                                ctx=ast.Load(),
+                            ),
+                            args=[
+                                ast.JoinedStr(
+                                    values=[
+                                        ast.Constant(value='<script src="'),
+                                        ast.FormattedValue(
+                                            value=ast.Call(
+                                                func=ast.parse(
+                                                    "self.request.app.state.pyhtml._get_client_script_url"
+                                                )
+                                                .body[0]
+                                                .value,
+                                                args=[],
+                                                keywords=[],
+                                            ),
+                                            conversion=-1,
+                                            format_spec=None,
+                                        ),
+                                        ast.Constant(value='"></script>'),
+                                    ]
+                                )
+                            ],
+                            keywords=[],
+                        )
+                    ),
                 ],
                 orelse=[],
             )
@@ -1995,11 +2111,8 @@ class CodeGenerator:
     def _has_slots_recursive(self, nodes: List[TemplateNode]) -> bool:
         """Check recursively if the template contains any <slot> elements."""
         for node in nodes:
-            if node.tag == 'slot':
+            if node.tag == "slot":
                 return True
             if self._has_slots_recursive(node.children):
                 return True
         return False
-
-
-

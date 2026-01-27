@@ -1,26 +1,26 @@
-import unittest
 import asyncio
-from unittest.mock import MagicMock
 import tempfile
+import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from pyhtml.runtime.loader import PageLoader
-from pyhtml.runtime.page import BasePage
+
 
 class TestLifecycleHooks(unittest.TestCase):
     def setUp(self):
         self.loader = PageLoader()
         self.temp_dir = tempfile.TemporaryDirectory()
-        
+
     def tearDown(self):
         self.temp_dir.cleanup()
         self.loader.invalidate_cache()
-        
+
     def create_page_class(self, content: str, filename: str = "temp.pyhtml"):
         path = Path(self.temp_dir.name) / filename
         path.write_text(content)
         return self.loader.load(path)
-        
+
     def run_async(self, coro):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -38,21 +38,21 @@ print("Top Level Run")
 self.counter = 1
 ---
         """
-        PageClass = self.create_page_class(content)
+        page_class = self.create_page_class(content)
         request = MagicMock()
         # Mock app state for SPA injection
         request.app.state.enable_pjax = False
         request.app.state.pyhtml._get_client_script_url.return_value = "/static/pyhtml.js"
 
-        page = PageClass(request, {}, {})
-        
+        page = page_class(request, {}, {})
+
         # Capture stdout? Or just check side effects if possible.
         # But variable 'counter' is set on self.
-        
+
         self.run_async(page.render(init=True))
-        self.assertTrue(hasattr(page, 'counter'))
+        self.assertTrue(hasattr(page, "counter"))
         self.assertEqual(page.counter, 1)
-        
+
         # Verify it doesn't run on re-render
         page.counter = 99
         self.run_async(page.render(init=False))
@@ -68,15 +68,15 @@ def initialize(self):
     self.mounted = True
 ---
         """
-        PageClass = self.create_page_class(content)
+        page_class = self.create_page_class(content)
         request = MagicMock()
         request.app.state.enable_pjax = False
         request.app.state.pyhtml._get_client_script_url.return_value = "/static/pyhtml.js"
-        
-        page = PageClass(request, {}, {})
-        
+
+        page = page_class(request, {}, {})
+
         self.run_async(page.render(init=True))
-        self.assertTrue(hasattr(page, 'mounted'))
+        self.assertTrue(hasattr(page, "mounted"))
         self.assertTrue(page.mounted)
 
     def test_execution_order(self):
@@ -91,18 +91,19 @@ def my_mount(self):
     self.log.append('mount')
 ---
         """
-        PageClass = self.create_page_class(content)
+        page_class = self.create_page_class(content)
         request = MagicMock()
         request.app.state.enable_pjax = False
         request.app.state.pyhtml._get_client_script_url.return_value = "/static/pyhtml.js"
 
-        page = PageClass(request, {}, {})
+        page = page_class(request, {}, {})
         page.log = []
-        
+
         self.run_async(page.render(init=True))
-        
-        expected = ['top_level', 'mount']
+
+        expected = ["top_level", "mount"]
         self.assertEqual(page.log, expected)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

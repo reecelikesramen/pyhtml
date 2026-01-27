@@ -1,9 +1,9 @@
 import ast
 import unittest
 
-from pyhtml.compiler.ast_nodes import InterpolationNode, TemplateNode
+from pyhtml.compiler.ast_nodes import EventAttribute, InterpolationNode, TemplateNode
 from pyhtml.compiler.codegen.template import TemplateCodegen
-from pyhtml.compiler.ast_nodes import TemplateNode, IfAttribute, InterpolationNode, EventAttribute
+
 
 class TestCodegenTemplate(unittest.TestCase):
     def setUp(self):
@@ -24,7 +24,7 @@ class TestCodegenTemplate(unittest.TestCase):
                 child.end_col_offset = 0
         return node
 
-    def assertASTEqual(self, ast_node, expected_code):
+    def assert_ast_equal(self, ast_node, expected_code):
         """Helper to compare AST node equal to expected code string."""
         self.normalize_ast(ast_node)
 
@@ -43,13 +43,13 @@ class TestCodegenTemplate(unittest.TestCase):
         # name should become self.name
         expr = "name == 'Admin' and age > 18"
         transformed = self.codegen._transform_expr(expr, local_vars=set())
-        self.assertASTEqual(transformed, "self.name == 'Admin' and self.age > 18")
+        self.assert_ast_equal(transformed, "self.name == 'Admin' and self.age > 18")
 
     def test_transform_expr_with_locals(self):
         # item is local, should NOT get self. prefix
         expr = "item.name == 'Test'"
         transformed = self.codegen._transform_expr(expr, local_vars={"item"})
-        self.assertASTEqual(transformed, "item.name == 'Test'")
+        self.assert_ast_equal(transformed, "item.name == 'Test'")
 
     def test_transform_reactive_expr_auto_call(self):
         # Parameterless method should be auto-called
@@ -57,7 +57,7 @@ class TestCodegenTemplate(unittest.TestCase):
         transformed = self.codegen._transform_reactive_expr(
             expr, local_vars=set(), known_methods={"my_method"}
         )
-        self.assertASTEqual(transformed, "self.my_method()")
+        self.assert_ast_equal(transformed, "self.my_method()")
 
     def test_transform_reactive_expr_async(self):
         # Async method should be awaited
@@ -65,7 +65,7 @@ class TestCodegenTemplate(unittest.TestCase):
         transformed = self.codegen._transform_reactive_expr(
             expr, local_vars=set(), async_methods={"get_data"}
         )
-        self.assertASTEqual(transformed, "await self.get_data()")
+        self.assert_ast_equal(transformed, "await self.get_data()")
 
     def test_generate_render_method(self):
         # Interpolation must be wrapped in a TemplateNode with tag=None
@@ -107,10 +107,10 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("parts.append('Header content')", code)
 
     def test_codegen_component_instantiation(self):
-        node = TemplateNode(tag='MyComp', attributes={'title': 'Hello'}, line=1, column=0)
-        comp_map = {'MyComp': 'MyComponent'}
+        node = TemplateNode(tag="MyComp", attributes={"title": "Hello"}, line=1, column=0)
+        comp_map = {"MyComp": "MyComponent"}
         func_def, _ = self.codegen.generate_render_method([node], component_map=comp_map)
-        
+
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
         self.assertIn("MyComponent", code)
@@ -119,11 +119,13 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("'_style_collector': self._style_collector", code)
 
     def test_codegen_component_slots(self):
-        child1 = TemplateNode(tag='div', attributes={'slot': 'header'}, line=1, column=0)
-        child2 = TemplateNode(tag='span', attributes={}, line=1, column=0)
-        node = TemplateNode(tag='MyComp', attributes={}, children=[child1, child2], line=1, column=0)
-        comp_map = {'MyComp': 'MyComponent'}
-        
+        child1 = TemplateNode(tag="div", attributes={"slot": "header"}, line=1, column=0)
+        child2 = TemplateNode(tag="span", attributes={}, line=1, column=0)
+        node = TemplateNode(
+            tag="MyComp", attributes={}, children=[child1, child2], line=1, column=0
+        )
+        comp_map = {"MyComp": "MyComponent"}
+
         func_def, _ = self.codegen.generate_render_method([node], component_map=comp_map)
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
@@ -132,33 +134,45 @@ class TestCodegenTemplate(unittest.TestCase):
 
     def test_codegen_component_events(self):
         event_attr = EventAttribute(
-            line=1, column=0, name='@click', value='handleClick',
-            event_type='click', handler_name='handleClick',
-            args=[], modifiers=[]
+            line=1,
+            column=0,
+            name="@click",
+            value="handleClick",
+            event_type="click",
+            handler_name="handleClick",
+            args=[],
+            modifiers=[],
         )
-        node = TemplateNode(tag='MyComp', attributes={}, special_attributes=[event_attr], line=1, column=0)
-        comp_map = {'MyComp': 'MyComponent'}
-        
+        node = TemplateNode(
+            tag="MyComp", attributes={}, special_attributes=[event_attr], line=1, column=0
+        )
+        comp_map = {"MyComp": "MyComponent"}
+
         func_def, _ = self.codegen.generate_render_method([node], component_map=comp_map)
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
         self.assertIn("'data-on-click': 'handleClick'", code)
 
     def test_element_attribute_injection(self):
-        node = TemplateNode(tag='div', attributes={}, line=1, column=0)
-        scope_id = 'xyz123'
+        node = TemplateNode(tag="div", attributes={}, line=1, column=0)
+        scope_id = "xyz123"
         func_def, _ = self.codegen.generate_render_method([node], scope_id=scope_id)
-        
+
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
         self.assertIn("attrs['data-ph-xyz123'] = ''", code)
 
     def test_scoped_style_rewriting(self):
         css_content = ".card { color: red; }"
-        style_node = TemplateNode(tag='style', attributes={'scoped': ''}, line=1, column=0,
-            children=[TemplateNode(tag=None, text_content=css_content, line=1, column=0)])
-        scope_id = 'xyz123'
-        
+        style_node = TemplateNode(
+            tag="style",
+            attributes={"scoped": ""},
+            line=1,
+            column=0,
+            children=[TemplateNode(tag=None, text_content=css_content, line=1, column=0)],
+        )
+        scope_id = "xyz123"
+
         func_def, _ = self.codegen.generate_render_method([style_node], scope_id=scope_id)
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)

@@ -1,1 +1,1 @@
-from .runtime.app import PyHTML
+from .runtime.app import PyHTML as PyHTML

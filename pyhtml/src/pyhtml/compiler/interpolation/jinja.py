@@ -198,10 +198,12 @@ class JinjaInterpolationParser(InterpolationParser):
                 if brace_count == 0:
                     # Found matching brace
                     # CHECK IF VALID PYTHON before trying to compile
-                    # (Though compile is usually called on text that parse() has already mostly validated,
+                    # (Though compile is usually called on text that parse() has
+                    # already mostly validated,
                     # parse() returns nodes for valid interpolations.
                     # Wait, template codegen calls compile() on text_content of nodes.
-                    # If parse() returned literal text for CSS, then compile() will see the curly braces!
+                    # If parse() returned literal text for CSS, then compile() will
+                    # see the curly braces!
                     # And compile() iterates braces independently.
                     # So compile() MUST also respect the validity check!)
 

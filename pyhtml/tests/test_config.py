@@ -9,7 +9,7 @@ from pyhtml.runtime.app import PyHTML
 class TestConfig(unittest.TestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
-        self.tmp_path = Path(self.test_dir)
+        self.tmp_path = Path(self.test_dir).resolve()
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)

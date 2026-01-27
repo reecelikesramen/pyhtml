@@ -10,6 +10,7 @@ describe('UnifiedEventHandler', () => {
         document.body.innerHTML = '';
         appMock = {
             sendEvent: vi.fn(),
+            getConfig: vi.fn().mockReturnValue({ debug: false }),
         };
         handler = new UnifiedEventHandler(appMock as PyHTMLApp);
     });

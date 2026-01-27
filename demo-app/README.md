@@ -23,7 +23,7 @@ python -m src.main
 ## Features Demonstrated
 
 - **Variable Interpolation**: `{name}` and `{count}` in the template
-- **Event Handlers**: `@click="increment_count"` on the button
+- **Event Handlers**: `@click={increment_count}` on the button
 - **Lifecycle Hooks**: `__on_load()` for initialization
 - **Routing**: `!path { 'home': '/' }` directive
 

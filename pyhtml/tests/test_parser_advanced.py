@@ -10,7 +10,7 @@ class TestParserAdvanced(unittest.TestCase):
 
     def test_extract_all_validation_rules(self):
         content = """
-<form @submit="save">
+<form @submit={save}>
     <input name="t1" type="text" required minlength="2" maxlength="10" pattern="[a-z]+">
     <input name="n1" type="number" min="0" max="100" step="5">
     <input name="f1" type="file" accept="image/*,.pdf" max-size="5mb">
@@ -49,8 +49,8 @@ class TestParserAdvanced(unittest.TestCase):
 
     def test_reactive_validation_rules(self):
         content = """
-<form @submit="save">
-    <input name="email" :required="is_required" :min="min_age" :max="max_age">
+<form @submit={save}>
+    <input name="email" required={is_required} min={min_age} max={max_age}>
 </form>
 """
         parsed = self.parser.parse(content)

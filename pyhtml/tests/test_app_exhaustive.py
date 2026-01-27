@@ -19,7 +19,7 @@ class MockPage(BasePage):
 class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = TemporaryDirectory()
-        self.pages_dir = Path(self.temp_dir.name)
+        self.pages_dir = Path(self.temp_dir.name).resolve()
 
         # Mock dependencies to avoid side effects during init
         self.loader_patcher = patch("pyhtml.runtime.loader.get_loader")
@@ -155,7 +155,7 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         self.mock_loader.load.side_effect = Exception("Compile Error")
 
         with patch.object(PyHTML, "_register_error_page") as mock_reg:
-            app = PyHTML(self.pages_dir)
+            PyHTML(self.pages_dir)
             mock_reg.assert_called()
 
     def test_handle_request_injection_no_body_tag(self):
@@ -240,10 +240,11 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             patch.object(app.router, "add_page") as mock_add,
         ):
             self.mock_loader.load.return_value = MockPage
+            self.mock_loader.invalidate_cache.return_value = {str(path.resolve())}
             app.reload_page(path)
 
             self.mock_loader.invalidate_cache.assert_called_with(path)
-            mock_remove.assert_called_with(str(path))
+            mock_remove.assert_called_with(str(path.resolve()))
             mock_add.assert_called_with(MockPage)
 
     def test_register_error_page(self):

@@ -49,6 +49,8 @@ class PyHTML:
         else:
             self.pages_dir = Path(pages_dir)
 
+        self.pages_dir = self.pages_dir.resolve()
+
         # User configured static directory (disabled by default)
         self.static_dir = None
         if static_dir:
@@ -250,10 +252,12 @@ class PyHTML:
         try:
             path = Path(path_str).resolve()
             print(
-                f"DEBUG: _handle_source resolved path={path}, exists={path.exists()}, is_file={path.is_file()}"
+                f"DEBUG: _handle_source resolved path={path}, exists={path.exists()}, "
+                f"is_file={path.is_file()}"
             )
             # Security check: Ensure we are only serving files from allowed directories?
-            # For a dev tool, we might want to allow viewing any file in the traceback which might include library files.
+            # For a dev tool, we might want to allow viewing any file in the
+            # traceback which might include library files.
             # But normally we want to restrict to project and maybe venv.
             # Let's just check it exists and is a file for now.
             if not path.is_file():
@@ -327,31 +331,31 @@ class PyHTML:
         # Scan pages directory
         # We need to sort files to ensure deterministic order but scanning is recursive
         self._scan_directory(self.pages_dir)
-        
+
         # Explicitly check for __error__.pyhtml in root pages dir
         # (It is skipped by _scan_directory because it starts with _)
         error_page_path = self.pages_dir / "__error__.pyhtml"
         if error_page_path.exists():
-             try:
-                 root_layout = None
-                 if (self.pages_dir / "__layout__.pyhtml").exists():
-                     root_layout = str((self.pages_dir / "__layout__.pyhtml").resolve())
-                     
-                 page_class = self.loader.load(error_page_path, implicit_layout=root_layout)
-                 self.router.add_route("/__error__", page_class)
-             except Exception as e:
-                 print(f"Failed to load error page {error_page_path}: {e}")
-                 traceback.print_exc()
+            try:
+                root_layout = None
+                if (self.pages_dir / "__layout__.pyhtml").exists():
+                    root_layout = str((self.pages_dir / "__layout__.pyhtml").resolve())
+
+                page_class = self.loader.load(error_page_path, implicit_layout=root_layout)
+                self.router.add_route("/__error__", page_class)
+            except Exception as e:
+                print(f"Failed to load error page {error_page_path}: {e}")
+                traceback.print_exc()
 
     def _scan_directory(
         self, dir_path: Path, layout_path: Optional[str] = None, url_prefix: str = ""
     ):
         """Recursively scan directory for pages and layouts."""
         current_layout = layout_path
-        
+
         # Priority: __layout__.pyhtml ONLY
         potential_layout = dir_path / "__layout__.pyhtml"
-        
+
         if potential_layout.exists():
             # Compile layout first (it might use the parent layout!)
             try:
@@ -389,17 +393,19 @@ class PyHTML:
 
                 new_prefix = (url_prefix + "/" + new_segment).replace("//", "/")
                 self._scan_directory(entry, current_layout, new_prefix)
-                
-            elif entry.is_file() and entry.suffix == '.pyhtml':
-                if entry.name == 'layout.pyhtml':
-                     # Previously supported layout file, now ignored (or treated as normal page? No, starts with l)
-                     # Wait, layout.pyhtml doesn't start with _. So it would be registered as /layout
-                     # We should probably explicitly IGNORE it if we want strictness?
-                     # The prompt says: "absolutely NOT layout.pyhtml". 
-                     # If it's not a layout, is it a page? Usually layout.pyhtml has slots and shouldn't be a page.
-                     # Let's Skip it to be safe/clean.
+
+            elif entry.is_file() and entry.suffix == ".pyhtml":
+                if entry.name == "layout.pyhtml":
+                    # Previously supported layout file, now ignored (or treated
+                    # as normal page? No, starts with l)
+                    # Wait, layout.pyhtml doesn't start with _. So it would be registered as /layout
+                    # We should probably explicitly IGNORE it if we want strictness?
+                    # The prompt says: "absolutely NOT layout.pyhtml".
+                    # If it's not a layout, is it a page? Usually layout.pyhtml
+                    # has slots and shouldn't be a page.
+                    # Let's Skip it to be safe/clean.
                     continue
-                
+
                 # Determine route path
                 name = entry.stem  # filename without .pyhtml
 
@@ -439,9 +445,9 @@ class PyHTML:
                         # Should not happen as __route__ is derived from __routes__ usually
                         self.router.add_page(page_class)
                     elif self.path_based_routing:
-                         # No explicit !path, use file-based route ONLY if enabled
-                         self.router.add_route(route_path, page_class)
-                         
+                        # No explicit !path, use file-based route ONLY if enabled
+                        self.router.add_route(route_path, page_class)
+
                 except Exception as e:
                     print(f"Failed to load page {entry}: {e}")
                     traceback.print_exc()
@@ -485,7 +491,7 @@ class PyHTML:
                     captured_app = self  # Reference to PyHTML app for mode checking
 
                     class ModeAwareErrorPage(BasePage):
-                        """Error page that decides at render time whether to show details or trigger 500."""
+                        """Error page that decides whether to show details or trigger 500."""
 
                         def __init__(self, request: Request, *args, **kwargs):
                             # Store for parent __init__
@@ -520,132 +526,134 @@ class PyHTML:
             rel_path = file_path.relative_to(self.pages_dir)
         except ValueError:
             return None
-            
+
         segments = []
         for i, part in enumerate(rel_path.parts):
-             if part.startswith('_') or part.startswith('.'):
-                 return None
-                 
-             name = part
-             is_file = (i == len(rel_path.parts) - 1)
-             
-             if is_file:
-                 if not name.endswith('.pyhtml'):
-                     return None
-                 if name == 'layout.pyhtml':
-                     return None
-                 name = Path(name).stem
+            if part.startswith("_") or part.startswith("."):
+                return None
 
-             segment = name
-             if name == 'index':
-                 segment = ""
-             
-             param_match = re.match(r'^\[(.*?)\]$', name)
-             if param_match:
-                 param_name = param_match.group(1)
-                 segment = f"{{{param_name}}}"
-                 
-             segments.append(segment)
-             
+            name = part
+            is_file = i == len(rel_path.parts) - 1
+
+            if is_file:
+                if not name.endswith(".pyhtml"):
+                    return None
+                if name == "layout.pyhtml":
+                    return None
+                name = Path(name).stem
+
+            segment = name
+            if name == "index":
+                segment = ""
+
+            param_match = re.match(r"^\[(.*?)\]$", name)
+            if param_match:
+                param_name = param_match.group(1)
+                segment = f"{{{param_name}}}"
+
+            segments.append(segment)
+
         route_path = "/" + "/".join(segments)
-        while '//' in route_path:
-            route_path = route_path.replace('//', '/')
-            
-        if route_path != "/" and route_path.endswith('/'):
-             route_path = route_path.rstrip('/')
-             
+        while "//" in route_path:
+            route_path = route_path.replace("//", "/")
+
+        if route_path != "/" and route_path.endswith("/"):
+            route_path = route_path.rstrip("/")
+
         if not route_path:
-             route_path = "/"
-             
+            route_path = "/"
+
         return route_path
 
     def _resolve_implicit_layout(self, page_path: Path) -> Optional[str]:
         """Resolve the implicit layout path for a given page."""
         # Traverse up from page directory to pages_dir
         current_dir = page_path.parent
-        
+
         # Ensure we don't traverse above pages_dir
         try:
-             # Check if page is within pages_dir
-             current_dir.relative_to(self.pages_dir)
+            # Check if page is within pages_dir
+            current_dir.relative_to(self.pages_dir)
         except ValueError:
-             # Page is outside pages_dir? Should not happen normally.
-             return None
+            # Page is outside pages_dir? Should not happen normally.
+            return None
 
         while True:
             # Check for layout files
             layout = current_dir / "__layout__.pyhtml"
-            
+
             if layout.exists():
-                 # Don't use layout if it is the file itself (e.g. reloading a layout file)
-                 if layout.resolve() == page_path.resolve():
-                     pass 
-                 else:
-                     return str(layout.resolve())
-            
+                # Don't use layout if it is the file itself (e.g. reloading a layout file)
+                if layout.resolve() == page_path.resolve():
+                    pass
+                else:
+                    return str(layout.resolve())
+
             if current_dir == self.pages_dir:
                 break
-                
+
             current_dir = current_dir.parent
-            
+
             # Safety check: stop at root
             if current_dir == current_dir.parent:
                 break
-                
+
         return None
 
     def reload_page(self, path: Path):
         """Reload and recompile a specific page and its dependents."""
         # Invalidate cache for this file and dependents
         invalidated_paths = self.loader.invalidate_cache(path)
-        
+
         # Always include the original path even if not in cache (to trigger load)
         str_path = str(path.resolve())
         if str_path not in invalidated_paths:
-             invalidated_paths.add(str_path)
-        
+            invalidated_paths.add(str_path)
+
         for file_path_str in invalidated_paths:
             file_path = Path(file_path_str)
             try:
                 # Resolve implicit layout for re-compilation
                 implicit_layout = self._resolve_implicit_layout(file_path)
-                
+
                 # Recompile
                 new_page_class = self.loader.load(file_path, implicit_layout=implicit_layout)
-                
+
                 is_in_pages = False
                 try:
                     file_path.relative_to(self.pages_dir)
                     is_in_pages = True
                 except ValueError:
                     is_in_pages = False
-                
+
                 self.router.remove_routes_for_file(str(file_path))
 
                 # Special handling for __error__.pyhtml
-                if file_path.name == '__error__.pyhtml':
-                     self.router.add_route("/__error__", new_page_class)
+                if file_path.name == "__error__.pyhtml":
+                    self.router.add_route("/__error__", new_page_class)
                 elif is_in_pages:
                     self.router.add_page(new_page_class)
-                    
+
                     # Re-apply implicit routing if not explicitly defined
-                    has_explicit = hasattr(new_page_class, '__routes__') or hasattr(new_page_class, '__route__')
+                    has_explicit = hasattr(new_page_class, "__routes__") or hasattr(
+                        new_page_class, "__route__"
+                    )
                     if not has_explicit and self.path_based_routing:
                         route_path = self._get_implicit_route(file_path)
                         if route_path:
                             self.router.add_route(route_path, new_page_class)
-                
+
                 print(f"Reloaded: {file_path}")
-                
+
             except Exception as e:
                 print(f"Failed to reload {file_path}: {e}")
                 traceback.print_exc()
-                
+
                 # If it was a page, show error
-                if is_in_pages or file_path.name == '__error__.pyhtml':
+                if is_in_pages or file_path.name == "__error__.pyhtml":
                     self.router.remove_routes_for_file(str(file_path))
                     self._register_error_page(file_path, e)
-                
+
                 # If original file failed, re-raise because the watcher expects it
                 if str(file_path) == str_path:
                     raise e
@@ -655,19 +663,19 @@ class PyHTML:
         """Handle 500 errors with custom page if available."""
         # Try to find /__error__ page
         match = self.router.match("/__error__")
-            
+
         if match:
             try:
                 page_class, params, variant_name = match
                 # Minimal context
-                page = page_class(request, params, {}, path={'main': True}, url=None)
+                page = page_class(request, params, {}, path={"main": True}, url=None)
                 # Inject error code
                 page.error_code = 500
                 # Inject exception details if debug mode?
                 if self.debug:
                     page.error_detail = str(exc)
                     page.error_trace = traceback.format_exc()
-                    
+
                 response = await page.render()
                 # Force 500 status
                 response.status_code = 500
@@ -676,12 +684,12 @@ class PyHTML:
                 # If 500 page fails, fall back
                 print(f"Error rendering 500 page: {e}")
                 pass
-        
+
         # If no custom page or it failed:
         if self.debug:
             # Re-raise to let Starlette/Server show debug traceback
             raise exc
-            
+
         return PlainTextResponse("Internal Server Error", status_code=500)
 
     async def _handle_request(self, request: Request) -> Response:
@@ -692,50 +700,52 @@ class PyHTML:
         path = request.url.path
         match = self.router.match(path)
         if not match:
-             # Try custom __error__
-             match_error = self.router.match("/__error__")
-                 
-             if match_error:
-                 page_class, params, variant_name = match_error
-                 # Render 404/error page
-                 # Note: We pass original request so URL is preserved?
-                 # Yes, user checking request.url on 404 page might want to know what failed.
-                 
-                 # Construct params/query
-                 query = dict(request.query_params)
-                 
-                 # Path info
-                 path_info = {}
-                 if hasattr(page_class, '__routes__'):
-                     for name in page_class.__routes__.keys():
-                         path_info[name] = (name == variant_name)
-                 elif hasattr(page_class, '__route__'):
-                     path_info['main'] = True
+            # Try custom __error__
+            match_error = self.router.match("/__error__")
 
-                 from pyhtml.runtime.router import URLHelper
-                 url_helper = None
-                 if hasattr(page_class, '__routes__'):
-                      url_helper = URLHelper(page_class.__routes__)
-                 
-                 try:
-                     page = page_class(request, {}, query, path=path_info, url=url_helper)
-                     # Inject error code
-                     page.error_code = 404
-                     response = await page.render()
-                     response.status_code = 404
-                     return response
-                 except Exception as e:
-                     print(f"Failed to render custom error page {page_class}: {e}")
-                     import traceback
-                     traceback.print_exc()
-                     pass # Fallback
-                     
-             # Default 404 with client script
-             page = ErrorPage(request, "404 Not Found", f"The path '{path}' could not be found.")
-             response = await page.render()
-             response.status_code = 404
-             return response
-        
+            if match_error:
+                page_class, params, variant_name = match_error
+                # Render 404/error page
+                # Note: We pass original request so URL is preserved?
+                # Yes, user checking request.url on 404 page might want to know what failed.
+
+                # Construct params/query
+                query = dict(request.query_params)
+
+                # Path info
+                path_info = {}
+                if hasattr(page_class, "__routes__"):
+                    for name in page_class.__routes__.keys():
+                        path_info[name] = name == variant_name
+                elif hasattr(page_class, "__route__"):
+                    path_info["main"] = True
+
+                from pyhtml.runtime.router import URLHelper
+
+                url_helper = None
+                if hasattr(page_class, "__routes__"):
+                    url_helper = URLHelper(page_class.__routes__)
+
+                try:
+                    page = page_class(request, {}, query, path=path_info, url=url_helper)
+                    # Inject error code
+                    page.error_code = 404
+                    response = await page.render()
+                    response.status_code = 404
+                    return response
+                except Exception as e:
+                    print(f"Failed to render custom error page {page_class}: {e}")
+                    import traceback
+
+                    traceback.print_exc()
+                    pass  # Fallback
+
+            # Default 404 with client script
+            page = ErrorPage(request, "404 Not Found", f"The path '{path}' could not be found.")
+            response = await page.render()
+            response.status_code = 404
+            return response
+
         page_class, params, variant_name = match
         # ... (params, query, path_info, url_helper construction)
         # Build query params

@@ -93,7 +93,10 @@ class CompileErrorPage(BasePage):
         context_html = ""
         for line in context_lines:
             cls = "line-current" if line["is_current"] else "line"
-            context_html += f"<div class='{cls}'><span class='line-num'>{line['num']}</span> <span class='code'>{html.escape(line['content'])}</span></div>"
+            context_html += (
+                f"<div class='{cls}'><span class='line-num'>{line['num']}</span> "
+                f"<span class='code'>{html.escape(line['content'])}</span></div>"
+            )
 
         # Shorten file path for display
         file_display = self.error_file or "unknown"
@@ -101,7 +104,7 @@ class CompileErrorPage(BasePage):
             cwd = os.getcwd()
             if file_display.startswith(cwd):
                 file_display = os.path.relpath(file_display, cwd)
-        except:
+        except Exception:
             pass
 
         # Error title based on type
@@ -127,21 +130,33 @@ class CompileErrorPage(BasePage):
         <head>
             <title>{error_title}</title>
             <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a1a; color: #e0e0e0; margin: 0; padding: 20px; }}
+                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                                     Roboto, sans-serif;
+                       background: #1a1a1a; color: #e0e0e0; margin: 0; padding: 20px; }}
                 h1 {{ color: #ff6b6b; font-size: 24px; margin-bottom: 5px; }}
                 h3 {{ color: #aaa; font-size: 16px; margin-top: 30px; margin-bottom: 10px; }}
-                .exc-msg {{ font-size: 16px; color: #fff; margin-bottom: 20px; white-space: pre-wrap; font-family: monospace; line-height: 1.6; }}
+                .exc-msg {{ font-size: 16px; color: #fff; margin-bottom: 20px;
+                           white-space: pre-wrap; font-family: monospace;
+                           line-height: 1.6; }}
                 .container {{ max-width: 1000px; margin: 0 auto; }}
-                .error-location {{ background: #2d2d2d; border-radius: 8px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #ff6b6b; }}
-                .file-info {{ color: #ffd43b; font-family: monospace; font-size: 14px; margin-bottom: 10px; }}
-                .code-context {{ padding: 10px 0; background: #222; font-family: "Fira Code", monospace; font-size: 13px; overflow-x: auto; border-radius: 4px; }}
+                .error-location {{ background: #2d2d2d; border-radius: 8px; padding: 15px;
+                                 margin-bottom: 20px; border-left: 4px solid #ff6b6b; }}
+                .file-info {{ color: #ffd43b; font-family: monospace; font-size: 14px;
+                            margin-bottom: 10px; }}
+                .code-context {{ padding: 10px 0; background: #222; font-family: "Fira Code",
+                               monospace; font-size: 13px; overflow-x: auto; border-radius: 4px; }}
                 .line {{ padding: 2px 15px; color: #888; display: flex; }}
-                .line-current {{ padding: 2px 15px; background: #3c1e1e; color: #ffcccc; display: flex; border-left: 3px solid #ff6b6b; }}
-                .line-num {{ width: 40px; text-align: right; margin-right: 15px; opacity: 0.5; user-select: none; }}
+                .line-current {{ padding: 2px 15px; background: #3c1e1e; color: #ffcccc;
+                               display: flex; border-left: 3px solid #ff6b6b; }}
+                .line-num {{ width: 40px; text-align: right; margin-right: 15px; opacity: 0.5;
+                           user-select: none; }}
                 .code {{ white-space: pre; }}
                 .traceback-section {{ margin-top: 20px; }}
-                .traceback {{ background: #222; padding: 15px; border-radius: 8px; font-size: 12px; overflow-x: auto; color: #ccc; white-space: pre-wrap; word-break: break-word; }}
-                .header-block {{ border-bottom: 1px solid #333; padding-bottom: 20px; margin-bottom: 20px; }}
+                .traceback {{ background: #222; padding: 15px; border-radius: 8px; font-size: 12px;
+                             overflow-x: auto; color: #ccc; white-space: pre-wrap;
+                             word-break: break-word; }}
+                .header-block {{ border-bottom: 1px solid #333; padding-bottom: 20px;
+                                margin-bottom: 20px; }}
             </style>
         </head>
         <body>
@@ -149,14 +164,16 @@ class CompileErrorPage(BasePage):
                 <div class="header-block">
                     <h1>{error_title}</h1>
                 </div>
-                
+
                 <div class="error-location">
-                    <div class="file-info">{html.escape(file_display)}{":" + str(self.error_line) if self.error_line else ""}</div>
+                    <div class="file-info">{html.escape(file_display)}{
+            ":" + str(self.error_line) if self.error_line else ""
+        }</div>
                     <div class="exc-msg">{html.escape(self.error_message)}</div>
                 </div>
-                
+
                 {f'<div class="code-context">{context_html}</div>' if context_html else ""}
-                
+
                 {traceback_html}
             </div>
             <!-- Standard PyHTML Client Script for Hot Reload -->

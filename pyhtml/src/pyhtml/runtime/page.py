@@ -2,10 +2,13 @@
 
 import inspect
 from collections import defaultdict
-from typing import Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Union
 
 from starlette.requests import Request
 from starlette.responses import Response
+
+if TYPE_CHECKING:
+    from pyhtml.runtime.router import URLHelper
 
 from pyhtml.runtime.style_collector import StyleCollector
 
@@ -48,29 +51,37 @@ class BasePage:
     # Legacy support / full list
     LIFECYCLE_HOOKS = INIT_HOOKS + RENDER_HOOKS
 
-    def __init__(self, request: Request, params: Dict[str, str], query: Dict[str, str], path: Dict[str, bool] = None, url: 'URLHelper' = None, **kwargs):
+    def __init__(
+        self,
+        request: Request,
+        params: Dict[str, str],
+        query: Dict[str, str],
+        path: Dict[str, bool] = None,
+        url: "URLHelper" = None,
+        **kwargs,
+    ):
         self.request = request
         self.params = params or {}  # URL params from route
         self.query = query or {}  # Query string params
         self.path = path or {}
         self.url = url
-        
+
         # Style collector management
         # If passed from parent component (via kwargs), reuse it.
         # Otherwise create new one (root page).
-        if '_style_collector' in kwargs:
-             self._style_collector: StyleCollector = kwargs.pop('_style_collector')
+        if "_style_collector" in kwargs:
+            self._style_collector: StyleCollector = kwargs.pop("_style_collector")
         else:
-             self._style_collector = StyleCollector()
-        
+            self._style_collector = StyleCollector()
+
         # Context inheritance for !provide/!inject
         # If passed from parent component, make a shallow copy for child-specific shadowing.
         # Otherwise create a new empty context (root page).
-        if '_context' in kwargs:
-            self.context: Dict[str, Any] = kwargs.pop('_context').copy()
+        if "_context" in kwargs:
+            self.context: Dict[str, Any] = kwargs.pop("_context").copy()
         else:
             self.context: Dict[str, Any] = {}
-        
+
         self.user = None  # Set by middleware
 
         # Expose params as attributes for easy access in templates
@@ -83,17 +94,17 @@ class BasePage:
 
         # Slot registry: layout_id -> slot_name -> renderer (replacement semantics)
         self.slots: Dict[str, Dict[str, Union[Callable, str]]] = defaultdict(dict)
-        
+
         # Populate slots from kwargs (for components)
-        if 'slots' in kwargs and self.LAYOUT_ID:
-             self.slots[self.LAYOUT_ID].update(kwargs['slots'])
-        
+        if "slots" in kwargs and self.LAYOUT_ID:
+            self.slots[self.LAYOUT_ID].update(kwargs["slots"])
+
         # Component flag (internal)
-        self.__is_component__ = kwargs.pop('__is_component__', False)
-             
+        self.__is_component__ = kwargs.pop("__is_component__", False)
+
         # Store remaining kwargs as fallthrough attributes
-        self.attrs = {k: v for k, v in kwargs.items() if k != 'slots'}
-        
+        self.attrs = {k: v for k, v in kwargs.items() if k != "slots"}
+
         # Head slot registry: layout_id -> list of renderers (append semantics, top-down order)
         self.head_slots: Dict[str, List[Callable]] = defaultdict(list)
 
@@ -147,7 +158,7 @@ class BasePage:
                     return await renderer()
                 return renderer()
             return str(renderer)
-            
+
         # Fallback to default content if provided
         if default_renderer:
             if inspect.iscoroutinefunction(default_renderer):
@@ -171,21 +182,21 @@ class BasePage:
         # Render template (may be async for layouts with render_slot calls)
         # Render HTML
         html = await self._render_template()
-        
+
         # Inject styles if this is the root render (not a component or partial update)
         # Actually, BasePage.render() is called for the ROOT page response.
         # Components use _render_template directly.
         # So here we can inject the styles into <head>.
-        
+
         styles = self._style_collector.render()
         if styles:
-             # Inject into head
-             if '</head>' in html:
-                 html = html.replace('</head>', f'{styles}</head>', 1)
-             else:
-                 # Fallback: prepend to body or just prepend
-                 html = f"{styles}{html}"
-        
+            # Inject into head
+            if "</head>" in html:
+                html = html.replace("</head>", f"{styles}</head>", 1)
+            else:
+                # Fallback: prepend to body or just prepend
+                html = f"{styles}{html}"
+
         # Run post-render hooks (always run on render)
         for hook_name in self.RENDER_HOOKS:
             if hasattr(self, hook_name):
@@ -216,7 +227,8 @@ class BasePage:
             # Regular handlers: intelligent argument mapping
             args = event_data.get("args", {})
 
-            # Normalize args keys (arg-0 -> arg0) because dataset keys preserve hyphens before digits
+            # Normalize args keys (arg-0 -> arg0) because dataset keys preserve hyphens
+            # before digits
             normalized_args = {}
             for k, v in args.items():
                 if k.startswith("arg"):

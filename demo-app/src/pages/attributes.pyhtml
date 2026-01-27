@@ -13,16 +13,16 @@
         <h2>1. Conditional Rendering ($if)</h2>
         <div style="margin-bottom: 10px;">
             <label>
-                <input type="checkbox" $bind="show_if">
+                <input type="checkbox" $bind={show_if}>
                 Toggle content (DOM removal)
             </label>
         </div>
         
-        <div $if="show_if" style="background: #dcfce7; padding: 10px; border-radius: 4px; color: #166534;">
+        <div $if={show_if} style="background: #dcfce7; padding: 10px; border-radius: 4px; color: #166534;">
             <strong>$if content:</strong> I am present in the DOM only when checked.
         </div>
         
-        <div $if="not show_if" style="background: #fee2e2; padding: 10px; border-radius: 4px; color: #991b1b;">
+        <div $if={not show_if} style="background: #fee2e2; padding: 10px; border-radius: 4px; color: #991b1b;">
             <strong>$if content:</strong> I am shown when NOT checked.
         </div>
     </section>
@@ -32,12 +32,12 @@
         <h2>2. Conditional Visibility ($show)</h2>
         <div style="margin-bottom: 10px;">
             <label>
-                <input type="checkbox" $bind="show_vis">
+                <input type="checkbox" $bind={show_vis}>
                 Toggle visibility (CSS display)
             </label>
         </div>
         
-        <div $show="show_vis" style="background: #e0f2fe; padding: 10px; border-radius: 4px; color: #075985;">
+        <div $show={show_vis} style="background: #e0f2fe; padding: 10px; border-radius: 4px; color: #075985;">
             <strong>$show content:</strong> I am always in the DOM, but my display is toggled.
         </div>
         
@@ -51,12 +51,12 @@
         <h2>3. Loops ($for & $key)</h2>
         
         <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-            <input type="text" $bind="new_item_text" placeholder="New item name">
-            <button @click="add_item">Add Item</button>
+            <input type="text" $bind={new_item_text} placeholder="New item name">
+            <button @click={add_item}>Add Item</button>
         </div>
 
         <ul style="list-style: none; padding: 0;">
-            <li $for="idx, item in enumerate(items)" $key="item['id']" 
+            <li $for={idx, item in enumerate(items)} $key={item['id']} 
                 style="display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #eee; align-items: center;">
                 
                 <span>
@@ -66,13 +66,13 @@
                 
                     <button 
                     style="background: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;"
-                    @click="remove_item(item['id'])">
+                    @click={remove_item(item['id'])}>
                     Remove
                 </button>
             </li>
         </ul>
         
-        <div $if="not items" style="text-align: center; color: #888; padding: 20px;">
+        <div $if={not items} style="text-align: center; color: #888; padding: 20px;">
             No items in list. Add one!
         </div>
     </section>
@@ -83,18 +83,18 @@
         
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
             <div>
-                <button @click="trigger_error">Trigger Error</button>
-    <button @click="trigger_print">Trigger Print</button>
+                <button @click={trigger_error}>Trigger Error</button>
+    <button @click={trigger_print}>Trigger Print</button>
     
     <h3>Inputs</h3>
                 <div style="margin-bottom: 10px;">
                     <label style="display: block; margin-bottom: 5px;">Text Input:</label>
-                    <input type="text" $bind="user_input" style="width: 100%; padding: 5px;">
+                    <input type="text" $bind={user_input} style="width: 100%; padding: 5px;">
                 </div>
                 
                 <div style="margin-bottom: 10px;">
                     <label style="display: block; margin-bottom: 5px;">Select:</label>
-                    <select $bind="selected_option" style="width: 100%; padding: 5px;">
+                    <select $bind={selected_option} style="width: 100%; padding: 5px;">
                         <option value="A">Option A</option>
                         <option value="B">Option B</option>
                         <option value="C">Option C</option>
@@ -103,7 +103,7 @@
 
                 <div style="margin-bottom: 10px;">
                      <label>
-                        <input type="checkbox" $bind="is_checked">
+                        <input type="checkbox" $bind={is_checked}>
                         Is Checked?
                      </label>
                 </div>
@@ -118,7 +118,7 @@
         </div>
         
         <div style="margin-top: 15px;">
-            <button @click="reset_form()">Reset Form</button>
+            <button @click={reset_form()}>Reset Form</button>
         </div>
     </section>
 

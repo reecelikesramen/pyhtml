@@ -16,27 +16,27 @@
     <main class="container">
         <h1>Form Validation Demo</h1>
         
-        <div $if="success_message">
+        <div $if={success_message}>
             <article class="success">
                 <header>Success!</header>
                 {success_message}
-                <footer><button @click="reset_form">Reset</button></footer>
+                <footer><button @click={reset_form}>Reset</button></footer>
             </article>
         </div>
 
-        <form @submit="handle_submit" $if="not success_message">
+        <form @submit={handle_submit} $if={not success_message}>
             <!-- Username: Required, Min Lenth 3, Pattern -->
             <label for="username">
                 Username (3+ chars, letters only)
                 <input type="text" 
                        id="username" 
                        name="username" 
-                       value="{form_data.get('username', '')}"
-                       required 
+                       value={form_data.get('username', '')}
+                       required
                        minlength="3" 
                        pattern="[A-Za-z]+"
-                       :aria-invalid="'true' if errors.get('username') else 'false'">
-                <small class="error" $if="errors.get('username')">{errors.get('username')}</small>
+                       aria-invalid={True if errors.get('username') else False}>
+                <small class="error" $if={errors.get('username')}>{errors.get('username')}</small>
             </label>
 
             <!-- Email: Required, Type Email -->
@@ -45,10 +45,10 @@
                 <input type="email" 
                        id="email" 
                        name="email" 
-                       value="{form_data.get('email', '')}"
+                       value={form_data.get('email', '')}
                        required
-                       :aria-invalid="'true' if errors.get('email') else 'false'">
-                <small class="error" $if="errors.get('email')">{errors.get('email')}</small>
+                       aria-invalid={True if errors.get('email') else False}>
+                <small class="error" $if={errors.get('email')}>{errors.get('email')}</small>
             </label>
 
             <!-- Age: Number, Min 18, Max 100 -->
@@ -57,30 +57,30 @@
                 <input type="number" 
                        id="age" 
                        name="age" 
-                       value="{form_data.get('age', '')}"
+                       value={form_data.get('age', '')}
                        min="18" 
                        max="100"
-                       :aria-invalid="'true' if errors.get('age') else 'false'">
-                <small class="error" $if="errors.get('age')">{errors.get('age')}</small>
+                       aria-invalid={True if errors.get('age') else False}>
+                <small class="error" $if={errors.get('age')}>{errors.get('age')}</small>
             </label>
 
             <!-- Conditional Validation -->
             <label for="has_referral">
                 <input type="checkbox" 
                        id="has_referral" 
-                       $bind="has_referral">
+                       $bind={has_referral}>
                 I have a referral code
             </label>
 
-            <label for="referral_code" $show="has_referral">
+            <label for="referral_code" $show={has_referral}>
                 Referral Code (Required if checked)
                 <input type="text" 
                        id="referral_code" 
                        name="referral_code"
-                       value="{form_data.get('referral_code', '')}" 
-                       :required="has_referral"
-                       :aria-invalid="'true' if errors.get('referral_code') else 'false'">
-                <small class="error" $if="errors.get('referral_code')">{errors.get('referral_code')}</small>
+                       value={form_data.get('referral_code', '')} 
+                       required={has_referral}
+                       aria-invalid={True if errors.get('referral_code') else False}>
+                <small class="error" $if={errors.get('referral_code')}>{errors.get('referral_code')}</small>
             </label>
 
             <button type="submit">Submit Form</button>
@@ -96,7 +96,7 @@
         <hr>
         
         <h2>Pydantic Integration Test</h2>
-        <div $if="pydantic_success">
+        <div $if={pydantic_success}>
             <article class="success">
                 <header>Pydantic Success!</header>
                 {pydantic_success}
@@ -104,17 +104,17 @@
             </article>
         </div>
         
-        <form @submit="handle_pydantic_submit" $model="User" $if="not pydantic_success">
+        <form @submit={handle_pydantic_submit} $model={User} $if={not pydantic_success}>
             <label>
                 Username (Pydantic)
                 <input name="username" required>
-                <small class="error" $if="errors.get('username')">{errors.get('username')}</small>
+                <small class="error" $if={errors.get('username')}>{errors.get('username')}</small>
             </label>
             
             <label>
                 Age (Pydantic Int)
                 <input type="number" name="age" required>
-                <small class="error" $if="errors.get('age')">{errors.get('age')}</small>
+                <small class="error" $if={errors.get('age')}>{errors.get('age')}</small>
             </label>
             
             <label>
@@ -128,22 +128,22 @@
         <hr>
         
         <h2>Advanced Features (Phase 4)</h2>
-        <div $if="advanced_success">
+        <div $if={advanced_success}>
             <article class="success">
                 <header>Advanced Success!</header>
                 {advanced_success}
-                <div $if="image_preview">
+                <div $if={image_preview}>
                     <img src="{image_preview}" style="max-width: 100%; max-height: 400px; margin-top: 10px; border-radius: 8px;">
                 </div>
                 <pre>{advanced_data}</pre>
             </article>
         </div>
         
-        <form @submit="handle_advanced" $model="AdvancedUser" $if="not advanced_success">
+        <form @submit={handle_advanced} $model={AdvancedUser} $if={not advanced_success}>
             <label>
                 Full Name
                 <input name="full_name" required>
-                <small class="error" $if="errors.get('full_name')">{errors.get('full_name')}</small>
+                <small class="error" $if={errors.get('full_name')}>{errors.get('full_name')}</small>
             </label>
             
             <label>
@@ -153,13 +153,13 @@
                     <option value="admin">Admin</option>
                     <option value="guest">Guest</option>
                 </select>
-                <small class="error" $if="errors.get('role')">{errors.get('role')}</small>
+                <small class="error" $if={errors.get('role')}>{errors.get('role')}</small>
             </label>
             
             <label>
                 Birth Date (Date Validation)
                 <input type="date" name="birth_date" required>
-                <small class="error" $if="errors.get('birth_date')">{errors.get('birth_date')}</small>
+                <small class="error" $if={errors.get('birth_date')}>{errors.get('birth_date')}</small>
             </label>
             
             <fieldset>
@@ -167,20 +167,20 @@
                 <label>
                     Street
                     <input name="address.street" required>
-                    <small class="error" $if="errors.get('address.street')">{errors.get('address.street')}</small>
+                    <small class="error" $if={errors.get('address.street')}>{errors.get('address.street')}</small>
                 </label>
                 <label>
                     City
                     <input name="address.city" required>
-                    <small class="error" $if="errors.get('address.city')">{errors.get('address.city')}</small>
+                    <small class="error" $if={errors.get('address.city')}>{errors.get('address.city')}</small>
                 </label>
             </fieldset>
             
             <label>
                 Large File Upload with Progress
-                <input type="file" name="profile_pic" $bind:progress="upload_progress" accept="image/*" max-size="5MB">
-                <progress value="{upload_progress}" max="1" style="width: 100%; display: block; margin-top: 5px;" $if="upload_progress > 0 and upload_progress < 1"></progress>
-                <small class="error" $if="errors.get('profile_pic')">{errors.get('profile_pic')}</small>
+                <input type="file" name="profile_pic" accept="image/*" max-size="5MB">
+                <progress value={upload_progress} max="1" style="width: 100%; display: block; margin-top: 5px;" $if={upload_progress > 0 and upload_progress < 1}></progress>
+                <small class="error" $if={errors.get('profile_pic')}>{errors.get('profile_pic')}</small>
             </label>
             
             <button type="submit">Submit Advanced Form</button>
@@ -189,7 +189,7 @@
         <hr>
         
         <h2>Dynamic Validation (Phase 5)</h2>
-        <div $if="shipment_success">
+        <div $if={shipment_success}>
             <article class="success">
                 <header>Shipment Created!</header>
                 {shipment_success}
@@ -197,10 +197,10 @@
             </article>
         </div>
         
-        <form @submit="create_shipment" $if="not shipment_success">
+        <form @submit={create_shipment} $if={not shipment_success}>
             <div>
                 <label>Delivery Method</label>
-                <select name="delivery_method" $bind="delivery_method">
+                <select name="delivery_method" $bind={delivery_method}>
                     <option value="standard">Standard Shipping</option>
                     <option value="express">Express Shipping</option>
                     <option value="pickup">Store Pickup</option>
@@ -208,30 +208,30 @@
             </div>
             
             <!-- Address fields only required if not pickup -->
-            <fieldset $if="delivery_method != 'pickup'">
+            <fieldset $if={delivery_method != 'pickup'}>
                 <legend>Delivery Address</legend>
                 
                 <label>Street
-                <input name="street" placeholder="Street Address" value="{form_data.get('street', '')}" :required="delivery_method != 'pickup'">
-                <small class="error" $if="errors.get('street')">{errors.get('street')}</small>
+                <input name="street" placeholder="Street Address" value={form_data.get('street', '')} required={delivery_method != 'pickup'}>
+                <small class="error" $if={errors.get('street')}>{errors.get('street')}</small>
                 </label>
                 
                 <label>City
-                <input name="city" placeholder="City" value="{form_data.get('city', '')}" :required="delivery_method != 'pickup'">
-                <small class="error" $if="errors.get('city')">{errors.get('city')}</small>
+                <input name="city" placeholder="City" value={form_data.get('city', '')} required={delivery_method != 'pickup'}>
+                <small class="error" $if={errors.get('city')}>{errors.get('city')}</small>
                 </label>
                 
                 <label>ZIP Code (5 digits)
-                <input name="zip" pattern="[0-9]{{5}}" title="Must be exactly 5 digits" placeholder="ZIP Code" value="{form_data.get('zip', '')}" :required="delivery_method != 'pickup'">
-                <small class="error" $if="errors.get('zip')">{errors.get('zip')}</small>
+                <input name="zip" pattern="[0-9]{{5}}" title="Must be exactly 5 digits" placeholder="ZIP Code" value={form_data.get('zip', '')} required={delivery_method != 'pickup'}>
+                <small class="error" $if={errors.get('zip')}>{errors.get('zip')}</small>
                 </label>
             </fieldset>
             
             <!-- Express delivery date only shown/required for express -->
-            <div $if="delivery_method == 'express'">
+            <div $if={delivery_method == 'express'}>
                 <label>Delivery Date (Must be tomorrow+)</label>
-                <input name="delivery_date" type="date" :min="tomorrow" required>
-                <small class="error" $if="errors.get('delivery_date')">{errors.get('delivery_date')}</small>
+                <input name="delivery_date" type="date" min={tomorrow} required>
+                <small class="error" $if={errors.get('delivery_date')}>{errors.get('delivery_date')}</small>
             </div>
             
             <button type="submit">Submit Order</button>
@@ -242,9 +242,9 @@
         <h2>Custom Progress Provider (Async Task)</h2>
         <div style="background: #f0f0f0; padding: 20px; border-radius: 8px;">
             <p>Task Status: <strong>{task_status_text}</strong></p>
-            <progress :value="task_progress" max="100" style="width: 100%; height: 20px;"></progress>
+            <progress value={task_progress} max="100" style="width: 100%; height: 20px;"></progress>
             <div style="margin-top: 10px;">
-                <button @click="run_long_task" :disabled="task_running">
+                <button @click={run_long_task} disabled={task_running}>
                     { 'Running...' if task_running else 'Start Long Task' }
                 </button>
             </div>
@@ -289,10 +289,11 @@ async def handle_submit(data):
     # await handler(data)
     # So if we are here, self.errors is empty (or None, depending on implementation).
     
-    self.success_message = ""
-    self.form_data = {}
-    self.has_referral = False
-    self.errors = {}
+    
+    # We want to keep the success message to show the success state!
+    # The form will hide because of $if={not success_message}
+
+async def reset_form():
     self.success_message = ""
     self.form_data = {}
     self.has_referral = False

@@ -12,7 +12,9 @@ from pyhtml.compiler.ast_nodes import (
     FormValidationSchema,
     ModelAttribute,
     ParsedPyHTML,
+    ReactiveAttribute,
     SpecialAttribute,
+    SpreadAttribute,
     TemplateNode,
 )
 from pyhtml.compiler.attributes.base import AttributeParser
@@ -21,15 +23,17 @@ from pyhtml.compiler.attributes.conditional import ConditionalAttributeParser
 from pyhtml.compiler.attributes.events import EventAttributeParser
 from pyhtml.compiler.attributes.form import ModelAttributeParser
 from pyhtml.compiler.attributes.loop import KeyAttributeParser, LoopAttributeParser
-from pyhtml.compiler.attributes.reactive import ReactiveAttributeParser
+
 from pyhtml.compiler.directives.base import DirectiveParser
+from pyhtml.compiler.directives.component import ComponentDirectiveParser
+from pyhtml.compiler.directives.context import ContextDirectiveParser
 from pyhtml.compiler.directives.layout import LayoutDirectiveParser
 from pyhtml.compiler.directives.no_spa import NoSpaDirectiveParser
 from pyhtml.compiler.directives.path import PathDirectiveParser
+from pyhtml.compiler.directives.props import PropsDirectiveParser
 from pyhtml.compiler.exceptions import PyHTMLSyntaxError
 from pyhtml.compiler.interpolation.jinja import JinjaInterpolationParser
 
-from pyhtml.compiler.interpolation.jinja import JinjaInterpolationParser
 
 class PyHTMLParser:
     """Main parser orchestrator."""
@@ -52,10 +56,8 @@ class PyHTMLParser:
             LoopAttributeParser(),
             KeyAttributeParser(),
             BindAttributeParser(),
-            ReactiveAttributeParser(),
             ModelAttributeParser(),
         ]
-
 
         # Interpolation parser (pluggable)
         self.interpolation_parser = JinjaInterpolationParser()
@@ -107,34 +109,37 @@ class PyHTMLParser:
         # Parse directives (handles multiline directives by accumulating lines)
         directives = []
         template_lines = []
-        directive_lines = directive_section.split('\n')
-        
-        directives_done = False # Enforce directives at top
-        
+        directive_lines = directive_section.split("\n")
+
+        directives_done = False  # Enforce directives at top
+
         i = 0
         while i < len(directive_lines):
             old_i = i
             line = directive_lines[i]
             line_stripped = line.strip()
             line_num = i + 1
-            
-            if not line_stripped or line_stripped.startswith('---'):
-                # Blank lines are fine, keep them in template for lining up (or ignore? if we want correct line numbers for template, we need them)
+
+            if not line_stripped or line_stripped.startswith("---"):
+                # Blank lines are fine, keep them in template for lining up
+                # (or ignore? if we want correct line numbers for template,
+                # we need them)
                 # But if we are still parsing directives, blank lines are ignored.
                 # If we are done directives, they become template blank lines.
                 if directives_done:
                     template_lines.append(line)
                 else:
-                    # In directive section, blank lines don't matter? 
+                    # In directive section, blank lines don't matter?
                     # Actually we need to PAD template_lines to keep sync if we skip them here?
-                    # "Add blank lines to template_lines to preserve line numbers" logic below handles it.
+                    # "Add blank lines to template_lines to preserve line numbers"
+                    # logic below handles it.
                     pass
                 i += 1
                 continue
 
             # Check if it's a directive
             found_directive = False
-            
+
             if not directives_done:
                 for parser in self.directive_parsers:
                     if parser.can_parse(line_stripped):
@@ -145,24 +150,26 @@ class PyHTMLParser:
                             found_directive = True
                             i += 1
                             break
-                        
+
                         # If single line failed, try accumulating multiline content
                         # Count open braces/brackets/PARENS to find the end
                         accumulated = line_stripped
-                        brace_count = accumulated.count('{') - accumulated.count('}')
-                        bracket_count = accumulated.count('[') - accumulated.count(']')
-                        paren_count = accumulated.count('(') - accumulated.count(')')
-                        
+                        brace_count = accumulated.count("{") - accumulated.count("}")
+                        bracket_count = accumulated.count("[") - accumulated.count("]")
+                        paren_count = accumulated.count("(") - accumulated.count(")")
+
                         j = i + 1
-                        
-                        while (brace_count > 0 or bracket_count > 0 or paren_count > 0) and j < len(directive_lines):
+
+                        while (brace_count > 0 or bracket_count > 0 or paren_count > 0) and j < len(
+                            directive_lines
+                        ):
                             next_line = directive_lines[j].strip()
-                            accumulated += '\n' + next_line
-                            brace_count += next_line.count('{') - next_line.count('}')
-                            bracket_count += next_line.count('[') - next_line.count(']')
-                            paren_count += next_line.count('(') - next_line.count(')')
+                            accumulated += "\n" + next_line
+                            brace_count += next_line.count("{") - next_line.count("}")
+                            bracket_count += next_line.count("[") - next_line.count("]")
+                            paren_count += next_line.count("(") - next_line.count(")")
                             j += 1
-                        
+
                         # Try parsing the accumulated content
                         directive = parser.parse(accumulated, line_num, 0)
                         if directive:
@@ -171,9 +178,9 @@ class PyHTMLParser:
                             i = j  # Skip past all accumulated lines
                             break
                         else:
-                            i += 1 # Parse failed, move on to this line being template?
+                            i += 1  # Parse failed, move on to this line being template?
                         break
-            
+
             if found_directive:
                 # Add blank lines to template_lines to preserve line numbers
                 # We skipped from old_i to i.
@@ -184,10 +191,11 @@ class PyHTMLParser:
                     template_lines.append("")
             else:
                 # Not a directive, part of template
-                directives_done = True # Once we hit template, no more directives allowed
-                
-                # Check if this line LOOKS like a directive but wasn't parsed (e.g. invalid syntax or misplaced)
-                if line_stripped.startswith('!'):
+                directives_done = True  # Once we hit template, no more directives allowed
+
+                # Check if this line LOOKS like a directive but wasn't parsed
+                # (e.g. invalid syntax or misplaced)
+                if line_stripped.startswith("!"):
                     # Could be a warning or error?
                     pass
 
@@ -206,23 +214,41 @@ class PyHTMLParser:
             # Pre-process: Replace <head> with <pyhtml-head> to preserve it
             # lxml strips standalone <head> tags in fragment mode
             import re
-            template_html = re.sub(r'<head(\s|>|/>)', r'<pyhtml-head\1', template_html, flags=re.IGNORECASE)
-            template_html = re.sub(r'</head>', r'</pyhtml-head>', template_html, flags=re.IGNORECASE)
-            
+
+            template_html = re.sub(
+                r"<head(\s|>|/>)", r"<pyhtml-head\1", template_html, flags=re.IGNORECASE
+            )
+            template_html = re.sub(
+                r"</head>", r"</pyhtml-head>", template_html, flags=re.IGNORECASE
+            )
+
             # Pre-process: Handle unquoted attribute values with braces (Svelte/React style)
             # Regex: attr={value} -> attr="{value}"
             # This allows lxml to parse attributes containing spaces (e.g. @click={count += 1})
             # Limitation: Does not handle nested braces for now.
-            template_html = re.sub(r'([a-zA-Z0-9_:@$-]+)=\{([^{}"\']*)\}', r'\1="{\2}"', template_html)
+            def quote_wrapper(match):
+                attr = match.group(1)
+                value = match.group(2)
+                # If value contains double quotes, wrap in single quotes
+                if '"' in value:
+                    return f"{attr}='{{{value}}}'"
+                return f'{attr}="{{{value}}}"'
+
+            template_html = re.sub(
+                r'([a-zA-Z0-9_:@$-]+)=\{([^{}]*)\}', quote_wrapper, template_html
+            )
 
             # Pre-process: Handle {**spread} syntax
             # Convert {**...} to __pyhtml_spread__="{**...}" so lxml can parse it
-            # Regex: look for {** followed by anything until } preceded by whitespace or start of string
+            # Regex: look for {** followed by anything until } preceded by
+            # whitespace or start of string
             # Be careful not to match inside string literals or text content if avoidable.
             # Simple heuristic: Only match if it looks like an attribute (preceded by space)
             # and strictly follows {** pattern.
-            template_html = re.sub(r'(?<=[\s"\'])(\{\*\*.*?\})', r'__pyhtml_spread__="\1"', template_html)
-            
+            template_html = re.sub(
+                r'(?<=[\s"\'])(\{\*\*.*?\})', r'__pyhtml_spread__="\1"', template_html
+            )
+
             # lxml.html.fragments_fromstring handles multiple top-level elements
             # It returns a list of elements and strings (for top-level text)
             try:
@@ -260,8 +286,10 @@ class PyHTMLParser:
                         # Actually if we use fragments_fromstring, checking tail is safe.
 
                         if frag.tail:
-                            # Wait, if fragments_fromstring returns it as separate string item, we duplicate?
-                            # Let's rely on testing. If lxml puts it in list, frag.tail should be None?
+                            # Wait, if fragments_fromstring returns it as separate string
+                            # item, we duplicate?
+                            # Let's rely on testing. If lxml puts it in list,
+                            # frag.tail should be None?
                             # Nope, lxml behavior:
                             # fragments_fromstring("<a></a>tail") -> [Element a]
                             # The tail is attached to 'a'.
@@ -275,7 +303,9 @@ class PyHTMLParser:
                             )
                             if tail_nodes:
                                 template_nodes.extend(tail_nodes)
-
+            
+            except PyHTMLSyntaxError:
+                raise
             except Exception:
                 # Failed to parse, maybe empty or purely comment?
                 # or critical error
@@ -547,19 +577,25 @@ class PyHTMLParser:
             if not parsed:
                 # Check for reactive value syntax: attr="{expr}"
                 val_str = str(value).strip()
-                if val_str.startswith('{') and val_str.endswith('}') and val_str.count('{') == 1:
+                if val_str.startswith("{") and val_str.endswith("}") and val_str.count("{") == 1:
                     # Treat as reactive attribute
                     # Exclude special internal attr for spread
-                    if name == '__pyhtml_spread__':
-                        special.append(SpreadAttribute(
-                            name=name, value=val_str, expr=val_str[3:-1], # Strip {** and }
-                            line=0, column=0
-                        ))
+                    if name == "__pyhtml_spread__":
+                        special.append(
+                            SpreadAttribute(
+                                name=name,
+                                value=val_str,
+                                expr=val_str[3:-1],  # Strip {** and }
+                                line=0,
+                                column=0,
+                            )
+                        )
                     else:
-                        special.append(ReactiveAttribute(
-                            name=name, value=val_str, expr=val_str[1:-1],
-                            line=0, column=0
-                        ))
+                        special.append(
+                            ReactiveAttribute(
+                                name=name, value=val_str, expr=val_str[1:-1], line=0, column=0
+                            )
+                        )
                 else:
                     regular[name] = val_str
 

@@ -32,7 +32,8 @@ class TestGeneratorAdvanced(unittest.TestCase):
         # Should have a parent layout ID hashed
         # hashlib.md5("base.pyhtml".encode()).hexdigest()
 
-        # Note: path is resolved relative to cwd if not absolute, let's just check it contains a string constant
+        # Note: path is resolved relative to cwd if not absolute, let's just check
+        # it contains a string constant
         self.assertTrue(
             any(isinstance(n, ast.Expr) and isinstance(n.value, ast.Call) for n in init_slots.body)
         )

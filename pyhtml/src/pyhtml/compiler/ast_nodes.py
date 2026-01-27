@@ -2,7 +2,7 @@
 
 import ast
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -52,6 +52,7 @@ class LayoutDirective(Directive):
 @dataclass
 class ComponentDirective(Directive):
     """!component 'path/to/component' as Name"""
+
     path: str
     component_name: str  # PascalCase name (e.g. 'Badge')
 
@@ -62,6 +63,7 @@ class ComponentDirective(Directive):
 @dataclass
 class PropsDirective(Directive):
     """!props(name: type, arg=default)"""
+
     # List of (name, type_hint_str, default_value_str_or_None)
     args: List[Tuple[str, str, Optional[str]]]
 
@@ -72,6 +74,7 @@ class PropsDirective(Directive):
 @dataclass
 class InjectDirective(Directive):
     """!inject { local: 'GLOBAL' }"""
+
     mapping: Dict[str, str]  # {local_var: global_key}
 
     def __str__(self) -> str:
@@ -81,6 +84,7 @@ class InjectDirective(Directive):
 @dataclass
 class ProvideDirective(Directive):
     """!provide { 'GLOBAL': local }"""
+
     mapping: Dict[str, str]  # {global_key: local_var_expr}
 
     def __str__(self) -> str:
@@ -97,7 +101,7 @@ class SpecialAttribute(ASTNode):
 
 @dataclass
 class KeyAttribute(SpecialAttribute):
-    """$key="unique_id"."""
+    """$key={unique_id}."""
 
     expr: str
 
@@ -107,7 +111,7 @@ class KeyAttribute(SpecialAttribute):
 
 @dataclass
 class IfAttribute(SpecialAttribute):
-    """$if="condition"."""
+    """$if={condition}."""
 
     condition: str
 
@@ -117,7 +121,7 @@ class IfAttribute(SpecialAttribute):
 
 @dataclass
 class ShowAttribute(SpecialAttribute):
-    """$show="condition"."""
+    """$show={condition}."""
 
     condition: str
 
@@ -127,7 +131,7 @@ class ShowAttribute(SpecialAttribute):
 
 @dataclass
 class ForAttribute(SpecialAttribute):
-    """$for="item in items"."""
+    """$for={item in items}"."""
 
     is_template_tag: bool  # <template $for>
     loop_vars: str  # "item" or "key, value"
@@ -140,7 +144,7 @@ class ForAttribute(SpecialAttribute):
 
 @dataclass
 class BindAttribute(SpecialAttribute):
-    """$bind="variable"."""
+    """$bind={variable}."""
 
     variable: str
     binding_type: Optional[str] = None
@@ -155,14 +159,14 @@ class FieldValidationRules:
 
     name: str
     required: bool = False
-    required_expr: Optional[str] = None  # For :required="condition"
+    required_expr: Optional[str] = None  # For required={condition}
     pattern: Optional[str] = None
     minlength: Optional[int] = None
     maxlength: Optional[int] = None
     min_value: Optional[str] = None  # String to support dates
-    min_expr: Optional[str] = None  # For :min="expr"
+    min_expr: Optional[str] = None  # For min={expr}
     max_value: Optional[str] = None
-    max_expr: Optional[str] = None  # For :max="expr"
+    max_expr: Optional[str] = None  # For max={expr}
     step: Optional[str] = None
     input_type: str = "text"  # email, url, number, date, etc.
     title: Optional[str] = None  # Custom error message
@@ -178,7 +182,7 @@ class FormValidationSchema:
     """Schema containing all validation rules for a form."""
 
     fields: Dict[str, FieldValidationRules] = field(default_factory=dict)
-    model_name: Optional[str] = None  # For $model="ClassName"
+    model_name: Optional[str] = None  # For $model={ClassName}
 
     def __str__(self) -> str:
         return f"FormValidationSchema(fields={len(self.fields)}, model={self.model_name})"
@@ -186,7 +190,7 @@ class FormValidationSchema:
 
 @dataclass
 class ModelAttribute(SpecialAttribute):
-    """$model="ModelClassName" - Pydantic model binding."""
+    """$model={ModelClassName} - Pydantic model binding."""
 
     model_name: str
 
@@ -196,7 +200,7 @@ class ModelAttribute(SpecialAttribute):
 
 @dataclass
 class EventAttribute(SpecialAttribute):
-    """@click="handler_name" or @click="handler(arg1)"."""
+    """@click={handler_name} or @click={handler(arg1)}."""
 
     event_type: str  # 'click', 'submit', etc.
     handler_name: str
@@ -208,13 +212,16 @@ class EventAttribute(SpecialAttribute):
     validation_schema: Optional[FormValidationSchema] = None  # Set for @submit handlers
 
     def __str__(self) -> str:
-        return f"EventAttribute(event={self.event_type}, modifiers={self.modifiers}, handler={self.handler_name}, args={self.args})"
+        return (
+            f"EventAttribute(event={self.event_type}, modifiers={self.modifiers}, "
+            f"handler={self.handler_name}, args={self.args})"
+        )
 
 
 @dataclass
 class ReactiveAttribute(SpecialAttribute):
     """
-    :attr="expression" or attr="{expression}"
+    attr={expression}
     Represents a reactive attribute where the value is a python expression.
     """
 
@@ -230,6 +237,7 @@ class SpreadAttribute(SpecialAttribute):
     {**attrs} (preprocessed to __pyhtml_spread__="{**attrs}")
     Represents a spread of attributes.
     """
+
     expr: str
 
     def __str__(self) -> str:
@@ -259,7 +267,11 @@ class TemplateNode(ASTNode):
 
     def __str__(self) -> str:
         if self.tag:
-            return f"TemplateNode(tag={self.tag}, attrs={len(self.attributes)}, special={len(self.special_attributes)}, children={len(self.children)})"
+            return (
+                f"TemplateNode(tag={self.tag}, attrs={len(self.attributes)}, "
+                f"special={len(self.special_attributes)}, "
+                f"children={len(self.children)})"
+            )
         return f"TemplateNode(text={self.text_content[:30] if self.text_content else None})"
 
 
@@ -285,4 +297,8 @@ class ParsedPyHTML:
         return [d for d in self.directives if isinstance(d, directive_type)]
 
     def __str__(self) -> str:
-        return f"ParsedPyHTML(directives={len(self.directives)}, template_nodes={len(self.template)}, python_lines={len(self.python_code.splitlines())})"
+        return (
+            f"ParsedPyHTML(directives={len(self.directives)}, "
+            f"template_nodes={len(self.template)}, "
+            f"python_lines={len(self.python_code.splitlines())})"
+        )

@@ -1,4 +1,5 @@
 """Style collector for scoped CSS."""
+
 from typing import Dict
 
 
@@ -19,11 +20,11 @@ class StyleCollector:
         """Render all collected styles as a single <style> block."""
         if not self._styles:
             return ""
-        
+
         # Sort by scope_id to ensure deterministic output (important for tests)
         # But maybe preserving insertion order is better?
-        # Actually insertion order implicitly handles dependency order if children render first? 
-        # No, children render inside parent body. 
+        # Actually insertion order implicitly handles dependency order if children render first?
+        # No, children render inside parent body.
         # But we collect during render.
         # Let's just join values. Dicts preserve insertion order in modern Python.
         combined = "\n".join(self._styles.values())

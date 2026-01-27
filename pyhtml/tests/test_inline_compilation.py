@@ -1,5 +1,5 @@
 import ast
-import pytest
+
 from pyhtml.compiler.ast_nodes import EventAttribute, ParsedPyHTML, TemplateNode
 from pyhtml.compiler.codegen.generator import CodeGenerator
 
@@ -8,7 +8,7 @@ def test_inline_handler_extraction():
     generator = CodeGenerator()
 
     # Create template with inline handler
-    # <button @click="count += 1">
+    # <button @click={count += 1}>
     click_attr = EventAttribute(
         line=1,
         column=1,
@@ -36,6 +36,6 @@ def test_inline_handler_extraction():
     assert found_handler, "No synthetic handler created!"
 
     # Check if attribute was updated
-    assert click_attr.handler_name.startswith(
-        "_handler_"
-    ), f"Attribute handler_name was not updated correctly! Got: {click_attr.handler_name}"
+    assert click_attr.handler_name.startswith("_handler_"), (
+        f"Attribute handler_name was not updated correctly! Got: {click_attr.handler_name}"
+    )

@@ -52,7 +52,7 @@ def test_smart_static_resolution(tmp_path, monkeypatch):
 def test_static_dir_missing_warning(tmp_path, capsys, monkeypatch):
     """Verify warning when static directory is missing."""
     monkeypatch.setattr(Path, "cwd", lambda: tmp_path)
-    app = PyHTML(static_dir="non_existent")
+    PyHTML(static_dir="non_existent")
     captured = capsys.readouterr()
     assert "Warning: Configured static directory" in captured.out
     assert "non_existent" in captured.out

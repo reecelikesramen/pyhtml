@@ -5,6 +5,7 @@ from typing import Optional
 
 from pyhtml.compiler.ast_nodes import EventAttribute
 from pyhtml.compiler.attributes.base import AttributeParser
+from pyhtml.compiler.exceptions import PyHTMLSyntaxError
 
 
 class EventAttributeParser(AttributeParser):
@@ -20,14 +21,20 @@ class EventAttributeParser(AttributeParser):
     def parse(
         self, attr_name: str, attr_value: str, line: int, col: int
     ) -> Optional[EventAttribute]:
-        """Parse @click.prevent.stop="handler_name" attribute."""
+        """Parse @click.prevent.stop={handler_name} attribute."""
         # Remove @ prefix
         full_event = attr_name[1:]
         parts = full_event.split(".")
         event_type = parts[0]
         modifiers = [m for m in parts[1:] if m]
 
-        handler_name = attr_value.strip().strip("\"'")  # Remove quotes
+        if not (attr_value.startswith("{") and attr_value.endswith("}")):
+            raise PyHTMLSyntaxError(
+                f"Event handler for '{attr_name}' must be wrapped in brackets: {attr_name}={{expr}}",
+                line=line,
+            )
+
+        handler_name = attr_value[1:-1].strip()  # Strip brackets and whitespace
 
         # Parse handler args if present (future: handler(arg1, arg2))
         handler_args = []

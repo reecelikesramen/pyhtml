@@ -7,7 +7,7 @@ from pyhtml.compiler.attributes.base import AttributeParser
 
 
 class ModelAttributeParser(AttributeParser):
-    """Parses $model="ModelClassName" attribute for Pydantic binding."""
+    """Parses $model={ModelClassName} attribute for Pydantic binding."""
 
     PREFIX = "$model"
 
@@ -18,11 +18,13 @@ class ModelAttributeParser(AttributeParser):
     def parse(
         self, attr_name: str, attr_value: str, line: int, col: int
     ) -> Optional[ModelAttribute]:
-        """Parse $model="ClassName" attribute."""
+        """Parse $model={ClassName} attribute."""
         if attr_name != "$model":
             return None
 
         model_name = attr_value.strip().strip("\"'")
+        if model_name.startswith("{") and model_name.endswith("}"):
+            model_name = model_name[1:-1].strip()
         if not model_name:
             return None
 

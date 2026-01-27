@@ -71,41 +71,6 @@ class TestCodeGenerator(unittest.TestCase):
         self.assertIsInstance(call.args[0], ast.Name)
         self.assertEqual(call.args[0].id, "arg0")
 
-    def test_process_handlers_busy_binding(self):
-        # Test @click with $bind="busy"
-        node = TemplateNode(tag="button", line=1, column=0)
-        node.special_attributes = [
-            EventAttribute(
-                name="@click",
-                value="do_work",
-                event_type="click",
-                handler_name="do_work",
-                line=1,
-                column=0,
-            ),
-            BindAttribute(
-                name="$bind",
-                value="is_loading",
-                variable="is_loading",
-                binding_type="busy",
-                line=1,
-                column=0,
-            ),
-        ]
-        parsed = ParsedPyHTML(template=[node])
-
-        handlers = self.generator._process_handlers(
-            parsed, known_methods={"do_work"}, async_methods=set()
-        )
-        self.assertEqual(len(handlers), 1)
-
-        # Check for wrapping logic (set busy, try, finally unset busy)
-        body = handlers[0].body
-        self.assertIsInstance(body[0], ast.Assign)  # set busy = True
-        self.assertIsInstance(body[1], ast.If)  # check _on_update
-        self.assertIsInstance(body[2], ast.Try)  # try block
-        self.assertIsInstance(body[2].finalbody[0], ast.Assign)  # set busy = False
-
     def test_generate_form_validation(self):
         schema = FormValidationSchema(
             fields={"email": FieldValidationRules(name="email", required=True, input_type="email")}
@@ -155,13 +120,16 @@ class TestCodeGenerator(unittest.TestCase):
             file_path="test.pyhtml",
         )
         module = self.generator.generate(parsed)
-        
+
         # Find Page Class
         page_class = next(n for n in module.body if isinstance(n, ast.ClassDef))
         # Find _render_template method
-        render_func = next(n for n in page_class.body if isinstance(n, ast.AsyncFunctionDef) and n.name == "_render_template")
+        render_func = next(
+            n
+            for n in page_class.body
+            if isinstance(n, ast.AsyncFunctionDef) and n.name == "_render_template"
+        )
 
-        
         # DEBUG
         # print(ast.dump(render_func))
 

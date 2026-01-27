@@ -7,7 +7,7 @@ def test_synchronous_loop(tmp_path):
 
     page_content = """
 <ul>
-    <li $for="item in items">{item}</li>
+    <li $for={item in items}>{item}</li>
 </ul>
 ---
 items = [1, 2, 3]

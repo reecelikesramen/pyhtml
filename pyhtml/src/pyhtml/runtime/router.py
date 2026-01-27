@@ -29,8 +29,6 @@ class Route:
         # We need to handle both :param and {param} syntax
         # Let's standardize on one before regex gen or handle both in regex replacement
 
-        pattern_regex = re.escape(pattern)
-
         # Replace placeholders with regex groups
         # We look for two patterns:
         # 1. :name(:type)?
@@ -105,8 +103,7 @@ class Route:
 
             # For this MVP, we might just return strings,
             # BUT the user asked for ":id:int matches /test/2", which implies type checking
-            # The regex handles the type checking (matching only digits).
-            # The generated params dict currently contains strings.
+            # Match only digits. The generated params dict currently contains strings.
             # We should probably convert them if we have the type info available.
 
             # Re-parsing pattern to get types is inefficient.
@@ -115,8 +112,8 @@ class Route:
             # If we change that, we break compatibility or need to update BasePage.
             # User requirement: "params['id'] is guaranteed to be populated".
             # Doesn't explicitly demand it be an int object, but ":int" suggests validation.
-            # Given dynamic nature, let's keep as strings in params for now to satisfy Dict[str, str] hint,
-            # or update hint in BasePage.
+            # Given dynamic nature, let's keep as strings in params for now to
+            # satisfy Dict[str, str] hint, or update hint in BasePage.
 
             return params
         return None

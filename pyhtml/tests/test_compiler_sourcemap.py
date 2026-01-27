@@ -22,7 +22,11 @@ raise ValueError("Boom")
         pyhtml_file.write_text(source)
 
         try:
-            loader.load(pyhtml_file)
+            page_cls = loader.load(pyhtml_file)
+            page = page_cls(None, {}, {}, {}, None)
+            import asyncio
+
+            asyncio.run(page.render())
             pytest.fail("Should have raised ValueError")
         except ValueError as e:
             tb = traceback.extract_tb(e.__traceback__)

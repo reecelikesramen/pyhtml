@@ -4,6 +4,7 @@ from typing import Optional
 
 from pyhtml.compiler.ast_nodes import ForAttribute, KeyAttribute, SpecialAttribute
 from pyhtml.compiler.attributes.base import AttributeParser
+from pyhtml.compiler.exceptions import PyHTMLSyntaxError
 
 
 class LoopAttributeParser(AttributeParser):
@@ -17,10 +18,18 @@ class LoopAttributeParser(AttributeParser):
         self, attr_name: str, attr_value: str, line: int, col: int
     ) -> Optional[SpecialAttribute]:
         """Parse $for attribute."""
+        if not (attr_value.startswith("{") and attr_value.endswith("}")):
+            raise PyHTMLSyntaxError(
+                f"Value for '{attr_name}' must be wrapped in brackets: {attr_name}={{item in items}}",
+                line=line,
+            )
+
+        expr = attr_value[1:-1].strip()
         # Parse "item in items" or "key, value in items"
-        parts = attr_value.split(" in ", 1)
+        parts = expr.split(" in ", 1)
         if len(parts) != 2:
-            # We don't raise error here, just return nothing or let it be handled as valid attribute?
+            # We don't raise error here, just return nothing or let it be
+            # handled as valid attribute?
             # Ideally validation happens here.
             # But creating AST node blindly is safer if we want to defer errors.
             # But "item in items" is pretty fundamental.
@@ -53,6 +62,13 @@ class KeyAttributeParser(AttributeParser):
         self, attr_name: str, attr_value: str, line: int, col: int
     ) -> Optional[SpecialAttribute]:
         """Parse $key attribute."""
+        if not (attr_value.startswith("{") and attr_value.endswith("}")):
+            raise PyHTMLSyntaxError(
+                f"Value for '{attr_name}' must be wrapped in brackets: {attr_name}={{expr}}",
+                line=line,
+            )
+
+        expr = attr_value[1:-1].strip()
         return KeyAttribute(
-            name=attr_name, value=attr_value, expr=attr_value, line=line, column=col
+            name=attr_name, value=attr_value, expr=expr, line=line, column=col
         )

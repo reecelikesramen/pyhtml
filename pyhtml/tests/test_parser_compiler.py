@@ -1,8 +1,15 @@
 import unittest
 
-from pyhtml.compiler.ast_nodes import InterpolationNode, LayoutDirective
+from pyhtml.compiler.ast_nodes import (
+    ComponentDirective,
+    InjectDirective,
+    InterpolationNode,
+    LayoutDirective,
+    PropsDirective,
+    ProvideDirective,
+)
 from pyhtml.compiler.parser import PyHTMLParser
-from pyhtml.compiler.ast_nodes import TemplateNode, InterpolationNode, LayoutDirective, ComponentDirective, PropsDirective, ProvideDirective, InjectDirective
+
 
 class TestParserCompiler(unittest.TestCase):
     def setUp(self):
@@ -44,7 +51,7 @@ class TestParserCompiler(unittest.TestCase):
 
     def test_extract_form_validation(self):
         content = """
-<form @submit="save">
+<form @submit={save}>
     <input name="email" type="email" required minlength="5">
     <input name="age" type="number" min="18">
 </form>
@@ -88,7 +95,6 @@ class TestParserCompiler(unittest.TestCase):
         self.assertIsInstance(parsed.directives[1], InjectDirective)
         self.assertEqual(parsed.directives[0].mapping, {"theme": "'dark'"})
         self.assertEqual(parsed.directives[1].mapping, {"theme": "theme"})
-
 
 
 if __name__ == "__main__":

@@ -309,7 +309,10 @@ class FormValidator:
 
             # If empty and not required, skip other validations
             if value is None or value == "":
-                cleaned_data[field_name] = None
+                if rules.input_type == "checkbox":
+                    cleaned_data[field_name] = False
+                else:
+                    cleaned_data[field_name] = None
                 continue
 
             # Type conversion (strings to int/float/bool)
@@ -355,7 +358,8 @@ class FormValidator:
 
         elif input_type == "checkbox":
             # Checkbox value usually "on" or "true" string, but handled by client framework?
-            # If it comes from FormData, unchecked might be missing (handled in validate_form required check).
+            # If it comes from FormData, unchecked might be missing (handled in
+            # validate_form required check).
             # Checked might be "on".
             # Convert to boolean. Common values for "true" are "on", "true", 1.
             if isinstance(value, str):

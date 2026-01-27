@@ -1,17 +1,18 @@
 """Template rendering code generation."""
 
 import ast
-import re
 import dataclasses
-from dataclasses import dataclass, replace # Keep replace import to minimize diff elsewhere if used, but shadowing is issue.
+import re
+from collections import defaultdict
+from dataclasses import (
+    dataclass,
+)  # Keep replace import to minimize diff elsewhere if used, but shadowing is issue.
+
 # Actually if I remove replace from import, I must fix ALL usages.
 # But shadowing only happens if something LOCAL is named replace.
 # I still haven't found the local variable.
 # Safer: Just import dataclasses and use fully qualified name where it fails.
-from typing import List, Set, Tuple, Dict, Optional, Union
-from collections import defaultdict
-from dataclasses import dataclass, replace
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from pyhtml.compiler.ast_nodes import (
     BindAttribute,
@@ -66,9 +67,17 @@ class TemplateCodegen:
         self.auxiliary_functions: List[ast.AsyncFunctionDef] = []
         self.has_file_inputs = False
 
-    def generate_render_method(self, template_nodes: List[TemplateNode], layout_id: str = None, 
-                             known_methods: Set[str] = None, known_globals: Set[str] = None, async_methods: Set[str] = None,
-                             component_map: Dict[str, str] = None, scope_id: str = None, initial_locals: Set[str] = None) -> Tuple[ast.AsyncFunctionDef, List[ast.AsyncFunctionDef]]:
+    def generate_render_method(
+        self,
+        template_nodes: List[TemplateNode],
+        layout_id: str = None,
+        known_methods: Set[str] = None,
+        known_globals: Set[str] = None,
+        async_methods: Set[str] = None,
+        component_map: Dict[str, str] = None,
+        scope_id: str = None,
+        initial_locals: Set[str] = None,
+    ) -> Tuple[ast.AsyncFunctionDef, List[ast.AsyncFunctionDef]]:
         """
         Generate standard _render_template method.
         Returns: (main_function_ast, list_of_auxiliary_function_asts)
@@ -76,15 +85,31 @@ class TemplateCodegen:
         self._reset_state()
         # Check for explicit spread
         has_spread = self._has_spread_attribute(template_nodes)
-        implicit_root_source = 'attrs' if not has_spread and layout_id else None
-        
-        main_func = self._generate_function(template_nodes, '_render_template', is_async=True, layout_id=layout_id,
-                                          known_methods=known_methods, known_globals=known_globals, async_methods=async_methods,
-                                          component_map=component_map, scope_id=scope_id, initial_locals=initial_locals,
-                                          implicit_root_source=implicit_root_source)
+        implicit_root_source = "attrs" if not has_spread and layout_id else None
+
+        main_func = self._generate_function(
+            template_nodes,
+            "_render_template",
+            is_async=True,
+            layout_id=layout_id,
+            known_methods=known_methods,
+            known_globals=known_globals,
+            async_methods=async_methods,
+            component_map=component_map,
+            scope_id=scope_id,
+            initial_locals=initial_locals,
+            implicit_root_source=implicit_root_source,
+        )
         return main_func, self.auxiliary_functions
 
-    def generate_slot_methods(self, template_nodes: List[TemplateNode], file_id: str = "", known_globals: Set[str] = None, layout_id: str = None, component_map: Dict[str, str] = None) -> Tuple[Dict[str, ast.AsyncFunctionDef], List[ast.AsyncFunctionDef]]:
+    def generate_slot_methods(
+        self,
+        template_nodes: List[TemplateNode],
+        file_id: str = "",
+        known_globals: Set[str] = None,
+        layout_id: str = None,
+        component_map: Dict[str, str] = None,
+    ) -> Tuple[Dict[str, ast.AsyncFunctionDef], List[ast.AsyncFunctionDef]]:
         """
         Generate slot filler methods for child pages.
         Returns: ({slot_name: function_ast}, list_of_auxiliary_function_asts)
@@ -112,10 +137,25 @@ class TemplateCodegen:
         # 2. Generate functions for each slot
         slot_funcs = {}
         for slot_name, nodes in slots.items():
-            safe_name = slot_name.replace('$', '_head_').replace('-', '_') if slot_name.startswith('$') else slot_name.replace('-', '_')
-            func_name = f'_render_slot_fill_{safe_name}_{file_hash}' if file_hash else f'_render_slot_fill_{safe_name}'
-            slot_funcs[slot_name] = self._generate_function(nodes, func_name, is_async=True, known_globals=known_globals, layout_id=layout_id, component_map=component_map)
-            
+            safe_name = (
+                slot_name.replace("$", "_head_").replace("-", "_")
+                if slot_name.startswith("$")
+                else slot_name.replace("-", "_")
+            )
+            func_name = (
+                f"_render_slot_fill_{safe_name}_{file_hash}"
+                if file_hash
+                else f"_render_slot_fill_{safe_name}"
+            )
+            slot_funcs[slot_name] = self._generate_function(
+                nodes,
+                func_name,
+                is_async=True,
+                known_globals=known_globals,
+                layout_id=layout_id,
+                component_map=component_map,
+            )
+
         return slot_funcs, self.auxiliary_functions
 
     def _reset_state(self):
@@ -125,11 +165,29 @@ class TemplateCodegen:
         self.auxiliary_functions = []
         self.has_file_inputs = False
 
-    def _generate_function(self, nodes: List[TemplateNode], func_name: str, is_async: bool = False, layout_id: str = None,
-                         known_methods: Set[str] = None, known_globals: Set[str] = None, async_methods: Set[str] = None,
-                         component_map: Dict[str, str] = None, scope_id: str = None, initial_locals: Set[str] = None,
-                         implicit_root_source: str = None) -> ast.AsyncFunctionDef:
+    def _generate_function(
+        self,
+        nodes: List[TemplateNode],
+        func_name: str,
+        is_async: bool = False,
+        layout_id: str = None,
+        known_methods: Set[str] = None,
+        known_globals: Set[str] = None,
+        async_methods: Set[str] = None,
+        component_map: Dict[str, str] = None,
+        scope_id: str = None,
+        initial_locals: Set[str] = None,
+        implicit_root_source: str = None,
+    ) -> ast.AsyncFunctionDef:
         """Generate a single function body as AST."""
+
+        if initial_locals is None:
+            initial_locals = set()
+        else:
+            initial_locals = initial_locals.copy()
+        
+        # 'json' is imported in the body, so we treat it as local to avoid transforming to self.json
+        initial_locals.add("json")
 
         # parts = []
         body: List[ast.stmt] = [
@@ -145,17 +203,28 @@ class TemplateCodegen:
                 level=0,
             ),
         ]
-        
+
         root_element = self._get_root_element(nodes)
-        
+
         for node in nodes:
             # Pass implicit root source ONLY to the root element if it matches
-            node_root_source = implicit_root_source if (implicit_root_source and node is root_element) else None
-            
-            self._add_node(node, body, layout_id=layout_id, known_methods=known_methods, known_globals=known_globals, 
-                         async_methods=async_methods, component_map=component_map, scope_id=scope_id, local_vars=initial_locals,
-                         implicit_root_source=node_root_source)
-            
+            node_root_source = (
+                implicit_root_source if (implicit_root_source and node is root_element) else None
+            )
+
+            self._add_node(
+                node,
+                body,
+                layout_id=layout_id,
+                known_methods=known_methods,
+                known_globals=known_globals,
+                async_methods=async_methods,
+                component_map=component_map,
+                scope_id=scope_id,
+                local_vars=initial_locals,
+                implicit_root_source=node_root_source,
+            )
+
         # return "".join(parts)
         body.append(
             ast.Return(
@@ -226,29 +295,26 @@ class TemplateCodegen:
         class AddSelfTransformer(ast.NodeTransformer):
             def visit_Name(self, node):
                 import builtins
-                # 1. If explicitly known as global/instance var, transform to self.<name>
-                if known_globals and node.id in known_globals:
-                     return ast.Attribute(
-                        value=ast.Name(id='self', ctx=ast.Load()),
-                        attr=node.id,
-                        ctx=node.ctx
-                    )
-                
-                # 2. If locally defined, keep as is
+
+                # 1. If locally defined, keep as is
                 if node.id in local_vars:
                     return node
-                    
-                # 3. If builtin, keep as is (unless matched by step 1)
+
+                # 2. If explicitly known as global/instance var, transform to self.<name>
+                if known_globals and node.id in known_globals:
+                    return ast.Attribute(
+                        value=ast.Name(id="self", ctx=ast.Load()), attr=node.id, ctx=node.ctx
+                    )
+
+                # 3. If builtin, keep as is (unless matched by step 1/2)
                 if node.id in dir(builtins):
                     return node
-                    
+
                 # 4. Otherwise, assume implicit instance attribute
                 return ast.Attribute(
-                    value=ast.Name(id='self', ctx=ast.Load()),
-                    attr=node.id,
-                    ctx=node.ctx
+                    value=ast.Name(id="self", ctx=ast.Load()), attr=node.id, ctx=node.ctx
                 )
-        
+
         new_tree = AddSelfTransformer().visit(tree)
         # Returns the expression node
         return new_tree.body
@@ -314,6 +380,7 @@ class TemplateCodegen:
     def _has_spread_attribute(self, nodes: List[TemplateNode]) -> bool:
         """Check if any node in the tree has a SpreadAttribute."""
         from pyhtml.compiler.ast_nodes import SpreadAttribute
+
         for node in nodes:
             if any(isinstance(a, SpreadAttribute) for a in node.special_attributes):
                 return True
@@ -322,9 +389,11 @@ class TemplateCodegen:
         return False
 
     def _get_root_element(self, nodes: List[TemplateNode]) -> Optional[TemplateNode]:
-        """Find the single root element if it exists (ignoring text/whitespace and metadata tags)."""
+        """Find the single root element if it exists (ignoring text/whitespace and metadata)."""
         # Exclude style and script tags from root consideration
-        elements = [n for n in nodes if n.tag is not None and n.tag.lower() not in ('style', 'script')]
+        elements = [
+            n for n in nodes if n.tag is not None and n.tag.lower() not in ("style", "script")
+        ]
         if len(elements) == 1:
             return elements[0]
         return None
@@ -338,23 +407,39 @@ class TemplateCodegen:
             node.end_col_offset = template_node.column + 1
         return node
 
-    def _add_node(self, node: TemplateNode, body: List[ast.stmt], local_vars: Set[str] = None, bound_var: str = None, layout_id: str = None,
-                  known_methods: Set[str] = None, known_globals: Set[str] = None, async_methods: Set[str] = None, component_map: Dict[str, str] = None, scope_id: str = None, parts_var: str = 'parts',
-                  implicit_root_source: str = None):
+    def _add_node(
+        self,
+        node: TemplateNode,
+        body: List[ast.stmt],
+        local_vars: Set[str] = None,
+        bound_var: str = None,
+        layout_id: str = None,
+        known_methods: Set[str] = None,
+        known_globals: Set[str] = None,
+        async_methods: Set[str] = None,
+        component_map: Dict[str, str] = None,
+        scope_id: str = None,
+        parts_var: str = "parts",
+        implicit_root_source: str = None,
+    ):
         if local_vars is None:
             local_vars = set()
         else:
             local_vars = local_vars.copy()
-            
+
         # Ensure helper availability
-        # We can't easily check if already imported in this scope, but re-import is cheap inside func or we assume generator handles it.
+        # We can't easily check if already imported in this scope, but
+        # re-import is cheap inside func or we assume generator handles it.
         # TemplateCodegen usually assumes outside context.
         # But wait, helper functions generated by this class do imports.
-        # Let's add import if we are about to use render_attrs? 
-        # Easier to ensure it's imported at top of _render_template in generator.py? 
+        # Let's add import if we are about to use render_attrs?
+        # Easier to ensure it's imported at top of _render_template in
+        # generator.py?
         # No, generator.py calls this.
-        # We can add a "has_render_attrs_usage" flag or just import it in the generated body if implicit_root_source is set or spread attr found.
-        # Let's just rely on generator to import common helpers, or add specific import here if needed.
+        # We can add a "has_render_attrs_usage" flag or just import it in the generated body
+        # if implicit_root_source is set or spread attr found.
+        # Let's just rely on generator to import common helpers, or add specific
+        # import here if needed.
         # Actually existing code imports `ensure_async_iterator` locally (line 271).
         pass
 
@@ -390,11 +475,35 @@ class TemplateCodegen:
             new_attrs = [a for a in node.special_attributes if a is not for_attr]
             if node.tag == "template":
                 for child in node.children:
-                    self._add_node(child, for_body, new_locals, bound_var, layout_id, known_methods, known_globals, async_methods, component_map, scope_id, parts_var=parts_var)
+                    self._add_node(
+                        child,
+                        for_body,
+                        new_locals,
+                        bound_var,
+                        layout_id,
+                        known_methods,
+                        known_globals,
+                        async_methods,
+                        component_map,
+                        scope_id,
+                        parts_var=parts_var,
+                    )
             else:
                 new_node = dataclasses.replace(node, special_attributes=new_attrs)
-                self._add_node(new_node, for_body, new_locals, bound_var, layout_id, known_methods, known_globals, async_methods, component_map, scope_id, parts_var=parts_var)
-            
+                self._add_node(
+                    new_node,
+                    for_body,
+                    new_locals,
+                    bound_var,
+                    layout_id,
+                    known_methods,
+                    known_globals,
+                    async_methods,
+                    component_map,
+                    scope_id,
+                    parts_var=parts_var,
+                )
+
             # Wrap iterable in ensure_async_iterator
             wrapped_iterable = ast.Call(
                 func=ast.Name(id="ensure_async_iterator", ctx=ast.Load()),
@@ -424,13 +533,21 @@ class TemplateCodegen:
             if_body = []
             new_attrs = [a for a in node.special_attributes if a is not if_attr]
             new_node = dataclasses.replace(node, special_attributes=new_attrs)
-            self._add_node(new_node, if_body, local_vars, bound_var, layout_id, known_methods, known_globals, async_methods, component_map, scope_id, parts_var=parts_var)
-            
-            if_stmt = ast.If(
-                test=cond_expr,
-                body=if_body,
-                orelse=[]
+            self._add_node(
+                new_node,
+                if_body,
+                local_vars,
+                bound_var,
+                layout_id,
+                known_methods,
+                known_globals,
+                async_methods,
+                component_map,
+                scope_id,
+                parts_var=parts_var,
             )
+
+            if_stmt = ast.If(test=cond_expr, body=if_body, orelse=[])
 
             if_stmt = ast.If(test=cond_expr, body=if_body, orelse=[])
             self._set_line(if_stmt, node)
@@ -453,8 +570,21 @@ class TemplateCodegen:
                 )
 
             call_kwargs = [
-                ast.keyword(arg='default_renderer', value=default_renderer_arg),
-                ast.keyword(arg='layout_id', value=ast.Constant(value=layout_id) if layout_id else ast.Call(func=ast.Name(id='getattr', ctx=ast.Load()), args=[ast.Name(id='self', ctx=ast.Load()), ast.Constant(value='LAYOUT_ID'), ast.Constant(value=None)], keywords=[]))
+                ast.keyword(arg="default_renderer", value=default_renderer_arg),
+                ast.keyword(
+                    arg="layout_id",
+                    value=ast.Constant(value=layout_id)
+                    if layout_id
+                    else ast.Call(
+                        func=ast.Name(id="getattr", ctx=ast.Load()),
+                        args=[
+                            ast.Name(id="self", ctx=ast.Load()),
+                            ast.Constant(value="LAYOUT_ID"),
+                            ast.Constant(value=None),
+                        ],
+                        keywords=[],
+                    ),
+                ),
             ]
 
             if is_head_slot:
@@ -477,269 +607,354 @@ class TemplateCodegen:
                     keywords=[],
                 )
             )
-            
-            append_stmt = ast.Expr(value=ast.Call(
-                func=ast.Attribute(value=ast.Name(id=parts_var, ctx=ast.Load()), attr='append', ctx=ast.Load()),
-                args=[ast.Await(value=render_call)],
-                keywords=[]
-            ))
+
+            append_stmt = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id=parts_var, ctx=ast.Load()), attr="append", ctx=ast.Load()
+                    ),
+                    args=[ast.Await(value=render_call)],
+                    keywords=[],
+                )
+            )
             self._set_line(append_stmt, node)
             body.append(append_stmt)
             return
 
         if component_map and node.tag in component_map:
             cls_name = component_map[node.tag]
-            
+
             # Prepare arguments (kwargs)
             # Prepare arguments (kwargs dict keys/values)
             dict_keys = []
             dict_values = []
-            
+
             # 1. Pass implicit context props (request, params, etc.)
-            for ctx_prop in ['request', 'params', 'query', 'path', 'url']:
+            for ctx_prop in ["request", "params", "query", "path", "url"]:
                 dict_keys.append(ast.Constant(value=ctx_prop))
-                dict_values.append(ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=ctx_prop, ctx=ast.Load()))
-            
+                dict_values.append(
+                    ast.Attribute(
+                        value=ast.Name(id="self", ctx=ast.Load()), attr=ctx_prop, ctx=ast.Load()
+                    )
+                )
+
             # Pass __is_component__ flag
-            dict_keys.append(ast.Constant(value='__is_component__'))
+            dict_keys.append(ast.Constant(value="__is_component__"))
             dict_values.append(ast.Constant(value=True))
 
-             # Pass style collector
-            dict_keys.append(ast.Constant(value='_style_collector'))
-            dict_values.append(ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='_style_collector', ctx=ast.Load()))
-            
+            # Pass style collector
+            dict_keys.append(ast.Constant(value="_style_collector"))
+            dict_values.append(
+                ast.Attribute(
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr="_style_collector",
+                    ctx=ast.Load(),
+                )
+            )
+
             # Pass context for !provide/!inject
-            dict_keys.append(ast.Constant(value='_context'))
-            dict_values.append(ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='context', ctx=ast.Load()))
-            
+            dict_keys.append(ast.Constant(value="_context"))
+            dict_values.append(
+                ast.Attribute(
+                    value=ast.Name(id="self", ctx=ast.Load()), attr="context", ctx=ast.Load()
+                )
+            )
+
             # 2. Pass explicitly defined props (static)
             for k, v in node.attributes.items():
                 dict_keys.append(ast.Constant(value=k))
-                
+
                 val_expr = None
-                if '{' in v and '}' in v:
-                     v_stripped = v.strip()
-                     if v_stripped.startswith('{') and v_stripped.endswith('}') and v_stripped.count('{') == 1:
-                         # Single expression
-                         expr_code = v_stripped[1:-1]
-                         val_expr = self._transform_expr(expr_code, local_vars, known_globals, line_offset=node.line, col_offset=node.column)
-                     else:
-                         # String interpolation
-                         parts = self.interpolation_parser.parse(v, node.line, node.column)
-                         current_concat = None
-                         for part in parts:
-                             if isinstance(part, str):
-                                 term = ast.Constant(value=part)
-                             else:
-                                 term = ast.Call(
-                                     func=ast.Name(id='str', ctx=ast.Load()),
-                                     args=[self._transform_expr(part.expression, local_vars, known_globals, line_offset=part.line, col_offset=part.column)],
-                                     keywords=[]
-                                 )
-                             
-                             if current_concat is None: current_concat = term
-                             else: current_concat = ast.BinOp(left=current_concat, op=ast.Add(), right=term)
-                         val_expr = current_concat if current_concat else ast.Constant(value="")
+                if "{" in v and "}" in v:
+                    v_stripped = v.strip()
+                    if (
+                        v_stripped.startswith("{")
+                        and v_stripped.endswith("}")
+                        and v_stripped.count("{") == 1
+                    ):
+                        # Single expression
+                        expr_code = v_stripped[1:-1]
+                        val_expr = self._transform_expr(
+                            expr_code,
+                            local_vars,
+                            known_globals,
+                            line_offset=node.line,
+                            col_offset=node.column,
+                        )
+                    else:
+                        # String interpolation
+                        parts = self.interpolation_parser.parse(v, node.line, node.column)
+                        current_concat = None
+                        for part in parts:
+                            if isinstance(part, str):
+                                term = ast.Constant(value=part)
+                            else:
+                                term = ast.Call(
+                                    func=ast.Name(id="str", ctx=ast.Load()),
+                                    args=[
+                                        self._transform_expr(
+                                            part.expression,
+                                            local_vars,
+                                            known_globals,
+                                            line_offset=part.line,
+                                            col_offset=part.column,
+                                        )
+                                    ],
+                                    keywords=[],
+                                )
+
+                            if current_concat is None:
+                                current_concat = term
+                            else:
+                                current_concat = ast.BinOp(
+                                    left=current_concat, op=ast.Add(), right=term
+                                )
+                        val_expr = current_concat if current_concat else ast.Constant(value="")
                 else:
                     # Static string
                     val_expr = ast.Constant(value=v)
-                
+
                 dict_values.append(val_expr)
-            
+
             # 3. Handle special attributes
-            # from pyhtml.compiler.ast_nodes import ReactiveAttribute, EventAttribute # Shadowing global
-            
+            # from pyhtml.compiler.ast_nodes import ReactiveAttribute, EventAttribute
+            # # Shadowing global
+
             # Group events by type for batch handling logic
             event_attrs_by_type = defaultdict(list)
             for attr in node.special_attributes:
                 if isinstance(attr, EventAttribute):
                     event_attrs_by_type[attr.event_type].append(attr)
-            
+
             # Process non-event special attributes (Reactive) and Events
             for attr in node.special_attributes:
                 if isinstance(attr, ReactiveAttribute):
-                     dict_keys.append(ast.Constant(value=attr.name))
-                     expr = self._transform_reactive_expr(attr.expr, local_vars, known_methods, known_globals, async_methods, line_offset=node.line, col_offset=node.column)
-                     dict_values.append(expr)
-            
+                    dict_keys.append(ast.Constant(value=attr.name))
+                    expr = self._transform_reactive_expr(
+                        attr.expr,
+                        local_vars,
+                        known_methods,
+                        known_globals,
+                        async_methods,
+                        line_offset=node.line,
+                        col_offset=node.column,
+                    )
+                    dict_values.append(expr)
+
             # Compile events into data-on-* attributes to pass as props
             # This logic mirrors the standard element event generation
             for event_type, attrs_list in event_attrs_by_type.items():
                 if len(attrs_list) == 1:
                     # Single handler
                     attr = attrs_list[0]
-                    
+
                     # data-on-X
-                    dict_keys.append(ast.Constant(value=f'data-on-{event_type}'))
-                    
+                    dict_keys.append(ast.Constant(value=f"data-on-{event_type}"))
+
                     # Resolve handler string/expr
                     raw_handler = attr.handler_name
-                    if raw_handler.strip().startswith('{') and raw_handler.strip().endswith('}'):
-                         # New syntax: {expr} -> Evaluate it?
-                         # Wait, standard event logic treats handler_name as STRING NAME usually.
-                         # If it's an expression like {print('hi')}, it evaluates to None.
-                         # We need to register it? 
-                         # Actually, standard element logic (lines 880+) sets value=ast.Constant(value=attr.handler_name).
-                         # It assumes the handler_name is a STRING that refers to a method.
-                         # OR it assumes the runtime handles looking it up?
-                         # If user wrote @click={print('hi')}, the parser makes handler_name="{print('hi')}".
-                         # The standard logic just dumps that string?
-                         # Let's check runtime/client code.
-                         # If client receives data-on-click="{print('hi')}", it likely tries to eval/run it within context.
-                         # So we should pass it AS A STRING.
-                         # BUT, if we evaluated it in my previous attempt (`val = transform_expr...`), we passed the RESULT (None).
-                         
-                         # CORRECT APPROACH: Pass the handler identifier string or expression string AS IS.
-                         # The client side `pyhtml.js` parses the `data-on-click` value.
-                         # If it's a method name "onClick", it calls it.
-                         # If it's code "print('hi')", it might eval it?
-                         # Actually pyhtml seems to rely on named handlers mostly.
-                         # The `run_demo_test` output showed: `data-on-click="<bound method...>"`
-                         # That happened because I evaluated it.
-                         # If I pass the raw string "print('hi')", it will render as `data-on-click="print('hi')"`.
-                         # Does the client support eval? 
-                         # Looking at `attributes/events.py`, parser stores raw string.
-                         
-                         dict_values.append(ast.Constant(value=attr.handler_name))
-                         
+                    if raw_handler.strip().startswith("{") and raw_handler.strip().endswith("}"):
+                        # New syntax: {expr} -> Evaluate it?
+                        # Wait, standard event logic treats handler_name as STRING NAME usually.
+                        # If it's an expression like {print('hi')}, it evaluates to None.
+                        # We need to register it?
+                        # Actually, standard element logic (lines 880+) sets value=ast.Constant(
+                        #     value=attr.handler_name
+                        # ).
+                        # It assumes the handler_name is a STRING that refers to a method.
+                        # OR it assumes the runtime handles looking it up?
+                        # If user wrote @click={print('hi')}, the parser makes
+                        # handler_name="{print('hi')}".
+                        # The standard logic just dumps that string?
+                        # Let's check runtime/client code.
+                        # If client receives data-on-click="{print('hi')}", it likely tries to
+                        # eval/run it within context.
+                        # So we should pass it AS A STRING.
+                        # BUT, if we evaluated it in my previous attempt (`val =
+                        # transform_expr...`), we passed the RESULT (None).
+
+                        # CORRECT APPROACH: Pass the handler identifier string or expression
+                        # string AS IS.
+                        # The client side `pyhtml.js` parses the `data-on-click` value.
+                        # If it's a method name "onClick", it calls it.
+                        # If it's code "print('hi')", it might eval it?
+                        # Actually pyhtml seems to rely on named handlers mostly.
+                        # The `run_demo_test` output showed: `data-on-click="<bound method...>"`
+                        # That happened because I evaluated it.
+                        # If I pass the raw string "print('hi')", it will render as
+                        # `data-on-click="print('hi')"`.
+                        # Does the client support eval?
+                        # Looking at `attributes/events.py`, parser stores raw string.
+
+                        dict_values.append(ast.Constant(value=attr.handler_name))
+
                     else:
-                         dict_values.append(ast.Constant(value=attr.handler_name))
-                    
+                        dict_values.append(ast.Constant(value=attr.handler_name))
+
                     # Modifiers
                     if attr.modifiers:
-                        dict_keys.append(ast.Constant(value=f'data-modifiers-{event_type}'))
+                        dict_keys.append(ast.Constant(value=f"data-modifiers-{event_type}"))
                         dict_values.append(ast.Constant(value=" ".join(attr.modifiers)))
-                    
+
                     # Args
                     for i, arg_expr in enumerate(attr.args):
-                        dict_keys.append(ast.Constant(value=f'data-arg-{i}'))
+                        dict_keys.append(ast.Constant(value=f"data-arg-{i}"))
                         # Evaluate arg expr and json dump
-                        val = self._transform_expr(arg_expr, local_vars, known_globals, line_offset=node.line, col_offset=node.column)
+                        val = self._transform_expr(
+                            arg_expr,
+                            local_vars,
+                            known_globals,
+                            line_offset=node.line,
+                            col_offset=node.column,
+                        )
                         dump_call = ast.Call(
-                            func=ast.Attribute(value=ast.Name(id='json', ctx=ast.Load()), attr='dumps', ctx=ast.Load()),
-                            args=[val], keywords=[]
+                            func=ast.Attribute(
+                                value=ast.Name(id="json", ctx=ast.Load()),
+                                attr="dumps",
+                                ctx=ast.Load(),
+                            ),
+                            args=[val],
+                            keywords=[],
                         )
                         dict_values.append(dump_call)
-                        
+
                 else:
                     # Multiple handlers -> compile to JSON structure
                     # We need to construct the list of dicts at runtime and json dump it
                     # This is complex to do inline in dict_values construction.
-                    # Helper var needed? 
+                    # Helper var needed?
                     # We are inside `_add_node` building `body`.
                     # We can prepend statements to `body` to build the list, then reference it.
                     # But here we are building `dict_values` list for the `ast.Dict`.
                     # We can put an `ast.Call` that invokes `json.dumps` on a list comprehension?
-                    # Or simpler: Just emit the logic to build the list into a temp var, use temp var here.
-                    
+                    # Or simpler: Just emit the logic to build the list into a temp var, use temp
+                    # var here.
+
                     # Generate temp var name
-                    handler_list_name = f'_handlers_{event_type}_{node.line}_{node.column}'
-                    
+                    handler_list_name = f"_handlers_{event_type}_{node.line}_{node.column}"
+
                     # ... [Code similar to lines 907+ to build the list] ...
                     # But wait, lines 907+ append to `body`.
                     # I can do that here! I am in `_add_node`.
-                    # I just need to interrupt the `dict` building? 
+                    # I just need to interrupt the `dict` building?
                     # No, I am building lists `dict_keys`, `dict_values`.
-                    # I can append statements to `body` *before* the final `keywords.append(...)` call.
-                    
+                    # I can append statements to `body` *before* the final
+                    # `keywords.append(...)` call.
+
                     # [Insert list building logic here]
                     # Since I am replacing a block, I can add statements to body!
                     # Wait, `body` is passed in.
-                    # `dict_keys` and `dict_values` are python lists I am building to *eventually* make an AST node.
-                    
-                    # Let's support single handler first as it covers 99% cases and the specific bug.
+                    # `dict_keys` and `dict_values` are python lists I am building to
+                    # *eventually* make an AST node.
+
+                    # Let's support single handler first as it covers 99% cases and the
+                    # specific bug.
                     # Complex multi-handlers need full porting.
                     pass
 
             # Add keyword(arg=None, value=dict) for **kwargs
             keywords = []
-            keywords.append(ast.keyword(
-                arg=None,
-                value=ast.Dict(keys=dict_keys, values=dict_values)
-            ))
+            keywords.append(
+                ast.keyword(arg=None, value=ast.Dict(keys=dict_keys, values=dict_values))
+            )
 
             # 4. Handle Slots (Children)
             # Group children by slot name
-            slots_map = {} # name -> list[nodes]
+            slots_map = {}  # name -> list[nodes]
             default_slot_nodes = []
-            
+
             for child in node.children:
                 # Check for slot="..." attribute on child
                 # Note: child is TemplateNode. attributes dict.
                 # If element:
                 slot_name = None
-                if child.tag and 'slot' in child.attributes:
-                    slot_name = child.attributes['slot']
+                if child.tag and "slot" in child.attributes:
+                    slot_name = child.attributes["slot"]
                     # Remove slot attribute? Optional but cleaner.
-                
+
                 if slot_name:
-                    if slot_name not in slots_map: slots_map[slot_name] = []
+                    if slot_name not in slots_map:
+                        slots_map[slot_name] = []
                     slots_map[slot_name].append(child)
                 else:
                     default_slot_nodes.append(child)
-            
+
             if default_slot_nodes:
-                slots_map['default'] = default_slot_nodes
-            
+                slots_map["default"] = default_slot_nodes
+
             keys = []
             values = []
 
             for s_name, s_nodes in slots_map.items():
-                slot_var_name = f"_slot_{s_name}_{node.line}_{node.column}".replace('-', '_')
+                slot_var_name = f"_slot_{s_name}_{node.line}_{node.column}".replace("-", "_")
                 slot_parts_var = f"{slot_var_name}_parts"
-                
-                body.append(ast.Assign(
-                    targets=[ast.Name(id=slot_parts_var, ctx=ast.Store())],
-                    value=ast.List(elts=[], ctx=ast.Load())
-                ))
-                
+
+                body.append(
+                    ast.Assign(
+                        targets=[ast.Name(id=slot_parts_var, ctx=ast.Store())],
+                        value=ast.List(elts=[], ctx=ast.Load()),
+                    )
+                )
+
                 for s_node in s_nodes:
-                    self._add_node(s_node, body, local_vars, bound_var, layout_id, known_methods, known_globals, async_methods, component_map, scope_id, parts_var=slot_parts_var) # PASS slot_parts_var
-                
+                    self._add_node(
+                        s_node,
+                        body,
+                        local_vars,
+                        bound_var,
+                        layout_id,
+                        known_methods,
+                        known_globals,
+                        async_methods,
+                        component_map,
+                        scope_id,
+                        parts_var=slot_parts_var,
+                    )  # PASS slot_parts_var
+
                 # Join parts -> slot string
                 # rendered_slot = "".join(slot_parts_var)
-                body.append(ast.Assign(
-                    targets=[ast.Name(id=slot_var_name, ctx=ast.Store())],
-                    value=ast.Call(
-                        func=ast.Attribute(value=ast.Constant(value=""), attr='join', ctx=ast.Load()),
-                        args=[ast.Name(id=slot_parts_var, ctx=ast.Load())],
-                        keywords=[]
+                body.append(
+                    ast.Assign(
+                        targets=[ast.Name(id=slot_var_name, ctx=ast.Store())],
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Constant(value=""), attr="join", ctx=ast.Load()
+                            ),
+                            args=[ast.Name(id=slot_parts_var, ctx=ast.Load())],
+                            keywords=[],
+                        ),
                     )
-                ))
-                
+                )
+
                 keys.append(ast.Constant(value=s_name))
                 values.append(ast.Name(id=slot_var_name, ctx=ast.Load()))
-            
+
             # Add slots=... to keywords
             if keys:
-                keywords.append(ast.keyword(
-                    arg='slots',
-                    value=ast.Dict(keys=keys, values=values)
-                ))
+                keywords.append(ast.keyword(arg="slots", value=ast.Dict(keys=keys, values=values)))
 
             # Instantiate component
             instantiation = ast.Call(
-                func=ast.Name(id=cls_name, ctx=ast.Load()),
-                args=[],
-                keywords=keywords
+                func=ast.Name(id=cls_name, ctx=ast.Load()), args=[], keywords=keywords
             )
 
-
-
-            
             render_call = ast.Call(
-                func=ast.Attribute(value=instantiation, attr='_render_template', ctx=ast.Load()),
+                func=ast.Attribute(value=instantiation, attr="_render_template", ctx=ast.Load()),
                 args=[],
-                keywords=[]
+                keywords=[],
             )
-            
+
             # Append result
             # parts.append(await ...)
-            append_stmt = ast.Expr(value=ast.Call(
-                func=ast.Attribute(value=ast.Name(id=parts_var, ctx=ast.Load()), attr='append', ctx=ast.Load()),
-                args=[ast.Await(value=render_call)],
-                keywords=[]
-            ))
+            append_stmt = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id=parts_var, ctx=ast.Load()), attr="append", ctx=ast.Load()
+                    ),
+                    args=[ast.Await(value=render_call)],
+                    keywords=[],
+                )
+            )
             self._set_line(append_stmt, node)
             body.append(append_stmt)
             return
@@ -752,15 +967,23 @@ class TemplateCodegen:
                 if node.is_raw:
                     parts = [node.text_content]
                 else:
-                    parts = self.interpolation_parser.parse(node.text_content, node.line, node.column)
-                
+                    parts = self.interpolation_parser.parse(
+                        node.text_content, node.line, node.column
+                    )
+
                 # Optimizations: single string -> simple append
                 if len(parts) == 1 and isinstance(parts[0], str):
-                    append_stmt = ast.Expr(value=ast.Call(
-                        func=ast.Attribute(value=ast.Name(id=parts_var, ctx=ast.Load()), attr='append', ctx=ast.Load()),
-                        args=[ast.Constant(value=parts[0])],
-                        keywords=[]
-                    ))
+                    append_stmt = ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id=parts_var, ctx=ast.Load()),
+                                attr="append",
+                                ctx=ast.Load(),
+                            ),
+                            args=[ast.Constant(value=parts[0])],
+                            keywords=[],
+                        )
+                    )
                     self._set_line(append_stmt, node)
                     body.append(append_stmt)
                 else:
@@ -793,26 +1016,48 @@ class TemplateCodegen:
                             )
 
                     if current_concat:
-                        append_stmt = ast.Expr(value=ast.Call(
-                            func=ast.Attribute(value=ast.Name(id=parts_var, ctx=ast.Load()), attr='append', ctx=ast.Load()),
-                            args=[current_concat],
-                            keywords=[]
-                        ))
+                        append_stmt = ast.Expr(
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ast.Name(id=parts_var, ctx=ast.Load()),
+                                    attr="append",
+                                    ctx=ast.Load(),
+                                ),
+                                args=[current_concat],
+                                keywords=[],
+                            )
+                        )
                         self._set_line(append_stmt, node)
                         body.append(append_stmt)
-            elif node.special_attributes and isinstance(node.special_attributes[0], InterpolationNode):
+            elif node.special_attributes and isinstance(
+                node.special_attributes[0], InterpolationNode
+            ):
                 # Handle standalone interpolation node from parser splitting
                 interp = node.special_attributes[0]
                 term = ast.Call(
-                    func=ast.Name(id='str', ctx=ast.Load()),
-                    args=[self._transform_expr(interp.expression, local_vars, known_globals, line_offset=interp.line, col_offset=interp.column)],
-                    keywords=[]
+                    func=ast.Name(id="str", ctx=ast.Load()),
+                    args=[
+                        self._transform_expr(
+                            interp.expression,
+                            local_vars,
+                            known_globals,
+                            line_offset=interp.line,
+                            col_offset=interp.column,
+                        )
+                    ],
+                    keywords=[],
                 )
-                append_stmt = ast.Expr(value=ast.Call(
-                    func=ast.Attribute(value=ast.Name(id=parts_var, ctx=ast.Load()), attr='append', ctx=ast.Load()),
-                    args=[term],
-                    keywords=[]
-                ))
+                append_stmt = ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id=parts_var, ctx=ast.Load()),
+                            attr="append",
+                            ctx=ast.Load(),
+                        ),
+                        args=[term],
+                        keywords=[],
+                    )
+                )
                 self._set_line(append_stmt, node)
                 body.append(append_stmt)
             pass
@@ -863,7 +1108,8 @@ class TemplateCodegen:
                             target_var_expr  # AST node passed as bound_var? No, logic expects expr
                         )
                         # But bound_var is passed recursively.
-                        # Wait, logic for <option> uses bound_var which is currently a string in old code?
+                        # Wait, logic for <option> uses bound_var which is currently a string in
+                        # old code?
                         # "if str(attrs['value']) == str({bound_var}):"
                         # We need to pass the expression object or similar?
                         # Let's pass the AST expression node.
@@ -895,72 +1141,97 @@ class TemplateCodegen:
                 )
 
             # attrs = {}
-            body.append(ast.Assign(
-                targets=[ast.Name(id='attrs', ctx=ast.Store())],
-                value=ast.Dict(keys=[], values=[])
-            ))
-            
+            body.append(
+                ast.Assign(
+                    targets=[ast.Name(id="attrs", ctx=ast.Store())],
+                    value=ast.Dict(keys=[], values=[]),
+                )
+            )
+
             # Identify if we need to apply scope
             # Apply to all elements if scope_id is present
             # BUT: do not apply to <style> tag itself (unless we want to?), or <script>.
             # And <slot>.
             # <style scoped> handling is separate (reshaping content).
-            
-            apply_scope = scope_id and node.tag not in ('style', 'script', 'slot', 'template')
+
+            apply_scope = scope_id and node.tag not in ("style", "script", "slot", "template")
             if apply_scope:
-                 body.append(ast.Assign(
-                    targets=[ast.Subscript(
-                        value=ast.Name(id='attrs', ctx=ast.Load()),
-                        slice=ast.Constant(value=f'data-ph-{scope_id}'),
-                        ctx=ast.Store()
-                    )],
-                    value=ast.Constant(value="")
-                ))
-            
-             # Handle <style scoped> content rewriting
-            if node.tag == 'style' and scope_id and 'scoped' in node.attributes:
+                body.append(
+                    ast.Assign(
+                        targets=[
+                            ast.Subscript(
+                                value=ast.Name(id="attrs", ctx=ast.Load()),
+                                slice=ast.Constant(value=f"data-ph-{scope_id}"),
+                                ctx=ast.Store(),
+                            )
+                        ],
+                        value=ast.Constant(value=""),
+                    )
+                )
+
+            # Handle <style scoped> content rewriting
+            if node.tag == "style" and scope_id and "scoped" in node.attributes:
                 # Rewrite content
-                 if node.children and node.children[0].text_content:
-                     original_css = node.children[0].text_content
-                     
-                     # Rewrite CSS with scope ID
-                     def rewrite_css(css, sid):
-                         new_parts = []
-                         last_idx = 0
-                         in_brace = False
-                         for i, char in enumerate(css):
-                             if char == '{':
-                                 if not in_brace:
-                                     selectors = css[last_idx:i]
-                                     rewritten_selectors = ",".join([f"{s.strip()}[data-ph-{sid}]" for s in selectors.split(',') if s.strip()])
-                                     new_parts.append(rewritten_selectors)
-                                     in_brace = True
-                                     last_idx = i
-                             elif char == '}':
-                                 if in_brace:
-                                     new_parts.append(css[last_idx:i+1])
-                                     in_brace = False
-                                     last_idx = i + 1
-                         
-                         new_parts.append(css[last_idx:])
-                         return "".join(new_parts)
-                         
-                     rewritten_css = rewrite_css(original_css, scope_id)
-                     
-                     # Generate code to add style to collector:
-                     # self._style_collector.add(scope_id, rewritten_css)
-                     body.append(ast.Expr(value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr='_style_collector', ctx=ast.Load()),
-                            attr='add', ctx=ast.Load()
-                        ),
-                        args=[ast.Constant(value=scope_id), ast.Constant(value=rewritten_css)],
-                        keywords=[]
-                     )))
-                     
-                     # DO NOT output the style node to `parts`. 
-                     # We just return here because we've handled the "rendering" of this node (by registering side effect)
-                     return
+                if node.children and node.children[0].text_content:
+                    original_css = node.children[0].text_content
+
+                    # Rewrite CSS with scope ID
+                    def rewrite_css(css, sid):
+                        new_parts = []
+                        last_idx = 0
+                        in_brace = False
+                        for i, char in enumerate(css):
+                            if char == "{":
+                                if not in_brace:
+                                    selectors = css[last_idx:i]
+                                    rewritten_selectors = ",".join(
+                                        [
+                                            f"{s.strip()}[data-ph-{sid}]"
+                                            for s in selectors.split(",")
+                                            if s.strip()
+                                        ]
+                                    )
+                                    new_parts.append(rewritten_selectors)
+                                    in_brace = True
+                                    last_idx = i
+                            elif char == "}":
+                                if in_brace:
+                                    new_parts.append(css[last_idx : i + 1])
+                                    in_brace = False
+                                    last_idx = i + 1
+
+                        new_parts.append(css[last_idx:])
+                        return "".join(new_parts)
+
+                    rewritten_css = rewrite_css(original_css, scope_id)
+
+                    # Generate code to add style to collector:
+                    # self._style_collector.add(scope_id, rewritten_css)
+                    body.append(
+                        ast.Expr(
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ast.Attribute(
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                        attr="_style_collector",
+                                        ctx=ast.Load(),
+                                    ),
+                                    attr="add",
+                                    ctx=ast.Load(),
+                                ),
+                                args=[
+                                    ast.Constant(value=scope_id),
+                                    ast.Constant(value=rewritten_css),
+                                ],
+                                keywords=[],
+                            )
+                        )
+                    )
+
+                    # DO NOT output the style node to `parts`.
+                    # We just return here because we've handled the "rendering" of this node
+                    # (by registering side effect)
+                    return
 
             # Static attrs
             for k, v in node.attributes.items():
@@ -1248,20 +1519,7 @@ class TemplateCodegen:
                         ast.Assign(targets=[ast.Name(id="_r_val", ctx=ast.Store())], value=val_expr)
                     )
 
-                    html_booleans = {
-                        "checked",
-                        "disabled",
-                        "selected",
-                        "readonly",
-                        "required",
-                        "multiple",
-                        "autofocus",
-                        "novalidate",
-                        "formnovalidate",
-                        "hidden",
-                    }
                     is_aria = attr.name.lower().startswith("aria-")
-                    is_bool = attr.name.lower() in html_booleans
 
                     if is_aria:
                         # if _r_val is True: attrs["X"] = "true"
@@ -1446,9 +1704,12 @@ class TemplateCodegen:
                 )
 
             if node.tag.lower() == "option" and bound_var:
-                # if "value" in attrs and str(attrs["value"]) == str(bound_var): attrs["selected"] = ""
+                # if "value" in attrs and str(attrs["value"]) == str(bound_var):
+                #     attrs["selected"] = ""
                 # bound_var is AST node here
-                # We need to reuse bound_var AST node carefully (if it's complex, it might be evaluated multiple times, but usually it's just Name or Attribute)
+                # We need to reuse bound_var AST node carefully (if it's complex,
+                # it might be evaluated multiple times, but usually it's just
+                # Name or Attribute)
 
                 check = ast.If(
                     test=ast.BoolOp(
@@ -1501,68 +1762,128 @@ class TemplateCodegen:
             # Generate opening tag
             # header_parts = [] ...
             # parts.append(f"<{tag}{''.join(header_parts)}>")
-            
+
             # Determine spread attributes (explicit or implicit)
             spread_expr = None
-            
+
             # 1. Explicit spread {**attrs}
             from pyhtml.compiler.ast_nodes import SpreadAttribute
-            explicit_spread = next((a for a in node.special_attributes if isinstance(a, SpreadAttribute)), None)
+
+            explicit_spread = next(
+                (a for a in node.special_attributes if isinstance(a, SpreadAttribute)), None
+            )
             if explicit_spread:
                 # expr is likely 'attrs' or similar
                 # transform it to AST load
-                spread_expr = self._transform_expr(explicit_spread.expr, local_vars, known_globals, line_offset=node.line, col_offset=node.column)
-            
+                spread_expr = self._transform_expr(
+                    explicit_spread.expr,
+                    local_vars,
+                    known_globals,
+                    line_offset=node.line,
+                    col_offset=node.column,
+                )
+
             # 2. Implicit root injection
             # Only if no explicit spread AND implicit_root_source is active AND is an element
             elif implicit_root_source:
-                spread_expr = ast.Attribute(value=ast.Name(id='self', ctx=ast.Load()), attr=implicit_root_source, ctx=ast.Load())
-                implicit_root_source = None # Consumed
-            
+                spread_expr = ast.Attribute(
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr=implicit_root_source,
+                    ctx=ast.Load(),
+                )
+                implicit_root_source = None  # Consumed
+
             # Import render_attrs locally to ensure availability
-            body.append(ast.ImportFrom(
-                module='pyhtml.runtime.helpers',
-                names=[ast.alias(name='render_attrs', asname=None)],
-                level=0
-            ))
-            
+            body.append(
+                ast.ImportFrom(
+                    module="pyhtml.runtime.helpers",
+                    names=[ast.alias(name="render_attrs", asname=None)],
+                    level=0,
+                )
+            )
+
             # Generate start tag
-            body.append(ast.Expr(value=ast.Call(
-                 func=ast.Attribute(value=ast.Name(id=parts_var, ctx=ast.Load()), attr='append', ctx=ast.Load()),
-                 args=[ast.Constant(value=f"<{node.tag}")],
-                 keywords=[]
-            )))
-            
+            body.append(
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id=parts_var, ctx=ast.Load()),
+                            attr="append",
+                            ctx=ast.Load(),
+                        ),
+                        args=[ast.Constant(value=f"<{node.tag}")],
+                        keywords=[],
+                    )
+                )
+            )
+
             # render_attrs(attrs, spread_expr)
             # attrs is the runtime dict populated with static/dynamic bindings
             render_call = ast.Call(
-                func=ast.Name(id='render_attrs', ctx=ast.Load()),
+                func=ast.Name(id="render_attrs", ctx=ast.Load()),
                 args=[
-                    ast.Name(id='attrs', ctx=ast.Load()),
-                    spread_expr if spread_expr else ast.Constant(value=None)
+                    ast.Name(id="attrs", ctx=ast.Load()),
+                    spread_expr if spread_expr else ast.Constant(value=None),
                 ],
-                keywords=[]
+                keywords=[],
             )
-            
-            body.append(ast.Expr(value=ast.Call(
-                 func=ast.Attribute(value=ast.Name(id=parts_var, ctx=ast.Load()), attr='append', ctx=ast.Load()),
-                 args=[render_call],
-                 keywords=[]
-            )))
-            
+
+            body.append(
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id=parts_var, ctx=ast.Load()),
+                            attr="append",
+                            ctx=ast.Load(),
+                        ),
+                        args=[render_call],
+                        keywords=[],
+                    )
+                )
+            )
+
             # Close opening tag
-            body.append(ast.Expr(value=ast.Call(
-                 func=ast.Attribute(value=ast.Name(id=parts_var, ctx=ast.Load()), attr='append', ctx=ast.Load()),
-                 args=[ast.Constant(value=">")],
-                 keywords=[]
-            )))
+            body.append(
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id=parts_var, ctx=ast.Load()),
+                            attr="append",
+                            ctx=ast.Load(),
+                        ),
+                        args=[ast.Constant(value=">")],
+                        keywords=[],
+                    )
+                )
+            )
 
             for child in node.children:
-                self._add_node(child, body, local_vars, new_bound_var, layout_id, known_methods, known_globals, async_methods, component_map, scope_id, parts_var=parts_var, implicit_root_source=implicit_root_source)
+                self._add_node(
+                    child,
+                    body,
+                    local_vars,
+                    new_bound_var,
+                    layout_id,
+                    known_methods,
+                    known_globals,
+                    async_methods,
+                    component_map,
+                    scope_id,
+                    parts_var=parts_var,
+                    implicit_root_source=implicit_root_source,
+                )
 
             if node.tag.lower() not in self.VOID_ELEMENTS:
-                body.append(ast.Expr(value=ast.Call(
-                    func=ast.Attribute(value=ast.Name(id=parts_var, ctx=ast.Load()), attr='append', ctx=ast.Load()),
-                    args=[ast.Constant(value=f"</{node.tag}>")],
-                    keywords=[]
-                )))
+                body.append(
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id=parts_var, ctx=ast.Load()),
+                                attr="append",
+                                ctx=ast.Load(),
+                            ),
+                            args=[ast.Constant(value=f"</{node.tag}>")],
+                            keywords=[],
+                        )
+                    )
+                )

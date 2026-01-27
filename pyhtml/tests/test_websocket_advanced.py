@@ -24,8 +24,8 @@ class TestWebSocketAdvanced(unittest.IsolatedAsyncioTestCase):
         self.handler.connection_pages = {ws1: page1}
 
         # Mock router match to return a page class
-        NewPageClass = MagicMock()
-        self.app.router.match.return_value = (NewPageClass, {}, "main")
+        new_page_class = MagicMock()
+        self.app.router.match.return_value = (new_page_class, {}, "main")
 
         # Execute broadcast_reload
         await self.handler.broadcast_reload()
@@ -37,8 +37,8 @@ class TestWebSocketAdvanced(unittest.IsolatedAsyncioTestCase):
         # 2. new_page instantiated
         # 3. render called
 
-        # Verify NewPageClass instantiated
-        NewPageClass.assert_called_once()
+        # Verify new_page_class instantiated
+        new_page_class.assert_called_once()
 
         # Verify ws1 got 'update' message
         # ws1.send_bytes.assert_called() # Hard to check payload without unpacking msgpack

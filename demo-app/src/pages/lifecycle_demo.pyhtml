@@ -8,7 +8,7 @@
     <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px; font-family: monospace;">
         <h3>Execution Log:</h3>
         <ul>
-            <li $for="entry in logs" style="margin-bottom: 0.5rem;">
+            <li $for={entry in logs} style="margin-bottom: 0.5rem;">
                 <span style="color: #6366f1; font-weight: bold;">[{entry.phase}]</span> {entry.message}
             </li>
         </ul>

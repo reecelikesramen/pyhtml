@@ -13,17 +13,17 @@
             <section class="card">
                 <h2>✨ Basic Events</h2>
                 <div class="button-group">
-                    <button class="btn primary" @click="log_event('Click triggered')">Click Me</button>
-                    <button class="btn secondary" @mouseenter="log_event('Mouse Entered')" @mouseleave="log_event('Mouse Left')">Hover Me</button>
-                    <input type="text" class="btn accent" placeholder="Focus/Blur me" @focus="log_event('Focus Gained')" @blur="log_event('Focus Lost')" style="width: 120px;">
+                    <button class="btn primary" @click={log_event("Click triggered")}>Click Me</button>
+                    <button class="btn secondary" @mouseenter={log_event("Mouse Entered")} @mouseleave={log_event("Mouse Left")}>Hover Me</button>
+                    <input type="text" class="btn accent" placeholder="Focus/Blur me" @focus={log_event("Focus Gained")} @blur={log_event("Focus Lost")} style="width: 120px;">
                 </div>
                 <div class="input-group">
                     <label>Input Event (Immediate):</label>
-                    <input type="text" placeholder="Type something..." @input="on_input">
+                    <input type="text" placeholder="Type something..." @input={on_input}>
                 </div>
                 <div class="input-group">
                     <label>Change Event:</label>
-                    <select @change="on_select">
+                    <select @change={on_select}>
                         <option value="One">One</option>
                         <option value="Two">Two</option>
                         <option value="Three">Three</option>
@@ -36,20 +36,20 @@
                 <h2>🛠 Logic Modifiers</h2>
                 <div class="item">
                     <p><strong>.prevent</strong>: Stops default browser behavior.</p>
-                    <a href="https://google.com" target="_blank" class="link-btn" @click.prevent="log_event('Navigation prevented!')">Try to go to Google</a>
+                    <a href="https://google.com" target="_blank" class="link-btn" @click.prevent={log_event("Navigation prevented!")}>Try to go to Google</a>
                 </div>
                 
-                <div class="item" @click="log_event('Parent clicked')">
+                <div class="item" @click={log_event("Parent clicked")}>
                     <p><strong>.stop</strong>: Prevents event bubbling.</p>
                     <div class="bubble-box">
-                        <button class="btn small" @click.stop="log_event('Child clicked (bubbling stopped)')">Stop Bubble</button>
-                        <button class="btn small outline" @click="log_event('Child clicked (bubbling allowed)')">Allow Bubble</button>
+                        <button class="btn small" @click.stop={log_event("Child clicked (bubbling stopped)")}>Stop Bubble</button>
+                        <button class="btn small outline" @click={log_event("Child clicked (bubbling allowed)")}>Allow Bubble</button>
                     </div>
                 </div>
 
                 <div class="item">
                     <p><strong>.self</strong>: Only triggers if the element itself is the target.</p>
-                    <div class="self-box" @click.self="log_event('Self-box clicked!')">
+                    <div class="self-box" @click.self={log_event('Self-box clicked!')}>
                         <span class="badge">Click background, not me</span>
                     </div>
                 </div>
@@ -60,17 +60,17 @@
                 <h2>⚡ Performance Modifiers</h2>
                 <div class="input-group">
                     <label><strong>.debounce (250ms default)</strong>: Great for search-as-you-type.</label>
-                    <input type="text" placeholder="Start typing fast..." @input.debounce="on_input_debounce">
+                    <input type="text" placeholder="Start typing fast..." @input.debounce={on_input_debounce}>
                 </div>
 
                 <div class="input-group">
                     <label><strong>.debounce.500ms</strong>: Longer delay.</label>
-                    <input type="text" placeholder="Type with 500ms delay..." @input.debounce.500ms="on_input_debounce_long">
+                    <input type="text" placeholder="Type with 500ms delay..." @input.debounce.500ms={on_input_debounce_long}>
                 </div>
 
                 <div class="input-group">
                     <label><strong>.throttle (250ms)</strong>: Limits event frequency.</label>
-                    <div class="scroll-box" @scroll.throttle="log_event('Throttled scroll...')">
+                    <div class="scroll-box" @scroll.throttle={log_event('Throttled scroll...')}>
                         <div class="scroll-content">Scroll me fast!</div>
                     </div>
                 </div>
@@ -82,19 +82,19 @@
                 <div class="input-group">
                     <label>Filters (<strong>.enter</strong>, <strong>.escape</strong>):</label>
                     <input type="text" placeholder="Press Enter or Esc..." 
-                           @keyup.enter="log_event('ENTER pressed')" 
-                           @keyup.escape="log_event('ESCAPE pressed')">
+                           @keyup.enter={log_event('ENTER pressed')} 
+                           @keyup.escape={log_event('ESCAPE pressed')}>
                 </div>
 
                 <div class="button-group">
-                    <button class="btn outline" @click.shift="log_event('Shift + Click detected')">Shift + Click</button>
-                    <button class="btn outline" @click.ctrl="log_event('Ctrl + Click (Win/Linux)')" @contextmenu.prevent="1+1">Ctrl + Click</button>
-                    <button class="btn outline" @click.cmd="log_event('Cmd + Click detected (Mac)')">Cmd + Click (Mac)</button>
+                    <button class="btn outline" @click.shift={log_event('Shift + Click detected')}>Shift + Click</button>
+                    <button class="btn outline" @click.ctrl={log_event('Ctrl + Click (Win/Linux)')} @contextmenu.prevent={1+1}>Ctrl + Click</button>
+                    <button class="btn outline" @click.cmd={log_event('Cmd + Click detected (Mac)')}>Cmd + Click (Mac)</button>
                 </div>
                 <p class="hint">Note: On macOS, Ctrl+Click triggers context menu. Use Cmd+Click instead, or use @contextmenu.prevent to intercept.</p>
 
                 <p class="hint">Global Listeners: Press <strong>Alt + H</strong> anywhere to trigger a global log.</p>
-                <div hidden @keyup.alt.h.window="log_event('Global Alt+H shortcut triggered!')"></div>
+                <div hidden @keyup.alt.h.window={log_event('Global Alt+H shortcut triggered!')}></div>
             </section>
 
             <!-- Section 5: Global/Outside Modifiers -->
@@ -102,7 +102,7 @@
                 <h2>🌍 Global & Outside</h2>
                 <div class="item">
                     <p><strong>.outside</strong>: Triggers when clicking outside the element.</p>
-                    <div class="modal-preview" @click.outside="log_event('Clicked outside the focus-box!')">
+                    <div class="modal-preview" @click.outside={log_event('Clicked outside the focus-box!')}>
                         Outside-aware Box
                     </div>
                 </div>
@@ -114,14 +114,14 @@
             <div class="card log-card">
                 <div class="log-header">
                     <h2>📟 Event Log</h2>
-                    <button class="clear-btn" @click="clear_logs()">Clear</button>
+                    <button class="clear-btn" @click={clear_logs()}>Clear</button>
                 </div>
                 <div class="log-list" id="event-logs">
-                    <div class="log-entry" $for="entry in logs">
+                    <div class="log-entry" $for={entry in logs}>
                         <span class="log-time">{entry['time']}</span>
                         <span class="log-msg">{entry['message']}</span>
                     </div>
-                    <p class="empty-msg" $if="not logs">Waiting for events...</p>
+                    <p class="empty-msg" $if={not logs}>Waiting for events...</p>
                 </div>
             </div>
         </div>

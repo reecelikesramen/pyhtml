@@ -25,11 +25,11 @@ def mock_app():
 
 
 def test_variable_binding(loader, mock_app):
-    """Test :attr="var" binding."""
+    """Test attr={var} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
-<div :id="my_id" :class="my_class"></div>
+<div id={my_id} class={my_class}></div>
 ---
 my_id = "dynamic-id"
 my_class = "btn"
@@ -39,10 +39,10 @@ my_class = "btn"
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            PageClass = loader.load(tmp_path / "page.pyhtml")
+            page_class = loader.load(tmp_path / "page.pyhtml")
             request = MagicMock()
             request.app = mock_app
-            page = PageClass(request, {}, {}, {}, None)
+            page = page_class(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
 
             assert 'id="dynamic-id"' in html
@@ -52,11 +52,11 @@ my_class = "btn"
 
 
 def test_method_binding_paramless(loader, mock_app):
-    """Test :attr="method" auto-call binding."""
+    """Test attr="method" auto-call binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
-<div :title="get_title"></div>
+<div title={get_title}></div>
 ---
 def get_title():
     return "My Title"
@@ -66,10 +66,10 @@ def get_title():
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            PageClass = loader.load(tmp_path / "page.pyhtml")
+            page_class = loader.load(tmp_path / "page.pyhtml")
             request = MagicMock()
             request.app = mock_app
-            page = PageClass(request, {}, {}, {}, None)
+            page = page_class(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
 
             assert 'title="My Title"' in html
@@ -78,11 +78,11 @@ def get_title():
 
 
 def test_expression_binding(loader, mock_app):
-    """Test :attr="expr" binding."""
+    """Test attr={expr} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
-<div :class="'error' if is_error else 'success'"></div>
+<div class={"error" if is_error else "success"}></div>
 ---
 is_error = True
 """
@@ -91,10 +91,10 @@ is_error = True
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            PageClass = loader.load(tmp_path / "page.pyhtml")
+            page_class = loader.load(tmp_path / "page.pyhtml")
             request = MagicMock()
             request.app = mock_app
-            page = PageClass(request, {}, {}, {}, None)
+            page = page_class(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
 
             assert 'class="error"' in html
@@ -107,7 +107,7 @@ def test_boolean_attributes(loader, mock_app):
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
-<input type="checkbox" :checked="is_checked" :disabled="is_disabled" :readonly="is_readonly">
+<input type="checkbox" checked={is_checked} disabled={is_disabled} readonly={is_readonly}>
 ---
 is_checked = True
 is_disabled = False
@@ -118,10 +118,10 @@ is_readonly = None
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            PageClass = loader.load(tmp_path / "page.pyhtml")
+            page_class = loader.load(tmp_path / "page.pyhtml")
             request = MagicMock()
             request.app = mock_app
-            page = PageClass(request, {}, {}, {}, None)
+            page = page_class(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
 
             # checked="True" -> checked=""
@@ -135,11 +135,11 @@ is_readonly = None
 
 
 def test_async_binding(loader, mock_app):
-    """Test :attr="await async_call()" binding."""
+    """Test attr={await async_call()} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
-<div :data-val="await get_data()"></div>
+<div data-val={await get_data()}></div>
 ---
 async def get_data():
     return "async-data"
@@ -149,10 +149,10 @@ async def get_data():
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            PageClass = loader.load(tmp_path / "page.pyhtml")
+            page_class = loader.load(tmp_path / "page.pyhtml")
             request = MagicMock()
             request.app = mock_app
-            page = PageClass(request, {}, {}, {}, None)
+            page = page_class(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
 
             assert 'data-val="async-data"' in html
@@ -165,7 +165,7 @@ def test_aria_boolean_attributes(loader, mock_app):
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
-<div :aria-busy="is_loading" :aria-expanded="is_expanded"></div>
+<div aria-busy={is_loading} aria-expanded={is_expanded}></div>
 ---
 is_loading = True
 is_expanded = False
@@ -175,10 +175,10 @@ is_expanded = False
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            PageClass = loader.load(tmp_path / "page.pyhtml")
+            page_class = loader.load(tmp_path / "page.pyhtml")
             request = MagicMock()
             request.app = mock_app
-            page = PageClass(request, {}, {}, {}, None)
+            page = page_class(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
 
             # aria-busy="true"

@@ -7,7 +7,7 @@
     <div style="border: 1px solid #ccc; padding: 20px; margin: 10px 0; border-radius: 8px;">
         <h2>1. Log Streaming</h2>
         <p>Open your browser console. Clicking the button below will stream a log message from the server directly to your console via WebSockets.</p>
-        <button @click="trigger_log()">Log "Hello from Server"</button>
+        <button @click={trigger_log()}>Log "Hello from Server"</button>
         <p>Log count: {log_count}</p>
     </div>
 
@@ -15,7 +15,7 @@
         <h2>2. Source Mapping & Error Handling</h2>
         <p>Clicking the button below will trigger a <code>ZeroDivisionError</code> on the server.</p>
         <p><strong>Observe:</strong> The new 500 debug page should appear, showing the exact line in this file (line 45) where the error occurred, thanks to source mapping.</p>
-        <button @click="trigger_error()" style="background-color: #ef4444; color: white;">Trigger 500 Error</button>
+        <button @click={trigger_error()} style="background-color: #ef4444; color: white;">Trigger 500 Error</button>
     </div>
 
     <div style="border: 1px solid #ccc; padding: 20px; margin: 10px 0; border-radius: 8px;">

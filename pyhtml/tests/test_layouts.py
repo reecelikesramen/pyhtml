@@ -60,12 +60,12 @@ def test_simple_layout(loader, mock_app):
         original_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            PageClass = loader.load(tmp_path / "page.pyhtml")
-            assert issubclass(PageClass, BasePage)
+            page_class = loader.load(tmp_path / "page.pyhtml")
+            assert issubclass(page_class, BasePage)
 
             request = MagicMock()
             request.app = mock_app
-            page = PageClass(request, {}, {}, {}, None)
+            page = page_class(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
 
             assert '<div id="layout">' in html
@@ -127,10 +127,10 @@ def test_head_slot_accumulation(loader, mock_app):
         original_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            PageClass = loader.load(tmp_path / "page.pyhtml")
+            page_class = loader.load(tmp_path / "page.pyhtml")
             request = MagicMock()
             request.app = mock_app
-            page = PageClass(request, {}, {}, {}, None)
+            page = page_class(request, {}, {}, {}, None)
             html = asyncio.run(page._render_template())
 
             # Verify head content is accumulated

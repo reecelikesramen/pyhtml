@@ -49,7 +49,7 @@ def test_interpolation_node_explicit_render(tmp_path):
 def test_multiple_event_handlers(tmp_path):
     """Cover multiple event handler logic in template codegen."""
     page_content = """!path '/multi'
-<button @click="fn1" @click.stop="fn2">Click</button>
+<button @click={fn1} @click.stop={fn2}>Click</button>
 ---
 def fn1(): pass
 def fn2(): pass
@@ -67,7 +67,7 @@ def fn2(): pass
 def test_reactive_attributes(tmp_path):
     """Cover reactive attribute and boolean logic in template codegen."""
     page_content = """!path '/reactive'
-<input :disabled="is_disabled" :required="is_required" :aria-label="label">
+<input disabled={is_disabled} required={is_required} aria-label={label}>
 ---
 is_disabled = True
 is_required = False

@@ -5,29 +5,29 @@
 }
 !layout "layout.pyhtml"
 
-<div $if="path['home']">
+<div $if={path['home']}>
     <slot name="title">Basic Home</slot>
 
     <h1>Hello, world!</h1>
     <p>Welcome to your new app.</p>
 </div>
 
-<div $if="path['counter']">
+<div $if={path['counter']}>
     <slot name="title">Counter Example</slot>
 
     <h1>Counter</h1>
     <p>Current count: {count}</p>
-    <button @click="increment_count()">Click me</button>
+    <button @click={increment_count()}>Click me</button>
 </div>
 
-<div $if="path['weather']">
+<div $if={path['weather']}>
     <slot name="title">Weather Forecast</slot>
 
     <h1>Weather</h1>
     <p>This component demonstrates fetching data from the server.</p>
 
     <div style="margin-bottom: 20px;">
-        <button @click="refresh_data" $bind:busy="is_loading" :aria-busy="is_loading">
+        <button @click={refresh_data} aria-busy={is_loading}>
             { "Loading..." if is_loading else "Refresh Data" }
         </button>
     </div>
@@ -43,7 +43,7 @@
                 </tr>
             </thead>
             <tbody>
-                <tr $for="forecast in forecasts">
+                <tr $for={forecast in forecasts}>
                     <td>{forecast['date']}</td>
                     <td>{forecast['temperatureC']}</td>
                     <td>{forecast['temperatureF']}</td>

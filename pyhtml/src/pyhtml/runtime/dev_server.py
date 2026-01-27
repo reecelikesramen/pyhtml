@@ -125,18 +125,17 @@ async def run_dev_server(
 
     # Try to import Hypercorn for HTTP/3 support
     try:
-        import aioquic
         from hypercorn.asyncio import serve
         from hypercorn.config import Config
 
-        HAS_HTTP3 = True
+        has_http3 = True
     except ImportError:
-        HAS_HTTP3 = False
+        has_http3 = False
 
     # DEBUG: Force disable HTTP/3 to avoid Hypercorn/aioquic crash (KeyError: 9) on form uploads
     print("DEBUG: Forcing HTTP/3 disabled for stress testing form uploads.")
-    HAS_HTTP3 = False
-    if not HAS_HTTP3:
+    has_http3 = False
+    if not has_http3:
         print(
             "PyHTML: HTTP/3 (WebTransport) disabled. Install 'aioquic' and 'hypercorn' to enable."
         )
@@ -188,12 +187,12 @@ async def run_dev_server(
             # Common pattern: pages/../components OR pages/components??
             # Usually components are siblings to pages or in root.
             # Start with pages_dir parent
-            components_dir = pages_dir.parent / 'components'
+            components_dir = pages_dir.parent / "components"
             if components_dir.exists():
                 files_to_watch.append(components_dir)
-            
+
             print(f"PyHTML: files_to_watch: {files_to_watch}")
-            
+
             async for changes in awatch(*files_to_watch, stop_event=shutdown_event):
                 # Check what changed
                 library_changed = False
@@ -295,7 +294,8 @@ async def run_dev_server(
                     )
                     print("PyHTML: Certificates generated (localhost.pem).")
                     print(
-                        "PyHTML: Note: Run 'mkcert -install' once if your browser doesn't trust the certificate."
+                        "PyHTML: Note: Run 'mkcert -install' once if your browser doesn't "
+                        "trust the certificate."
                     )
 
                     cert_path = "localhost.pem"
@@ -310,12 +310,13 @@ async def run_dev_server(
             else:
                 # No mkcert, will fallback to ephemeral logic downstream
                 print(
-                    "PyHTML: Tip: Install 'mkcert' for trusted local HTTPS (e.g. 'brew install mkcert')."
+                    "PyHTML: Tip: Install 'mkcert' for trusted local HTTPS "
+                    "(e.g. 'brew install mkcert')."
                 )
                 print("PyHTML: Using ephemeral self-signed certificates (browser will warn).")
 
     async with asyncio.TaskGroup() as tg:
-        if HAS_HTTP3:
+        if has_http3:
             try:
                 # If still no certs, generate ephemeral ones for WebTransport
                 final_cert, final_key = cert_path, key_path
@@ -351,9 +352,9 @@ async def run_dev_server(
 
                 traceback.print_exc()
                 print("PyHTML: Falling back to Uvicorn (HTTP/2 + WebSocket only)")
-                HAS_HTTP3 = False
+                has_http3 = False
 
-        if not HAS_HTTP3:
+        if not has_http3:
             # Fallback to Uvicorn
             import uvicorn
 

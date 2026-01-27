@@ -5,7 +5,7 @@ import ast
 parser = PyHTMLParser()
 gen = CodeGenerator()
 
-content = '<div :id="dynamic_id">Test</div>'
+content = '<div id=\{dynamic_id\}>Test</div>'
 parsed = parser.parse(content)
 parsed.file_path = "test.pyhtml"
 module_ast = gen.generate(parsed)

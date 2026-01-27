@@ -4,6 +4,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock
 
 
@@ -22,9 +23,6 @@ def restore_modules(original_modules, mapping):
             sys.modules[name] = original_modules[name]
         else:
             del sys.modules[name]
-
-
-from pathlib import Path
 
 
 # Mock base page for loader
@@ -171,7 +169,7 @@ class TestFileRouting(unittest.TestCase):
         def norm(p):
             return str(p.resolve())
 
-        loaded_normalized = [(norm(p), l) for p, l in loaded]
+        loaded_normalized = [(norm(p), layout) for p, layout in loaded]
 
         # Root layout loading
         self.assertIn((norm(layout), None), loaded_normalized)

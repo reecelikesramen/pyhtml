@@ -5,17 +5,18 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pyhtml.runtime.app import PyHTML
+from pyhtml.runtime.page import BasePage
 from starlette.requests import Request
 
 
 class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
-        self.pages_dir = Path(self.test_dir)
+        self.pages_dir = Path(self.test_dir).resolve()
         # Mock Starlette to avoid actual server setup
         with (
             patch("starlette.applications.Starlette"),
-            patch("pyhtml.runtime.app.PageLoader"),
+            patch("pyhtml.runtime.loader.PageLoader"),
             patch("pyhtml.runtime.app.HTTPTransportHandler"),
             patch("pyhtml.runtime.app.WebSocketHandler"),
             patch("pyhtml.runtime.webtransport_handler.WebTransportHandler"),
@@ -42,10 +43,9 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
         (users / "[id].pyhtml").touch()
 
         # Mock loader to return dummy classes
-        self.app.loader.load = MagicMock(return_value=type("Page", (object,), {}))
-
-        self.app.router = MagicMock()
-        self.app._scan_directory(self.pages_dir)
+        with patch.object(self.app.loader, "load", return_value=type("Page", (BasePage,), {})):
+            self.app.router = MagicMock()
+            self.app._scan_directory(self.pages_dir)
 
         # Verify routes were added
         # index -> /
@@ -95,25 +95,29 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
         # Create a page that relies on implicit routing
         page_path = self.pages_dir / "implicit.pyhtml"
         page_path.write_text("<h1>Implicit</h1>")
-        
+
         # Mock loader to return a class without explicit routes
-        page_class = type('Page', (object,), {})
-        self.app.loader.load = MagicMock(return_value=page_class)
-        self.app.loader.invalidate_cache = MagicMock()
-        
-        # Mock router
-        self.app.router = MagicMock()
-        self.app.router.routes = []
-        
-        # Enable path based routing
-        self.app.path_based_routing = True
-        
-        # Call reload_page
-        self.app.reload_page(page_path)
-        
+        page_class = type("Page", (BasePage,), {})
+        with (
+            patch.object(self.app.loader, "load", return_value=page_class),
+            patch.object(
+                self.app.loader, "invalidate_cache", return_value={str(page_path.resolve())}
+            ),
+        ):
+            # Mock router
+            self.app.router = MagicMock()
+            self.app.router.routes = []
+
+            # Enable path based routing
+            self.app.path_based_routing = True
+
+            # Call reload_page
+            self.app.reload_page(page_path)
+
         # Verify that add_route was called with the implicit path
         # /implicit.pyhtml -> /implicit
         self.app.router.add_route.assert_called_with("/implicit", page_class)
+
 
 if __name__ == "__main__":
     unittest.main()

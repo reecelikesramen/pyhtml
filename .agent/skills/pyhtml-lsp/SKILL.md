@@ -54,7 +54,7 @@ The regex for matching special attributes:
 r'([@$][\w\.]+)="([^"]*)"'
 ```
 - `@event.modifier1.modifier2="handler"` - Event handlers with modifiers
-- `$directive="value"` - Directives like `$if`, `$for`, `$bind`
+- `$directive={value}` - Directives like `$if`, `$for`, `$bind`
 
 ## Testing
 

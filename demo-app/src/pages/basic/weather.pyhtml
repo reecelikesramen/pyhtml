@@ -10,12 +10,12 @@
 <p>This component demonstrates fetching data from the server.</p>
 
 <div style="margin-bottom: 20px;">
-    <button @click="refresh_data" $bind:busy="is_loading" :aria-busy="is_loading">
+    <button @click={refresh_data} aria-busy={is_loading}>
         { "Loading..." if is_loading else "Refresh Data" }
     </button>
 </div>
 
-<h1 $show="path['weather/:id']">Weather</h1>
+<h1 $show={path['weather/:id']}>Weather</h1>
 
 <figure>
     <table role="grid">
@@ -28,7 +28,7 @@
             </tr>
         </thead>
         <tbody>
-            <tr $for="forecast in forecasts">
+            <tr $for={forecast in forecasts}>
                 <td>{forecast['date']}</td>
                 <td>{forecast['temperatureC']}</td>
                 <td>{forecast['temperatureF']}</td>

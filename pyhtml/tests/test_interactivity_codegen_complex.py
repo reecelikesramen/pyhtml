@@ -12,8 +12,8 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         self.parser = PyHTMLParser()
 
     def test_inline_argument_lifting(self):
-        """Test that @click="delete_item(item.id, 'confirm')" lifts arguments."""
-        template = "<button @click=\"delete_item(item.id, 'confirmed')\">Delete</button>"
+        """Test that @click={delete_item(item.id, 'confirm')} lifts arguments."""
+        template = "<button @click={delete_item(item.id, 'confirmed')}>Delete</button>"
         # Mock python code with the handler method
         python_code = "async def delete_item(id, status): pass"
         content = f"{template}\n---\n{python_code}"
@@ -35,7 +35,7 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
 
     def test_multiple_handlers_complex(self):
         """Verify behavior with multiple handlers having arguments and modifiers."""
-        template = '<button @click.stop="foo(id1)" @click.prevent="bar(id2)">Click</button>'
+        template = '<button @click.stop={foo(id1)} @click.prevent={bar(id2)}>Click</button>'
         parsed = self.parser.parse(template)
 
         module_ast = self.generator.generate(parsed)
@@ -46,26 +46,12 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         self.assertIn("_h['args'] = [self.id1]", code)
         self.assertIn("_h['args'] = [self.id2]", code)
         # Verify modifiers are collected (order is unstable because of set())
-        modifiers_line = [l for l in code.split("\n") if "attrs['data-modifiers-click'] =" in l][0]
+        modifiers_line = [
+            line for line in code.split("\n") if "attrs['data-modifiers-click'] =" in line
+        ][0]
         self.assertIn("stop", modifiers_line)
         self.assertIn("prevent", modifiers_line)
 
-    def test_busy_binding(self):
-        """Test that $bind:busy wraps the handler in try/finally with busy state changes."""
-        template = '<button @click="do_work" $bind:busy="is_busy">Work</button>'
-        python_code = "async def do_work(): pass"
-        content = f"{template}\n---\n{python_code}"
-        parsed = self.parser.parse(content)
-
-        module_ast = self.generator.generate(parsed)
-        code = ast.unparse(module_ast)
-
-        # Verify busy state logic
-        self.assertIn("self.is_busy = True", code)
-        self.assertIn("self.is_busy = False", code)
-        self.assertIn("try:", code)
-        self.assertIn("finally:", code)
-        self.assertIn("await self.do_work()", code)
 
     def test_form_validation_wrapper(self):
         """Test that @submit on a form with validation schema generates a wrapper."""
@@ -73,7 +59,7 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         # For now, let's verify if the generator handles EventAttribute with validation_schema
         from pyhtml.compiler.ast_nodes import FieldValidationRules, FormValidationSchema
 
-        template = '<form @submit="save"><input name="user"></form>'
+        template = '<form @submit={save}><input name="user"></form>'
         parsed = self.parser.parse(template)
 
         # Manually inject a validation schema for the test

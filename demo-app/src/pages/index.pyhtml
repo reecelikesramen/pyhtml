@@ -8,9 +8,9 @@
 <div>
     <h1>{"True" if path["main"] else "False"}</h1>
     <h1>Greetings, {name}!</h1>
-    <p $show="path['main']">Main</p>
-    <button @click="change_name()">Change name</button>
-    <button @click="increment_count(2)">Click me</button>
+    <p $show={path["main"]}>Main</p>
+    <button @click={change_name()}>Change name</button>
+    <button @click={increment_count(2)}>Click me</button>
     <h1>{"Main" if path["main"] else "Path Params Test"}</h1>
     <p>{f"Test: {count}"}</p>
     <p>{f"Any: {params['id']}" if path["any"] else f"Number: {params['num']}" if path["int"] else f"Float: {params['val']}" if path["float"] else "No path params"}</p>
@@ -20,7 +20,7 @@
     <p>URL: {url}</p>
     <p>Params: {params}</p>
     <p>Query: {query}</p>
-    <div style="width: 100px; height: 100px; background-color: #6366f1; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: white; margin: 20px 0;" @click="increment_count(5)">
+    <div style="width: 100px; height: 100px; background-color: #6366f1; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: white; margin: 20px 0;" @click={increment_count(5)}>
         Click me!
     </div>
     <a href="/a/2">Test</a>
@@ -29,7 +29,7 @@
     <br>
     <a href="/a/2?q=2&b=hello">Query</a>
     <br>
-    <a href="/form-test">Form</a>
+    <a href="/forms_test">Form</a>
     <br>
     <a href="/new-attributes">New Attributes</a>
     <br>
@@ -40,13 +40,7 @@
 
 ---
 name = "World"
-count = 0
-
-async def on_load():
-    # Initial load
-    count = 1
-
-    pass
+count = 1
 
 def increment_count(amount=1):
     """Increment the counter"""

@@ -45,3 +45,5 @@ out/
 
 notes/
 scratch/
+
+.ruff_cache/

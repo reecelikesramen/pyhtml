@@ -1308,6 +1308,8 @@ source = { virtual = "." }
 dev = [
     { name = "coverage" },
     { name = "mypy" },
+    { name = "pyhtml" },
+    { name = "pyhtml-lsp" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -1318,6 +1320,8 @@ dev = [
 requires-dist = [
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.3.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.7.0" },
+    { name = "pyhtml", marker = "extra == 'dev'", editable = "pyhtml" },
+    { name = "pyhtml-lsp", marker = "extra == 'dev'", editable = "lsp" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
