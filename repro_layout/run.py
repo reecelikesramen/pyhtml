@@ -4,10 +4,10 @@ import asyncio
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "pyhtml" / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "pywire" / "src"))
 
-from pyhtml.runtime.loader import PageLoader
-from pyhtml.runtime.page import BasePage
+from pywire.runtime.loader import PageLoader
+from pywire.runtime.page import BasePage
 from unittest.mock import MagicMock
 
 async def main():
@@ -18,7 +18,7 @@ async def main():
     os.chdir(base_dir) # Loader often relies on CWD for relative paths in simple setups
     
     try:
-        PageClass = loader.load(base_dir / "page.pyhtml")
+        PageClass = loader.load(base_dir / "page.pywire")
         print(f"Loaded PageClass: {PageClass.__name__}")
         
         # Mock request/app

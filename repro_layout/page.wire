@@ -1,0 +1,7 @@
+!layout "layout.pywire"
+
+<slot name="header">
+    <h1>Custom Header</h1>
+</slot>
+
+<p>Page Content</p>

@@ -1,11 +1,11 @@
 from pathlib import Path
-from pyhtml import PyHTML
+from pywire import PyWire
 
 # Get the pages directory
 pages_dir = Path(__file__).parent / "pages"
 
 # Create application instance
-app = PyHTML(
+app = PyWire(
     pages_dir=str(pages_dir),
     enable_pjax=True
 )

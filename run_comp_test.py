@@ -3,14 +3,14 @@ from pathlib import Path
 
 # Add project root to path (must be before imports)
 # sys.path.append(str(Path.cwd() / 'mock_libs')) # Removed
-# sys.path.append(str(Path.cwd() / 'pyhtml/src')) # Keep src if needed, or rely on installed pkg
+# sys.path.append(str(Path.cwd() / 'pywire/src')) # Keep src if needed, or rely on installed pkg
 
 import asyncio
-from pyhtml.runtime.loader import get_loader
+from pywire.runtime.loader import get_loader
 
 async def main():
     loader = get_loader()
-    page_path = Path('demo_app/pages/comp_test.pyhtml')
+    page_path = Path('demo_app/pages/comp_test.pywire')
     
     # Ensure layout resolution works (it might look for layout relative to CWD if not careful)
     # Loader uses absolute paths or relative to file.

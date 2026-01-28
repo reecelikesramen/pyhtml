@@ -1,7 +1,7 @@
 [project]
-name = "pyhtml-workspace"
+name = "pywire-workspace"
 version = "0.1.0"
-description = "Workspace for PyHTML"
+description = "Workspace for PyWire"
 requires-python = ">=3.11"
 dependencies = []
 
@@ -13,16 +13,17 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "coverage>=7.3.0",
-    "pyhtml",
-    "pyhtml-lsp",
+    "httpx>=0.23.0",
+    "pywire",
+    "pywire-lsp",
 ]
 
 [tool.uv]
-workspace = { members = ["pyhtml", "lsp", "demo-app", "demo-routing"] }
+workspace = { members = ["pywire", "lsp", "demo-app", "demo-routing"] }
 
 [tool.uv.sources]
-pyhtml = { workspace = true }
-pyhtml-lsp = { workspace = true }
+pywire = { workspace = true }
+pywire-lsp = { workspace = true }
 demo-app = { workspace = true }
 demo-routing = { workspace = true }
 
@@ -44,7 +45,7 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
-testpaths = ["pyhtml/tests", "pyhtml/src/tests", "lsp/tests", "tests"]
+testpaths = ["pywire/tests", "pywire/src/tests", "lsp/tests", "tests"]
 asyncio_mode = "auto"
 filterwarnings = [
     "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning:pygls.*"

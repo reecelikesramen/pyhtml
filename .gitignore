@@ -9,12 +9,12 @@ venv/
 ENV/
 env/
 
-# PyHTML specific
-.pyhtml_cache/
+# PyWire specific
+.pywire_cache/
 dist/
 build/
 *.egg-info/
-pyhtml/src/pyhtml/client/node_modules/
+pywire/src/pywire/client/node_modules/
 
 # IDE
 .vscode/
@@ -33,10 +33,10 @@ chatbot.db
 .coverage
 htmlcov/
 *.pem
-pyhtml/src/pyhtml/client/coverage/
+pywire/src/pywire/client/coverage/
 
 # Demo app
-demo-app/.pyhtml_cache/
+demo-app/.pywire_cache/
 
 # Node modules
 node_modules/

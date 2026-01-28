@@ -3,7 +3,7 @@ name: Setup Guide
 description: Instructions for setting up the environment using `scripts/` and `uv`.
 ---
 
-# Setup Guide for PyHTML
+# Setup Guide for PyWire
 
 This guide covers how to set up the development environment using the provided scripts and `uv`. These scripts automate the installation of dependencies, running tests, and building the project.
 
@@ -18,8 +18,8 @@ This guide covers how to set up the development environment using the provided s
 
 1.  **Clone the repository**:
     ```bash
-    git clone https://github.com/reecelikesramen/pyhtml.git
-    cd pyhtml
+    git clone https://github.com/reecelikesramen/pywire.git
+    cd pywire
     ```
 
 2.  **Install everything**:
@@ -36,7 +36,7 @@ The project uses a set of scripts in the `scripts/` directory to manage common t
 | --- | --- |
 | `./scripts/install` | Installs all Python and pnpm dependencies. |
 | `./scripts/test` | Runs Python tests (with coverage) and client tests. |
-| `./scripts/coverage` | Displays the coverage report for the `pyhtml` package. |
+| `./scripts/coverage` | Displays the coverage report for the `pywire` package. |
 | `./scripts/check` | Runs linting (`ruff`) and type checking (`mypy`) via `uv run`. |
 | `./scripts/lint` | Runs `ruff` with **auto-fixes** and formatting. |
 | `./scripts/docs` | Starts the Astro Starlight development server. |

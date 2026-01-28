@@ -5,7 +5,7 @@ import sys
 # Ensure project root is in path
 sys.path.insert(0, os.getcwd())
 
-from pyhtml.runtime.dev_server import run_dev_server
+from pywire.runtime.dev_server import run_dev_server
 
 if __name__ == "__main__":
     # Run the dev server targeting the demo-components app

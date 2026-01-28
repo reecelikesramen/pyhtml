@@ -1,12 +1,12 @@
-# PyHTML Demo App
+# PyWire Demo App
 
-This is a demo application showcasing PyHTML framework features.
+This is a demo application showcasing PyWire framework features.
 
 ## Setup
 
 1. Install dependencies:
 ```bash
-pip install -e ../pyhtml
+pip install -e ../pywire
 pip install -e .
 ```
 
@@ -14,7 +14,7 @@ pip install -e .
 ```bash
 # Option 1: Using the CLI
 cd ..
-pyhtml dev --pages-dir demo-app/src/pages
+pywire dev --pages-dir demo-app/src/pages
 
 # Option 2: Direct Python
 python -m src.main
@@ -33,9 +33,9 @@ python -m src.main
 demo-app/
 ├── src/
 │   ├── pages/
-│   │   └── index.pyhtml    # Main page
+│   │   └── index.pywire    # Main page
 │   ├── components/          # Reusable components (future)
 │   ├── main.py              # App entry point
-│   └── pyhtml.config.py    # Configuration
+│   └── pywire.config.py    # Configuration
 └── pyproject.toml           # Dependencies
 ```

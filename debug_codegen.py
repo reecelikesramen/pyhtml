@@ -4,10 +4,10 @@ import ast
 import hashlib
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "pyhtml" / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "pywire" / "src"))
 
-from pyhtml.compiler.parser import PyHTMLParser
-from pyhtml.compiler.codegen.generator import CodeGenerator
+from pywire.compiler.parser import PyWireParser
+from pywire.compiler.codegen.generator import CodeGenerator
 
 def inspect_file(path_str):
     print(f"\n--- Inspecting {path_str} ---")
@@ -15,7 +15,7 @@ def inspect_file(path_str):
     with open(path, 'r') as f:
         content = f.read()
     
-    parser = PyHTMLParser()
+    parser = PyWireParser()
     gen = CodeGenerator()
     
     parsed = parser.parse(content)
@@ -38,5 +38,5 @@ def inspect_file(path_str):
 
 if __name__ == "__main__":
     base_dir = Path(__file__).parent.resolve()
-    inspect_file(base_dir / "repro_layout/layout.pyhtml")
-    inspect_file(base_dir / "repro_layout/page.pyhtml")
+    inspect_file(base_dir / "repro_layout/layout.pywire")
+    inspect_file(base_dir / "repro_layout/page.pywire")

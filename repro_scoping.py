@@ -1,13 +1,13 @@
-from pyhtml.compiler.parser import PyHTMLParser
-from pyhtml.compiler.codegen.generator import CodeGenerator
+from pywire.compiler.parser import PyWireParser
+from pywire.compiler.codegen.generator import CodeGenerator
 import ast
 
-parser = PyHTMLParser()
+parser = PyWireParser()
 gen = CodeGenerator()
 
 content = '<div id=\{dynamic_id\}>Test</div>'
 parsed = parser.parse(content)
-parsed.file_path = "test.pyhtml"
+parsed.file_path = "test.pywire"
 module_ast = gen.generate(parsed)
 
 code = ast.unparse(module_ast)

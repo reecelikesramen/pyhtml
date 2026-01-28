@@ -1,5 +1,5 @@
 from pathlib import Path
-from pyhtml import PyHTML
+from pywire import PyWire
 
 base_dir = Path(__file__).parent
-app = PyHTML(debug=True, pages_dir=base_dir / "pages")
+app = PyWire(debug=True, pages_dir=base_dir / "pages")
