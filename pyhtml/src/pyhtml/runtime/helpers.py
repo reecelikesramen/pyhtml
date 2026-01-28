@@ -1,4 +1,7 @@
-async def ensure_async_iterator(iterable):
+from typing import Any, AsyncIterator
+
+
+async def ensure_async_iterator(iterable: Any) -> AsyncIterator[Any]:
     """
     Ensure an iterable is an async iterator.
     Handles both sync iterables (list, etc.) and async iterables.
@@ -18,7 +21,7 @@ async def ensure_async_iterator(iterable):
             yield item
 
 
-def render_attrs(defined_attrs: dict, spread_attrs: dict = None) -> str:
+def render_attrs(defined_attrs: dict[str, Any], spread_attrs: dict[str, Any] | None = None) -> str:
     """
     Merge and render HTML attributes.
     defined_attrs: Attributes defined in the template (explicitly).

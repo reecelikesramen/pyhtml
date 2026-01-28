@@ -2,6 +2,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pyhtml.runtime.app import PyHTML
@@ -10,7 +11,7 @@ from starlette.responses import Response
 
 
 class TestErrorHandlingDebug(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.test_dir = tempfile.mkdtemp()
         self.pages_dir = Path(self.test_dir).resolve()
         with (
@@ -21,14 +22,14 @@ class TestErrorHandlingDebug(unittest.IsolatedAsyncioTestCase):
             patch("pyhtml.runtime.webtransport_handler.WebTransportHandler"),
         ):
             # Initialize with debug=True
-            self.app = PyHTML(self.pages_dir, debug=True)
+            self.app = PyHTML(str(self.pages_dir), debug=True)
             self.app.router = MagicMock()
             self.app.loader = MagicMock()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         shutil.rmtree(self.test_dir)
 
-    async def test_500_custom_page_debug(self):
+    async def test_500_custom_page_debug(self) -> None:
         """Verify 500 uses custom page in debug mode."""
         # Setup route match for /__error__
         mock_page_class = MagicMock()
@@ -36,12 +37,12 @@ class TestErrorHandlingDebug(unittest.IsolatedAsyncioTestCase):
         mock_page_class.return_value = mock_page_instance
         mock_page_instance.render.return_value = Response("Custom Error")
 
-        def router_match(path):
+        def router_match(path: str) -> Any:
             if path == "/__error__":
                 return (mock_page_class, {}, "main")
             return None
 
-        self.app.router.match.side_effect = router_match
+        cast(Any, self.app.router).match.side_effect = router_match
 
         request = MagicMock(spec=Request)
         exc = ValueError("Test Exception")
@@ -56,9 +57,9 @@ class TestErrorHandlingDebug(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_page_instance.error_detail, "Test Exception")
         self.assertTrue(hasattr(mock_page_instance, "error_trace"))
 
-    async def test_500_fallback_debug(self):
+    async def test_500_fallback_debug(self) -> None:
         """Verify 500 re-raises in debug mode if no custom page."""
-        self.app.router.match.return_value = None
+        cast(Any, self.app.router).match.return_value = None
 
         request = MagicMock(spec=Request)
         exc = ValueError("Test Exception")
@@ -66,7 +67,7 @@ class TestErrorHandlingDebug(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.app._handle_500(request, exc)
 
-    async def test_websocket_custom_404(self):
+    async def test_websocket_custom_404(self) -> None:
         """Verify WebSocket relocation uses custom error page."""
         # This test logic would be complex to mock fully due to tight coupling in _handle_relocate.
         # However, we can basic check the logic via inspection or simpler unit test

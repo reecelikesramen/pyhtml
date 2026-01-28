@@ -4,6 +4,7 @@ import ast
 import sys
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -16,7 +17,7 @@ from pyhtml.runtime.validation import FieldRules, FormValidator
 class TestFormValidation(unittest.TestCase):
     """Test form validation module."""
 
-    def test_required_validation(self):
+    def test_required_validation(self) -> None:
         """Test required field validation."""
         validator = FormValidator()
         rules = FieldRules(required=True)
@@ -29,7 +30,7 @@ class TestFormValidation(unittest.TestCase):
         error = validator.validate_field("username", "john", rules)
         self.assertIsNone(error)
 
-    def test_pattern_validation(self):
+    def test_pattern_validation(self) -> None:
         """Test pattern validation."""
         validator = FormValidator()
         rules = FieldRules(pattern=r"^[A-Z]{3}[0-9]{3}$")
@@ -42,7 +43,7 @@ class TestFormValidation(unittest.TestCase):
         error = validator.validate_field("code", "ABC123", rules)
         self.assertIsNone(error)
 
-    def test_length_validation(self):
+    def test_length_validation(self) -> None:
         """Test minlength and maxlength validation."""
         validator = FormValidator()
         rules = FieldRules(minlength=3, maxlength=10)
@@ -59,7 +60,7 @@ class TestFormValidation(unittest.TestCase):
         error = validator.validate_field("name", "hello", rules)
         self.assertIsNone(error)
 
-    def test_email_validation(self):
+    def test_email_validation(self) -> None:
         """Test email type validation."""
         validator = FormValidator()
         rules = FieldRules(input_type="email")
@@ -72,7 +73,7 @@ class TestFormValidation(unittest.TestCase):
         error = validator.validate_field("email", "test@example.com", rules)
         self.assertIsNone(error)
 
-    def test_number_range_validation(self):
+    def test_number_range_validation(self) -> None:
         """Test number range validation."""
         validator = FormValidator()
         rules = FieldRules(input_type="number", min_value="10", max_value="100")
@@ -89,7 +90,7 @@ class TestFormValidation(unittest.TestCase):
         error = validator.validate_field("age", "50", rules)
         self.assertIsNone(error)
 
-    def test_form_validation(self):
+    def test_form_validation(self) -> None:
         """Test full form validation."""
         validator = FormValidator()
         schema = {
@@ -108,7 +109,7 @@ class TestFormValidation(unittest.TestCase):
         cleaned_data, errors = validator.validate_form(data, schema, state_getter=lambda x: None)
         self.assertEqual(errors, {})
 
-    def test_nested_data_parsing(self):
+    def test_nested_data_parsing(self) -> None:
         """Test parsing of dotted field names."""
         flat_data = {
             "customer.name": "John",
@@ -127,7 +128,7 @@ class TestFormValidation(unittest.TestCase):
 class TestFormParsing(unittest.TestCase):
     """Test form parsing and validation schema extraction."""
 
-    def test_form_with_submit_extracts_schema(self):
+    def test_form_with_submit_extracts_schema(self) -> None:
         """Test that @submit forms extract validation schema."""
         parser = PyHTMLParser()
 
@@ -156,19 +157,19 @@ async def handle_form(data):
         self.assertIsNotNone(form_node, "Form node not found")
 
         # Find the @submit event
-        from pyhtml.compiler.ast_nodes import EventAttribute
+        from pyhtml.compiler.ast_nodes import EventAttribute, TemplateNode
 
         submit_attr = None
-        for attr in form_node.special_attributes:
+        for attr in cast(TemplateNode, form_node).special_attributes:
             if isinstance(attr, EventAttribute) and attr.event_type == "submit":
                 submit_attr = attr
                 break
 
         self.assertIsNotNone(submit_attr, "@submit attribute not found")
-        self.assertIsNotNone(submit_attr.validation_schema, "Validation schema not attached")
+        self.assertIsNotNone(cast(Any, submit_attr).validation_schema, "Validation schema not attached")
 
         # Check schema fields
-        schema = submit_attr.validation_schema
+        schema = cast(Any, submit_attr).validation_schema
         self.assertIn("username", schema.fields)
         self.assertIn("email", schema.fields)
         self.assertIn("age", schema.fields)
@@ -194,7 +195,7 @@ async def handle_form(data):
 class TestFormCodegen(unittest.TestCase):
     """Test form validation code generation."""
 
-    def test_form_generates_wrapper(self):
+    def test_form_generates_wrapper(self) -> None:
         """Test that forms with validation generate wrapper handlers."""
         parser = PyHTMLParser()
         generator = CodeGenerator()

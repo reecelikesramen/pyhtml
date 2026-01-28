@@ -1,7 +1,7 @@
 """Jinja2-based interpolation parser."""
 
 import ast
-from typing import List, Union
+from typing import List, Union, Sequence
 
 from jinja2 import Environment
 
@@ -12,7 +12,7 @@ from pyhtml.compiler.interpolation.base import InterpolationParser
 class JinjaInterpolationParser(InterpolationParser):
     """Jinja2-based interpolation parser."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.env = Environment(
             variable_start_string="{",
             variable_end_string="}",
@@ -141,8 +141,8 @@ class JinjaInterpolationParser(InterpolationParser):
         if not tokens:
             return [text]
 
-        result = []
-        current_str = []
+        result: List[Union[str, InterpolationNode]] = []
+        current_str: List[str] = []
 
         for token in tokens:
             if isinstance(token, str):
@@ -220,7 +220,7 @@ class JinjaInterpolationParser(InterpolationParser):
                             # This is simplistic but works for common cases
                             modified_expr = re.sub(
                                 r"\b([a-zA-Z_]\w*)\b(?!\s*[(\[])",
-                                lambda m: f"self.{m.group(1)}"
+                                lambda m: f"self.{str(m.group(1))}"
                                 if m.group(1)
                                 not in (
                                     "if",

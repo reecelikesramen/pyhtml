@@ -12,7 +12,7 @@ from dataclasses import (
 # But shadowing only happens if something LOCAL is named replace.
 # I still haven't found the local variable.
 # Safer: Just import dataclasses and use fully qualified name where it fails.
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 from pyhtml.compiler.ast_nodes import (
     BindAttribute,
@@ -59,7 +59,7 @@ class TemplateCodegen:
         "slot",
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.interpolation_parser = JinjaInterpolationParser()
         self.generated_bindings: List[BindingDef] = []
         self._binding_counter = 0
@@ -70,13 +70,13 @@ class TemplateCodegen:
     def generate_render_method(
         self,
         template_nodes: List[TemplateNode],
-        layout_id: str = None,
-        known_methods: Set[str] = None,
-        known_globals: Set[str] = None,
-        async_methods: Set[str] = None,
-        component_map: Dict[str, str] = None,
-        scope_id: str = None,
-        initial_locals: Set[str] = None,
+        layout_id: Optional[str] = None,
+        known_methods: Optional[Set[str]] = None,
+        known_globals: Optional[Set[str]] = None,
+        async_methods: Optional[Set[str]] = None,
+        component_map: Optional[Dict[str, str]] = None,
+        scope_id: Optional[str] = None,
+        initial_locals: Optional[Set[str]] = None,
     ) -> Tuple[ast.AsyncFunctionDef, List[ast.AsyncFunctionDef]]:
         """
         Generate standard _render_template method.
@@ -106,9 +106,9 @@ class TemplateCodegen:
         self,
         template_nodes: List[TemplateNode],
         file_id: str = "",
-        known_globals: Set[str] = None,
-        layout_id: str = None,
-        component_map: Dict[str, str] = None,
+        known_globals: Optional[Set[str]] = None,
+        layout_id: Optional[str] = None,
+        component_map: Optional[Dict[str, str]] = None,
     ) -> Tuple[Dict[str, ast.AsyncFunctionDef], List[ast.AsyncFunctionDef]]:
         """
         Generate slot filler methods for child pages.
@@ -158,7 +158,7 @@ class TemplateCodegen:
 
         return slot_funcs, self.auxiliary_functions
 
-    def _reset_state(self):
+    def _reset_state(self) -> None:
         self.generated_bindings = []
         self._binding_counter = 0
         self._slot_default_counter = 0
@@ -170,14 +170,14 @@ class TemplateCodegen:
         nodes: List[TemplateNode],
         func_name: str,
         is_async: bool = False,
-        layout_id: str = None,
-        known_methods: Set[str] = None,
-        known_globals: Set[str] = None,
-        async_methods: Set[str] = None,
-        component_map: Dict[str, str] = None,
-        scope_id: str = None,
-        initial_locals: Set[str] = None,
-        implicit_root_source: str = None,
+        layout_id: Optional[str] = None,
+        known_methods: Optional[Set[str]] = None,
+        known_globals: Optional[Set[str]] = None,
+        async_methods: Optional[Set[str]] = None,
+        component_map: Optional[Dict[str, str]] = None,
+        scope_id: Optional[str] = None,
+        initial_locals: Optional[Set[str]] = None,
+        implicit_root_source: Optional[str] = None,
     ) -> ast.AsyncFunctionDef:
         """Generate a single function body as AST."""
 
@@ -185,6 +185,15 @@ class TemplateCodegen:
             initial_locals = set()
         else:
             initial_locals = initial_locals.copy()
+
+        if known_methods is None:
+            known_methods = set()
+        if known_globals is None:
+            known_globals = set()
+        if async_methods is None:
+            async_methods = set()
+        if component_map is None:
+            component_map = {}
 
         # 'json' is imported in the body, so we treat it as local to avoid transforming to self.json
         initial_locals.add("json")
@@ -260,7 +269,7 @@ class TemplateCodegen:
         self,
         expr_str: str,
         local_vars: Set[str],
-        known_globals: Set[str] = None,
+        known_globals: Optional[Set[str]] = None,
         line_offset: int = 0,
         col_offset: int = 0,
     ) -> ast.expr:
@@ -278,11 +287,11 @@ class TemplateCodegen:
         except SyntaxError:
             # Fallback for complex/invalid syntax (legacy support)
             # Try regex replacement then parse
-            def repl(m):
-                word = m.group(1)
+            def repl(m: re.Match) -> str:
+                word = str(m.group(1))
                 if word in local_vars:
                     return word
-                if known_globals and word in known_globals:
+                if known_globals is not None and word in known_globals:
                     return word
                 keywords = {"if", "else", "and", "or", "not", "in", "is", "True", "False", "None"}
                 if word in keywords:
@@ -293,7 +302,7 @@ class TemplateCodegen:
             tree = ast.parse(replaced, mode="eval")
 
         class AddSelfTransformer(ast.NodeTransformer):
-            def visit_Name(self, node):
+            def visit_Name(self, node: ast.Name) -> Any:
                 import builtins
 
                 # 1. If locally defined, keep as is
@@ -301,7 +310,7 @@ class TemplateCodegen:
                     return node
 
                 # 2. If explicitly known as global/instance var, transform to self.<name>
-                if known_globals and node.id in known_globals:
+                if known_globals is not None and node.id in known_globals:
                     return ast.Attribute(
                         value=ast.Name(id="self", ctx=ast.Load()), attr=node.id, ctx=node.ctx
                     )
@@ -317,15 +326,15 @@ class TemplateCodegen:
 
         new_tree = AddSelfTransformer().visit(tree)
         # Returns the expression node
-        return new_tree.body
+        return cast(ast.Expression, new_tree).body
 
     def _transform_reactive_expr(
         self,
         expr_str: str,
         local_vars: Set[str],
-        known_methods: Set[str] = None,
-        known_globals: Set[str] = None,
-        async_methods: Set[str] = None,
+        known_methods: Optional[Set[str]] = None,
+        known_globals: Optional[Set[str]] = None,
+        async_methods: Optional[Set[str]] = None,
         line_offset: int = 0,
         col_offset: int = 0,
     ) -> ast.expr:
@@ -347,16 +356,16 @@ class TemplateCodegen:
         if async_methods:
 
             class AsyncAwaiter(ast.NodeTransformer):
-                def __init__(self):
+                def __init__(self) -> None:
                     self.in_await = False
 
-                def visit_Await(self, node):
+                def visit_Await(self, node: ast.Await) -> Any:
                     self.in_await = True
                     self.generic_visit(node)
                     self.in_await = False
                     return node
 
-                def visit_Call(self, node):
+                def visit_Call(self, node: ast.Call) -> Any:
                     # Check if already awaited
                     if self.in_await:
                         return self.generic_visit(node)
@@ -365,6 +374,7 @@ class TemplateCodegen:
                         isinstance(node.func, ast.Attribute)
                         and isinstance(node.func.value, ast.Name)
                         and node.func.value.id == "self"
+                        and async_methods is not None
                         and node.func.attr in async_methods
                     ):
                         return ast.Await(value=node)
@@ -373,7 +383,7 @@ class TemplateCodegen:
             # Wrap in Module/Expr to visit
             mod = ast.Module(body=[ast.Expr(value=base_expr)], type_ignores=[])
             AsyncAwaiter().visit(mod)
-            base_expr = mod.body[0].value
+            base_expr = cast(ast.Expr, mod.body[0]).value
 
         return base_expr
 
@@ -398,30 +408,30 @@ class TemplateCodegen:
             return elements[0]
         return None
 
-    def _set_line(self, node: ast.AST, template_node: TemplateNode):
+    def _set_line(self, node: ast.AST, template_node: TemplateNode) -> ast.AST:
         """Helper to set line number on AST node."""
-        if template_node.line > 0:
-            node.lineno = template_node.line
-            node.col_offset = template_node.column
-            node.end_lineno = template_node.line  # Single line approximation
-            node.end_col_offset = template_node.column + 1
+        if template_node.line > 0 and hasattr(node, "lineno"):
+            node.lineno = template_node.line  # type: ignore
+            node.col_offset = template_node.column  # type: ignore
+            node.end_lineno = template_node.line  # type: ignore # Single line approximation
+            node.end_col_offset = template_node.column + 1  # type: ignore
         return node
 
     def _add_node(
         self,
         node: TemplateNode,
         body: List[ast.stmt],
-        local_vars: Set[str] = None,
-        bound_var: str = None,
-        layout_id: str = None,
-        known_methods: Set[str] = None,
-        known_globals: Set[str] = None,
-        async_methods: Set[str] = None,
-        component_map: Dict[str, str] = None,
-        scope_id: str = None,
+        local_vars: Optional[Set[str]] = None,
+        bound_var: Union[str, ast.expr, None] = None,
+        layout_id: Optional[str] = None,
+        known_methods: Optional[Set[str]] = None,
+        known_globals: Optional[Set[str]] = None,
+        async_methods: Optional[Set[str]] = None,
+        component_map: Optional[Dict[str, str]] = None,
+        scope_id: Optional[str] = None,
         parts_var: str = "parts",
-        implicit_root_source: str = None,
-    ):
+        implicit_root_source: Optional[str] = None,
+    ) -> None:
         if local_vars is None:
             local_vars = set()
         else:
@@ -451,9 +461,11 @@ class TemplateCodegen:
 
             # Parse loop vars to handle tuple unpacking
             # "x, y" -> targets
-            loop_targets_node = ast.parse(f"{loop_vars_str} = 1").body[0].targets[0]
+            assign_stmt = ast.parse(f"{loop_vars_str} = 1").body[0]
+            assert isinstance(assign_stmt, ast.Assign)
+            loop_targets_node = assign_stmt.targets[0]
 
-            def extract_names(n):
+            def extract_names(n: ast.AST) -> None:
                 if isinstance(n, ast.Name):
                     new_locals.add(n.id)
                 elif isinstance(n, (ast.Tuple, ast.List)):
@@ -470,7 +482,7 @@ class TemplateCodegen:
                 col_offset=node.column,
             )
 
-            for_body = []
+            for_body: List[ast.stmt] = []
 
             new_attrs = [a for a in node.special_attributes if a is not for_attr]
             if node.tag == "template":
@@ -530,7 +542,7 @@ class TemplateCodegen:
                 col_offset=node.column,
             )
 
-            if_body = []
+            if_body: List[ast.stmt] = []
             new_attrs = [a for a in node.special_attributes if a is not if_attr]
             new_node = dataclasses.replace(node, special_attributes=new_attrs)
             self._add_node(
@@ -559,7 +571,7 @@ class TemplateCodegen:
             slot_name = node.attributes.get("name", "default")
             is_head_slot = "$head" in node.attributes
 
-            default_renderer_arg = ast.Constant(value=None)
+            default_renderer_arg: ast.expr = ast.Constant(value=None)
             if node.children:
                 self._slot_default_counter += 1
                 func_name = f"_render_slot_default_{slot_name}_{self._slot_default_counter}"
@@ -626,8 +638,8 @@ class TemplateCodegen:
 
             # Prepare arguments (kwargs)
             # Prepare arguments (kwargs dict keys/values)
-            dict_keys = []
-            dict_values = []
+            dict_keys: List[Optional[ast.expr]] = []
+            dict_values: List[ast.expr] = []
 
             # 1. Pass implicit context props (request, params, etc.)
             for ctx_prop in ["request", "params", "query", "path", "url"]:
@@ -684,8 +696,9 @@ class TemplateCodegen:
                     else:
                         # String interpolation
                         parts = self.interpolation_parser.parse(v, node.line, node.column)
-                        current_concat = None
+                        current_concat: Optional[ast.expr] = None
                         for part in parts:
+                            term: ast.expr
                             if isinstance(part, str):
                                 term = ast.Constant(value=part)
                             else:
@@ -860,30 +873,30 @@ class TemplateCodegen:
 
             # 4. Handle Slots (Children)
             # Group children by slot name
-            slots_map = {}  # name -> list[nodes]
+            slots_map: Dict[str, List[TemplateNode]] = {}
             default_slot_nodes = []
 
             for child in node.children:
                 # Check for slot="..." attribute on child
                 # Note: child is TemplateNode. attributes dict.
                 # If element:
-                slot_name = None
+                child_slot_name: Optional[str] = None
                 if child.tag and "slot" in child.attributes:
-                    slot_name = child.attributes["slot"]
+                    child_slot_name = child.attributes["slot"]
                     # Remove slot attribute? Optional but cleaner.
 
-                if slot_name:
-                    if slot_name not in slots_map:
-                        slots_map[slot_name] = []
-                    slots_map[slot_name].append(child)
+                if child_slot_name:
+                    if child_slot_name not in slots_map:
+                        slots_map[child_slot_name] = []
+                    slots_map[child_slot_name].append(child)
                 else:
                     default_slot_nodes.append(child)
 
             if default_slot_nodes:
                 slots_map["default"] = default_slot_nodes
 
-            keys = []
-            values = []
+            keys: List[Optional[ast.expr]] = []
+            values: List[ast.expr] = []
 
             for s_name, s_nodes in slots_map.items():
                 slot_var_name = f"_slot_{s_name}_{node.line}_{node.column}".replace("-", "_")
@@ -931,7 +944,15 @@ class TemplateCodegen:
 
             # Add slots=... to keywords
             if keys:
-                keywords.append(ast.keyword(arg="slots", value=ast.Dict(keys=keys, values=values)))
+                keywords.append(
+                    ast.keyword(
+                        arg="slots",
+                        value=ast.Dict(
+                            keys=keys,  # type: ignore # List[Optional[expr]] vs List[expr] variance
+                            values=values,
+                        ),
+                    )
+                )
 
             # Instantiate component
             instantiation = ast.Call(
@@ -1066,7 +1087,7 @@ class TemplateCodegen:
             bind_attr = next(
                 (a for a in node.special_attributes if isinstance(a, BindAttribute)), None
             )
-            bindings = {}
+            bindings: Dict[str, ast.expr] = {}
             new_bound_var = bound_var
 
             if bind_attr:
@@ -1176,7 +1197,7 @@ class TemplateCodegen:
                     original_css = node.children[0].text_content
 
                     # Rewrite CSS with scope ID
-                    def rewrite_css(css, sid):
+                    def rewrite_css(css: str, sid: str) -> str:
                         new_parts = []
                         last_idx = 0
                         in_brace = False
@@ -1274,12 +1295,12 @@ class TemplateCodegen:
                 )
 
             # Bindings
-            for k, v in bindings.items():
+            for k, binding_expr in bindings.items():
                 if k == "checked":
-                    # if v: attrs['checked'] = ""
+                    # if binding_expr: attrs['checked'] = ""
                     body.append(
                         ast.If(
-                            test=v,
+                            test=binding_expr,
                             body=[
                                 ast.Assign(
                                     targets=[
@@ -1296,15 +1317,15 @@ class TemplateCodegen:
                         )
                     )
                 else:
-                    # attrs[k] = str(v) usually?
-                    # If v is AST expression (from target_var_expr), wrap in str()
-                    # If v is Constant string, direct.
+                    # attrs[k] = str(binding_expr) usually?
+                    # If binding_expr is AST expression (from target_var_expr), wrap in str()
+                    # If binding_expr is Constant string, direct.
                     # Warning: bindings[k] contains AST nodes now.
 
-                    wrapper = v
-                    if not isinstance(v, ast.Constant):
+                    wrapper = binding_expr
+                    if not isinstance(binding_expr, ast.Constant):
                         wrapper = ast.Call(
-                            func=ast.Name(id="str", ctx=ast.Load()), args=[v], keywords=[]
+                            func=ast.Name(id="str", ctx=ast.Load()), args=[binding_expr], keywords=[]
                         )
 
                     body.append(
@@ -1736,7 +1757,11 @@ class TemplateCodegen:
                                 comparators=[
                                     ast.Call(
                                         func=ast.Name(id="str", ctx=ast.Load()),
-                                        args=[bound_var],
+                                        args=[
+                                            ast.Constant(value=bound_var)
+                                            if isinstance(bound_var, str)
+                                            else bound_var
+                                        ],
                                         keywords=[],
                                     )
                                 ],

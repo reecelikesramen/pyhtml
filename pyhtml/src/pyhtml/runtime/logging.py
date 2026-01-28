@@ -3,9 +3,13 @@ import contextvars
 import io
 import sys
 
+from typing import IO, Any, Callable, Coroutine
+
 # Context variable to hold the log callback for the current request/session
 # Callback signature: async def callback(message: str)
-log_callback_ctx = contextvars.ContextVar("log_callback_ctx", default=None)
+log_callback_ctx: contextvars.ContextVar[
+    Callable[[str], Coroutine[Any, Any, None]] | None
+] = contextvars.ContextVar("log_callback_ctx", default=None)
 
 
 class ContextAwareStdout:
@@ -14,12 +18,12 @@ class ContextAwareStdout:
     based on the current context.
     """
 
-    def __init__(self, original_stdout, level: str = "info"):
+    def __init__(self, original_stdout: IO[str], level: str = "info") -> None:
         self.original_stdout = original_stdout
         self.level = level
         self.buffer = io.StringIO()
 
-    def write(self, message: str):
+    def write(self, message: str) -> None:
         # Always write to original stdout
         self.original_stdout.write(message)
 
@@ -36,10 +40,10 @@ class ContextAwareStdout:
                 # No running loop, can't stream
                 pass
 
-    def flush(self):
+    def flush(self) -> None:
         self.original_stdout.flush()
 
-    async def _safe_callback(self, callback, message):
+    async def _safe_callback(self, callback: Callable[..., Any], message: str) -> None:
         try:
             # Check if callback accepts level argument
             import inspect
@@ -52,7 +56,7 @@ class ContextAwareStdout:
         except Exception:
             pass
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         return getattr(self.original_stdout, name)
 
 
@@ -60,7 +64,7 @@ class ContextAwareStdout:
 _installed = False
 
 
-def install_logging_interceptor():
+def install_logging_interceptor() -> None:
     global _installed
     if not _installed:
         sys.stdout = ContextAwareStdout(sys.stdout, level="info")

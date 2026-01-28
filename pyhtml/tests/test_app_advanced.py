@@ -1,5 +1,7 @@
+import ast
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pyhtml.runtime.app import PyHTML
@@ -8,7 +10,7 @@ from starlette.responses import JSONResponse, Response
 
 
 class TestAppAdvanced(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.pages_dir = Path("/tmp/empty_pages").resolve()
         self.pages_dir.mkdir(exist_ok=True)
         with (
@@ -18,10 +20,10 @@ class TestAppAdvanced(unittest.IsolatedAsyncioTestCase):
             patch("pyhtml.runtime.app.WebSocketHandler"),
             patch("pyhtml.runtime.webtransport_handler.WebTransportHandler"),
         ):
-            self.app = PyHTML(self.pages_dir)
+            self.app = PyHTML(str(self.pages_dir))
             self.app.router = MagicMock()
 
-    async def test_handle_request_post_event(self):
+    async def test_handle_request_post_event(self) -> None:
         # Mocking a POST request with X-PyHTML-Event header
         request = AsyncMock(spec=Request)
         request.method = "POST"
@@ -30,7 +32,7 @@ class TestAppAdvanced(unittest.IsolatedAsyncioTestCase):
         request.json.return_value = {"handler": "save", "data": {}}
 
         page_class = MagicMock()
-        self.app.router.match.return_value = (page_class, {}, "main")
+        cast(Any, self.app.router).match.return_value = (page_class, {}, "main")
 
         # Mock page instance
         page_inst = MagicMock()
@@ -41,7 +43,7 @@ class TestAppAdvanced(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         page_inst.handle_event.assert_called_once_with("save", {"handler": "save", "data": {}})
 
-    async def test_handle_request_injection(self):
+    async def test_handle_request_injection(self) -> None:
         # Test injection of scripts/meta tags
         request = AsyncMock(spec=Request)
         request.method = "GET"
@@ -49,7 +51,7 @@ class TestAppAdvanced(unittest.IsolatedAsyncioTestCase):
         request.app.state.webtransport_cert_hash = [1, 2, 3]
 
         page_class = MagicMock()
-        self.app.router.match.return_value = (page_class, {}, "main")
+        cast(Any, self.app.router).match.return_value = (page_class, {}, "main")
 
         # Mock page instance with upload needs
         page_inst = MagicMock()
@@ -60,7 +62,7 @@ class TestAppAdvanced(unittest.IsolatedAsyncioTestCase):
         page_class.return_value = page_inst
 
         response = await self.app._handle_request(request)
-        body = response.body.decode()
+        body = bytes(response.body).decode()
         self.assertIn("window.PYHTML_CERT_HASH", body)
         self.assertIn('name="pyhtml-upload-token"', body)
 

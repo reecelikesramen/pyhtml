@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-import msgpack
+import msgpack  # type: ignore
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -34,17 +34,17 @@ class HTTPSession:
 class HTTPTransportHandler:
     """Handles HTTP long-polling connections for PyHTML fallback transport."""
 
-    def __init__(self, app):
+    def __init__(self, app: Any) -> None:
         self.app = app
         self.sessions: Dict[str, HTTPSession] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
 
-    def start_cleanup_task(self):
+    def start_cleanup_task(self) -> None:
         """Start background task to clean up expired sessions."""
         if self._cleanup_task is None:
             self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
-    async def _cleanup_loop(self):
+    async def _cleanup_loop(self) -> None:
         """Periodically clean up expired sessions."""
         while True:
             await asyncio.sleep(60)  # Check every minute
@@ -213,7 +213,7 @@ class HTTPTransportHandler:
             response = await session.page.handle_event(handler_name, event_data)
 
             # Get updated HTML
-            html = response.body.decode("utf-8")
+            html = bytes(response.body).decode("utf-8")
 
             return Response(
                 msgpack.packb({"type": "update", "html": html}), media_type="application/x-msgpack"
@@ -226,13 +226,13 @@ class HTTPTransportHandler:
                 media_type="application/x-msgpack",
             )
 
-    def queue_update(self, session_id: str, update: Dict[str, Any]):
+    def queue_update(self, session_id: str, update: Dict[str, Any]) -> None:
         """Queue an update to be sent to a specific session."""
         if session_id in self.sessions:
             self.sessions[session_id].pending_updates.append(update)
             self.sessions[session_id].update_event.set()
 
-    def broadcast_reload(self):
+    def broadcast_reload(self) -> None:
         """Queue reload message to all sessions."""
         for session in self.sessions.values():
             session.pending_updates.append({"type": "reload"})

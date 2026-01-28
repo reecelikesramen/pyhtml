@@ -1,10 +1,11 @@
 from pathlib import Path
 
+import pytest
 from pyhtml.runtime.app import PyHTML
 from starlette.testclient import TestClient
 
 
-def test_static_asset_serving(tmp_path):
+def test_static_asset_serving(tmp_path: Path) -> None:
     """Verify static asset serving."""
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()
@@ -28,7 +29,7 @@ def test_static_asset_serving(tmp_path):
     assert response_default.status_code == 404
 
 
-def test_smart_static_resolution(tmp_path, monkeypatch):
+def test_smart_static_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify smart resolution of static_dir (root vs src fallback)."""
     monkeypatch.setattr(Path, "cwd", lambda: tmp_path)
 
@@ -49,7 +50,9 @@ def test_smart_static_resolution(tmp_path, monkeypatch):
     assert app2.static_dir == static_src.resolve()
 
 
-def test_static_dir_missing_warning(tmp_path, capsys, monkeypatch):
+def test_static_dir_missing_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify warning when static directory is missing."""
     monkeypatch.setattr(Path, "cwd", lambda: tmp_path)
     PyHTML(static_dir="non_existent")
@@ -58,7 +61,7 @@ def test_static_dir_missing_warning(tmp_path, capsys, monkeypatch):
     assert "non_existent" in captured.out
 
 
-def test_custom_static_path(tmp_path):
+def test_custom_static_path(tmp_path: Path) -> None:
     """Verify static assets can be served from a custom URL path."""
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()

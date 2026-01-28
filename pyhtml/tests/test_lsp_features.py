@@ -1,7 +1,7 @@
-from pyhtml_lsp.server import PyHTMLDocument
+from pyhtml_lsp.server import PyHTMLDocument  # type: ignore
 
 
-def test_extract_routes_dict():
+def test_extract_routes_dict() -> None:
     text = """!path { 'main': '/main', 'detail': '/detail/:id' }
 ---
 def setup():
@@ -14,7 +14,7 @@ def setup():
     assert routes["detail"] == "/detail/:id"
 
 
-def test_extract_routes_string():
+def test_extract_routes_string() -> None:
     text = """!path '/simple'
 ---
 """
@@ -24,7 +24,7 @@ def test_extract_routes_string():
     assert routes["main"] == "/simple"
 
 
-def test_extract_routes_empty():
+def test_extract_routes_empty() -> None:
     text = """
 <div />
 """
@@ -32,7 +32,7 @@ def test_extract_routes_empty():
     assert len(doc.routes) == 0
 
 
-def test_extract_routes_multiline():
+def test_extract_routes_multiline() -> None:
     """Test that multi-line !path dictionaries are parsed correctly."""
     text = """!path {
     'main': '/',
@@ -49,7 +49,7 @@ def setup():
     assert routes["test"] == "/a/:id"
 
 
-def test_directive_ranges_multiline():
+def test_directive_ranges_multiline() -> None:
     """Test that directive_ranges tracks multi-line !path correctly."""
     text = """!path {
     'main': '/',
@@ -64,7 +64,7 @@ def test_directive_ranges_multiline():
     assert end == 3  # Line with closing brace
 
 
-def test_interpolation_range():
+def test_interpolation_range() -> None:
     """Test that get_interpolation_at only returns valid if cursor is inside the braces."""
     text = "{name}"
     doc = PyHTMLDocument("file:///test.pyhtml", text)
@@ -102,7 +102,7 @@ def test_interpolation_range():
     assert interp is None, "Should not match after closing brace"
 
 
-def test_nested_interpolation():
+def test_nested_interpolation() -> None:
     """Test that get_interpolation_at handles nested braces in f-strings."""
     # This mimics: <p>{f"Any: {params['id']}" if path["any"] else "None"}</p>
     text = '<p>{f"Any: {x}" if path["any"] else "None"}</p>'

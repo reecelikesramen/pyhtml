@@ -2,6 +2,7 @@ import asyncio
 import json
 import unittest
 from pathlib import Path
+from typing import Any, cast, Dict, List, Optional, Tuple, Type
 from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,12 +13,12 @@ from starlette.responses import JSONResponse, Response
 
 
 class MockPage(BasePage):
-    async def render(self):
+    async def render(self, init: bool = True) -> Response:
         return Response("<html><body></body></html>", media_type="text/html")
 
 
 class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.temp_dir = TemporaryDirectory()
         self.pages_dir = Path(self.temp_dir.name).resolve()
 
@@ -34,22 +35,22 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         self.wt_patcher = patch("pyhtml.runtime.webtransport_handler.WebTransportHandler")
         self.mock_wt = self.wt_patcher.start()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.wt_patcher.stop()
         self.http_patcher.stop()
         self.ws_patcher.stop()
         self.loader_patcher.stop()
         self.temp_dir.cleanup()
 
-    def test_app_init(self):
-        app = PyHTML(self.pages_dir)
+    def test_app_init(self) -> None:
+        app = PyHTML(str(self.pages_dir))
         self.assertEqual(app.pages_dir, self.pages_dir)
         self.assertIsNotNone(app.router)
         self.mock_ws.assert_called_once_with(app)
         self.mock_http.assert_called_once_with(app)
         self.mock_wt.assert_called_once_with(app)
 
-    def test_load_pages_recursive(self):
+    def test_load_pages_recursive(self) -> None:
         # Create a nested structure
         (self.pages_dir / "sub").mkdir()
         (self.pages_dir / "index.pyhtml").touch()
@@ -61,7 +62,7 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         # Mock loader to return a class
         self.mock_loader.load.return_value = MockPage
 
-        app = PyHTML(self.pages_dir)
+        app = PyHTML(str(self.pages_dir))
 
         # Check if routes were registered correctly
         # We can't easily check app.router.routes because they are internal,
@@ -69,7 +70,7 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
 
         # /
         match = app.router.match("/")
-        self.assertIsNotNone(match)
+        assert match is not None
         self.assertEqual(match[0], MockPage)
 
         # /about
@@ -82,11 +83,11 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
 
         # /sub/123 (param)
         match = app.router.match("/sub/123")
-        self.assertIsNotNone(match)
+        assert match is not None
         self.assertEqual(match[1], {"id": "123"})
 
-    def test_handle_capabilities(self):
-        app = PyHTML(self.pages_dir)
+    def test_handle_capabilities(self) -> None:
+        app = PyHTML(str(self.pages_dir))
         request = MagicMock(spec=Request)
 
         # Run async method
@@ -98,15 +99,15 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         self.assertIn("transports", data)
         self.assertIn("websocket", data["transports"])
 
-    async def _async_test_upload(self, app, token, content_length=100, files=None):
+    async def _async_test_upload(self, app: PyHTML, token: str, content_length: int = 100, files: Optional[Dict[str, Any]] = None) -> Any:
         request = AsyncMock(spec=Request)
         request.headers = {"X-Upload-Token": token, "content-length": str(content_length)}
         request.form = AsyncMock(return_value=files or {})
         request.url = MagicMock()
         return await app._handle_upload(request)
 
-    def test_handle_upload_exception(self):
-        app = PyHTML(self.pages_dir)
+    def test_handle_upload_exception(self) -> None:
+        app = PyHTML(str(self.pages_dir))
         app.upload_tokens.add("tok")
         loop = asyncio.get_event_loop()
 
@@ -118,7 +119,7 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         response = loop.run_until_complete(app._handle_upload(request))
         self.assertEqual(response.status_code, 500)
 
-    def test_scan_directory_complex(self):
+    def test_scan_directory_complex(self) -> None:
         # 1. Hidden file
         (self.pages_dir / "_hidden.pyhtml").touch()
         # 2. Param directory
@@ -133,13 +134,13 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         class ExplicitPage(MockPage):
             __routes__ = {"alt": "/my-custom-path"}
 
-        def mock_load(path, **kwargs):
+        def mock_load(path: Path, **kwargs: Any) -> Type[MockPage]:
             if "custom.pyhtml" in str(path):
                 return ExplicitPage
             return MockPage
 
         self.mock_loader.load.side_effect = mock_load
-        app = PyHTML(self.pages_dir)
+        app = PyHTML(str(self.pages_dir))
 
         # Verify custom path
         match = app.router.match("/my-custom-path")
@@ -149,18 +150,18 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         match = app.router.match("/about")
         self.assertIsNotNone(match)
 
-    def test_scan_directory_load_fail(self):
+    def test_scan_directory_load_fail(self) -> None:
         (self.pages_dir / "broken.pyhtml").touch()
         # Fail load
         self.mock_loader.load.side_effect = Exception("Compile Error")
 
         with patch.object(PyHTML, "_register_error_page") as mock_reg:
-            PyHTML(self.pages_dir)
+            PyHTML(str(self.pages_dir))
             mock_reg.assert_called()
 
-    def test_handle_request_injection_no_body_tag(self):
-        app = PyHTML(self.pages_dir)
-        app.router.match = MagicMock(return_value=(MockPage, {}, "main"))
+    def test_handle_request_injection_no_body_tag(self) -> None:
+        app = PyHTML(str(self.pages_dir))
+        cast(Any, app.router).match = MagicMock(return_value=(MockPage, {}, "main"))
 
         # Mock page to return body without </body>
         with patch.object(MockPage, "render", new_callable=AsyncMock) as mock_render:
@@ -174,13 +175,13 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
 
             loop = asyncio.get_event_loop()
             response = loop.run_until_complete(app._handle_request(request))
-            body = response.body.decode()
+            body = bytes(response.body).decode()
             self.assertIn("window.PYHTML_CERT_HASH", body)
             self.assertTrue(body.endswith("</script>"))
 
-    def test_handle_request_event_exception(self):
-        app = PyHTML(self.pages_dir)
-        app.router.match = MagicMock(return_value=(MockPage, {}, "main"))
+    def test_handle_request_event_exception(self) -> None:
+        app = PyHTML(str(self.pages_dir))
+        cast(Any, app.router).match = MagicMock(return_value=(MockPage, {}, "main"))
 
         with patch.object(MockPage, "handle_event", new_callable=AsyncMock) as mock_handle:
             mock_handle.side_effect = Exception("Event failure")
@@ -192,12 +193,12 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(response.status_code, 500)
 
-    def test_handle_upload_security(self):
-        app = PyHTML(self.pages_dir)
+    def test_handle_upload_security(self) -> None:
+        app = PyHTML(str(self.pages_dir))
         loop = asyncio.get_event_loop()
 
         # 1. No token
-        response = loop.run_until_complete(self._async_test_upload(app, None))
+        response = loop.run_until_complete(self._async_test_upload(app, ""))
         self.assertEqual(response.status_code, 403)
 
         # 2. Invalid token
@@ -212,8 +213,8 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 413)
 
     @patch("pyhtml.runtime.app.upload_manager")
-    def test_handle_upload_success(self, mock_um):
-        app = PyHTML(self.pages_dir)
+    def test_handle_upload_success(self, mock_um: MagicMock) -> None:
+        app = PyHTML(str(self.pages_dir))
         app.upload_tokens.add("tok")
         mock_um.save.return_value = "upload_123"
 
@@ -230,8 +231,8 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["avatar"], "upload_123")
         mock_um.save.assert_called_with(mock_file)
 
-    def test_reload_page(self):
-        app = PyHTML(self.pages_dir)
+    def test_reload_page(self) -> None:
+        app = PyHTML(str(self.pages_dir))
         path = self.pages_dir / "index.pyhtml"
         path.touch()
 
@@ -247,8 +248,8 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             mock_remove.assert_called_with(str(path.resolve()))
             mock_add.assert_called_with(MockPage)
 
-    def test_register_error_page(self):
-        app = PyHTML(self.pages_dir)
+    def test_register_error_page(self) -> None:
+        app = PyHTML(str(self.pages_dir))
         file_path = self.pages_dir / "fail.pyhtml"
         file_path.write_text("broken")
 
@@ -263,8 +264,8 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(issubclass(args[1], BasePage))
 
     async def _async_test_request(
-        self, app, method="GET", headers=None, path="/test", json_data=None
-    ):
+        self, app: PyHTML, method: str = "GET", headers: Optional[Dict[str, str]] = None, path: str = "/test", json_data: Optional[Dict[str, Any]] = None
+    ) -> Any:
         request = AsyncMock(spec=Request)
         request.method = method
         request.url.path = path
@@ -274,11 +275,11 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         request.app.state = MagicMock()
         return await app._handle_request(request)
 
-    def test_handle_request_event(self):
-        app = PyHTML(self.pages_dir)
+    def test_handle_request_event(self) -> None:
+        app = PyHTML(str(self.pages_dir))
 
         # Mock match
-        app.router.match = MagicMock(return_value=(MockPage, {}, "main"))
+        cast(Any, app.router).match = MagicMock(return_value=(MockPage, {}, "main"))
 
         # Mock handle_event
         with patch.object(MockPage, "handle_event", new_callable=AsyncMock) as mock_handle:
@@ -295,15 +296,15 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 200)
             mock_handle.assert_called_with("do_something", json_data)
 
-    def test_handle_request_injection(self):
-        app = PyHTML(self.pages_dir)
-        app.router.match = MagicMock(return_value=(MockPage, {}, "main"))
+    def test_handle_request_injection(self) -> None:
+        app = PyHTML(str(self.pages_dir))
+        cast(Any, app.router).match = MagicMock(return_value=(MockPage, {}, "main"))
 
         # Force __has_uploads__ on instance
         original_init = MockPage.__init__
 
-        def mocked_init(self, *args, **kwargs):
-            self.__has_uploads__ = True
+        def mocked_init(self: MockPage, *args: Any, **kwargs: Any) -> None:
+            cast(Any, self).__has_uploads__ = True
             original_init(self, *args, **kwargs)
 
         with patch.object(MockPage, "__init__", mocked_init):
@@ -317,13 +318,13 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
 
             response = loop.run_until_complete(app._handle_request(request))
 
-            body = response.body.decode()
+            body = bytes(response.body).decode()
             self.assertIn("window.PYHTML_CERT_HASH = [10, 20]", body)
             self.assertIn('name="pyhtml-upload-token"', body)
             self.assertTrue(len(app.upload_tokens) > 0)
 
-    def test_asgi_call(self):
-        app = PyHTML(self.pages_dir)
+    def test_asgi_call(self) -> None:
+        app = PyHTML(str(self.pages_dir))
 
         scope_wt = {"type": "webtransport"}
         scope_http = {"type": "http"}
@@ -345,8 +346,8 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             loop.run_until_complete(app(scope_http, mock_receive, mock_send))
             mock_starlette.assert_called_once()
 
-    def test_extensible_hooks(self):
-        app = PyHTML(self.pages_dir)
+    def test_extensible_hooks(self) -> None:
+        app = PyHTML(str(self.pages_dir))
         loop = asyncio.get_event_loop()
 
         # WS connect hook

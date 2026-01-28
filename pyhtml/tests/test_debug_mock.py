@@ -6,11 +6,11 @@ from starlette.websockets import WebSocketDisconnect
 
 
 class TestDebug(unittest.TestCase):
-    def test_async_mock(self):
+    def test_async_mock(self) -> None:
         ws = AsyncMock()
         ws.receive_bytes.side_effect = WebSocketDisconnect()
 
-        async def run():
+        async def run() -> None:
             await ws.receive_bytes()
 
         loop = asyncio.new_event_loop()

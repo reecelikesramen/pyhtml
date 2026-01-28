@@ -6,10 +6,10 @@ from pyhtml.compiler.codegen.generator import CodeGenerator
 
 
 class TestGeneratorAdvanced(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.generator = CodeGenerator()
 
-    def test_generate_layout_mode(self):
+    def test_generate_layout_mode(self) -> None:
         # Page with layout inheriting slots
         layout = LayoutDirective(name="layout", layout_path="base.pyhtml", line=1, column=0)
         parsed = ParsedPyHTML(
@@ -38,7 +38,7 @@ class TestGeneratorAdvanced(unittest.TestCase):
             any(isinstance(n, ast.Expr) and isinstance(n.value, ast.Call) for n in init_slots.body)
         )
 
-    def test_generate_spa_metadata(self):
+    def test_generate_spa_metadata(self) -> None:
         from pyhtml.compiler.ast_nodes import PathDirective
 
         # Multi-path page enables SPA
@@ -56,7 +56,9 @@ class TestGeneratorAdvanced(unittest.TestCase):
         self.assertTrue(
             any(
                 isinstance(s, ast.Assign)
+                and isinstance(s.targets[0], ast.Name)
                 and s.targets[0].id == "__spa_enabled__"
+                and isinstance(s.value, ast.Constant)
                 and s.value.value is True
                 for s in stmts
             )
@@ -65,13 +67,15 @@ class TestGeneratorAdvanced(unittest.TestCase):
         self.assertTrue(
             any(
                 isinstance(s, ast.Assign)
+                and isinstance(s.targets[0], ast.Name)
                 and s.targets[0].id == "__sibling_paths__"
+                and isinstance(s.value, ast.List)
                 and len(s.value.elts) == 2
                 for s in stmts
             )
         )
 
-    def test_generate_init_method(self):
+    def test_generate_init_method(self) -> None:
         parsed = ParsedPyHTML(
             template=[], python_code="", python_ast=ast.parse(""), file_path="test.pyhtml"
         )
@@ -83,6 +87,7 @@ class TestGeneratorAdvanced(unittest.TestCase):
             any(
                 isinstance(n, ast.Expr)
                 and isinstance(n.value, ast.Call)
+                and isinstance(n.value.func, ast.Attribute)
                 and n.value.func.attr == "__init__"
                 for n in init_func.body
             )
@@ -91,6 +96,7 @@ class TestGeneratorAdvanced(unittest.TestCase):
             any(
                 isinstance(n, ast.Expr)
                 and isinstance(n.value, ast.Call)
+                and isinstance(n.value.func, ast.Attribute)
                 and n.value.func.attr == "_init_slots"
                 for n in init_func.body
             )

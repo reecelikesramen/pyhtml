@@ -1,10 +1,11 @@
 from pyhtml.runtime.app import PyHTML
 from starlette.testclient import TestClient
+from pathlib import Path
 
 # Custom error pages tests
 
 
-def test_default_404_no_pages_dir(tmp_path):
+def test_default_404_no_pages_dir(tmp_path: Path) -> None:
     """Verify default 404 when no pages directory exists."""
     app = PyHTML(pages_dir=str(tmp_path / "nonexistent"))
     client = TestClient(app)
@@ -14,7 +15,7 @@ def test_default_404_no_pages_dir(tmp_path):
     assert "Not Found" in response.text
 
 
-def test_custom_error_page(tmp_path):
+def test_custom_error_page(tmp_path: Path) -> None:
     """Verify custom __error__ page is rendered."""
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()

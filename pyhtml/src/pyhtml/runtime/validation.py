@@ -287,15 +287,15 @@ class FormValidator:
         Validate data against schema.
         Returns: (cleaned_data, errors)
         """
-        errors = {}
-        cleaned_data = {}
+        errors: Dict[str, str] = {}
+        cleaned_data: Dict[str, Any] = {}
 
         # 1. Validate fields present in schema
         for field_name, rules in schema.items():
             value = data.get(field_name)
 
             # Helper to evaluate rules against state
-            def eval_rule(attr_name):
+            def eval_rule(attr_name: str) -> Any:
                 expr = getattr(rules, f"{attr_name}_expr")
                 if expr:
                     return state_getter(expr)
@@ -423,7 +423,7 @@ class FormValidator:
             ->
             {'customer': {'name': 'John', 'email': 'john@example.com'}}
         """
-        result = {}
+        result: Dict[str, Any] = {}
 
         for key, value in flat_data.items():
             parts = key.split(".")

@@ -3,15 +3,16 @@
 import ast
 from typing import Optional
 
-from pyhtml.compiler.ast_nodes import EventAttribute
+from pyhtml.compiler.ast_nodes import EventAttribute, SpecialAttribute
 from pyhtml.compiler.codegen.attributes.base import AttributeCodegen
 
 
 class EventAttributeCodegen(AttributeCodegen):
     """Generates event handler hookup for @click."""
 
-    def generate_html(self, attr: EventAttribute) -> str:
+    def generate_html(self, attr: SpecialAttribute) -> str:
         """Generate HTML data attribute for event."""
+        assert isinstance(attr, EventAttribute)
         # @click.prevent={handler} → data-on-click="handler" data-modifiers-click="prevent"
         attrs = [f'data-on-{attr.event_type}="{attr.handler_name}"']
         if attr.modifiers:
@@ -26,6 +27,7 @@ class EventAttributeCodegen(AttributeCodegen):
 
         return " ".join(attrs)
 
-    def generate_handler(self, attr: EventAttribute) -> Optional[ast.FunctionDef]:
-        """No extra handler needed - user defines it."""
+    def generate_handler(self, attr: SpecialAttribute) -> Optional[ast.FunctionDef]:
+        """Generate handler method AST."""
+        assert isinstance(attr, EventAttribute)
         return None

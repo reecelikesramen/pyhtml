@@ -7,7 +7,7 @@ class MockPage(BasePage):
     pass
 
 
-def test_router_typed_params():
+def test_router_typed_params() -> None:
     router = Router()
     router.add_route("/test/:id:int", MockPage, "test")
 
@@ -23,7 +23,7 @@ def test_router_typed_params():
     assert match is None
 
 
-def test_router_dict_path():
+def test_router_dict_path() -> None:
     router = Router()
     router.add_route("/main", MockPage, "main")
     router.add_route("/other/:id", MockPage, "other")
@@ -40,7 +40,7 @@ def test_router_dict_path():
     assert params["id"] == "123"
 
 
-def test_url_helper():
+def test_url_helper() -> None:
     routes = {"main": "/test", "detail": "/test/:id:int", "edit": "/test/{id}/edit"}
     helper = URLHelper(routes)
 
@@ -49,7 +49,7 @@ def test_url_helper():
     assert helper["edit"].format(id=456) == "/test/456/edit"
 
 
-def test_router_root_path():
+def test_router_root_path() -> None:
     router = Router()
     router.add_route("/", MockPage, "root")
 

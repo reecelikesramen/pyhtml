@@ -8,13 +8,13 @@ from pyhtml.runtime.websocket import WebSocketHandler
 
 
 class TestTransportAdvanced(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.app = MagicMock(spec=PyHTML)
         self.app.router = MagicMock()
         self.http_handler = HTTPTransportHandler(self.app)
         self.ws_handler = WebSocketHandler(self.app)
 
-    async def test_http_session_cleanup(self):
+    async def test_http_session_cleanup(self) -> None:
         # Create session
         request = AsyncMock()
         request.json.return_value = {"path": "/"}
@@ -34,7 +34,7 @@ class TestTransportAdvanced(unittest.IsolatedAsyncioTestCase):
         # For now we just verify it exists
         self.assertIsNotNone(self.http_handler.sessions[session_id])
 
-    async def test_websocket_error_handling(self):
+    async def test_websocket_error_handling(self) -> None:
         ws = AsyncMock()
         ws.receive_bytes.side_effect = Exception("Connection lost")
 
@@ -42,7 +42,7 @@ class TestTransportAdvanced(unittest.IsolatedAsyncioTestCase):
         await self.ws_handler.handle(ws)
         # If it reached here without raising, it's good
 
-    async def test_http_event_invalid_session(self):
+    async def test_http_event_invalid_session(self) -> None:
         request = AsyncMock()
         request.headers = {"X-PyHTML-Session": "invalid-id"}
         request.json.return_value = {"handler": "click", "data": {}}

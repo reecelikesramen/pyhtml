@@ -3,16 +3,17 @@
 import ast
 from typing import List
 
-from pyhtml.compiler.ast_nodes import PathDirective
+from pyhtml.compiler.ast_nodes import Directive, PathDirective
 from pyhtml.compiler.codegen.directives.base import DirectiveCodegen
 
 
 class PathDirectiveCodegen(DirectiveCodegen):
     """Generates routing metadata from !path."""
 
-    def generate(self, directive: PathDirective) -> List[ast.stmt]:
+    def generate(self, directive: Directive) -> List[ast.stmt]:
         """Generate route metadata assignments."""
-        statements = []
+        assert isinstance(directive, PathDirective)
+        statements: List[ast.stmt] = []
 
         # Generate __routes__ dict with all route names
         routes_dict = {}

@@ -10,12 +10,12 @@ from pyhtml.runtime.page import BasePage
 
 
 @pytest.fixture
-def loader():
+def loader() -> PageLoader:
     return PageLoader()
 
 
 @pytest.fixture
-def mock_app():
+def mock_app() -> MagicMock:
     from unittest.mock import MagicMock
 
     app = MagicMock()
@@ -25,7 +25,7 @@ def mock_app():
     return app
 
 
-def test_simple_layout(loader, mock_app):
+def test_simple_layout(loader: PageLoader, mock_app: MagicMock) -> None:
     """Test basic layout with default and named slots."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -78,7 +78,7 @@ def test_simple_layout(loader, mock_app):
             os.chdir(original_cwd)
 
 
-def test_head_slot_accumulation(loader, mock_app):
+def test_head_slot_accumulation(loader: PageLoader, mock_app: MagicMock) -> None:
     """Test that <head> content from child pages is appended to $head slot."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)

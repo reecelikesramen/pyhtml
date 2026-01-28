@@ -2,7 +2,7 @@ import html
 import linecache
 import os
 import traceback
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
@@ -27,6 +27,8 @@ class CompileErrorPage(BasePage):
         self.request = request
         self.error = error
         self._file_path = file_path
+        self.error_file: Optional[str] = None
+        self.error_line: Optional[int] = None
 
         # Extract file/line info based on error type
         if isinstance(error, PyHTMLSyntaxError):
@@ -65,7 +67,7 @@ class CompileErrorPage(BasePage):
                     self.error_file = tb_summary[-1].filename
                     self.error_line = tb_summary[-1].lineno
 
-    async def render(self) -> HTMLResponse:
+    async def render(self, init: bool = True) -> HTMLResponse:
         """Render the compile error page."""
         # Read the context around the error line
         context_lines = []
@@ -92,10 +94,11 @@ class CompileErrorPage(BasePage):
         # Generate code context HTML
         context_html = ""
         for line in context_lines:
+            content = cast(str, line["content"])
             cls = "line-current" if line["is_current"] else "line"
             context_html += (
                 f"<div class='{cls}'><span class='line-num'>{line['num']}</span> "
-                f"<span class='code'>{html.escape(line['content'])}</span></div>"
+                f"<span class='code'>{html.escape(content)}</span></div>"
             )
 
         # Shorten file path for display
@@ -183,6 +186,6 @@ class CompileErrorPage(BasePage):
         """
         return HTMLResponse(content)
 
-    async def handle_event(self, handler_name: str, data: Dict[str, Any]):
+    async def handle_event(self, handler_name: str, data: Dict[str, Any]) -> HTMLResponse:
         """No-op for error page."""
         return HTMLResponse("Error page does not handle events")

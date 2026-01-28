@@ -2,7 +2,7 @@
 
 import ast
 import re
-from typing import Optional
+from typing import Dict, Optional
 
 from pyhtml.compiler.ast_nodes import PathDirective
 from pyhtml.compiler.directives.base import DirectiveParser
@@ -33,10 +33,13 @@ class PathDirectiveParser(DirectiveParser):
 
             # Case 1: Dictionary !path {'main': '/'}
             if isinstance(expr_ast.body, ast.Dict):
-                routes = {}
+                routes: Dict[str, str] = {}
                 for key_node, value_node in zip(expr_ast.body.keys, expr_ast.body.values):
-                    if not isinstance(key_node, ast.Constant) or not isinstance(
-                        value_node, ast.Constant
+                    if (
+                        not isinstance(key_node, ast.Constant)
+                        or not isinstance(key_node.value, str)
+                        or not isinstance(value_node, ast.Constant)
+                        or not isinstance(value_node.value, str)
                     ):
                         return None
                     routes[key_node.value] = value_node.value

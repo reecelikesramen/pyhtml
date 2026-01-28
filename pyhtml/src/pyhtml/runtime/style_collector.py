@@ -6,7 +6,7 @@ from typing import Dict
 class StyleCollector:
     """Collects and deduplicates scoped styles per request."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._styles: Dict[str, str] = {}  # scope_id -> css
 
     def add(self, scope_id: str, css: str) -> bool:

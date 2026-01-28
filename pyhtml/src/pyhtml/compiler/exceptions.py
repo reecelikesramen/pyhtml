@@ -11,7 +11,7 @@ class PyHTMLSyntaxError(Exception):
         self.column = column
         super().__init__(message)
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.file_path and self.line:
             return f"{self.file_path}:{self.line}: {self.message}"
         return self.message

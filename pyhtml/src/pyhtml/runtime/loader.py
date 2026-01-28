@@ -3,7 +3,7 @@
 import ast
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Set, Type
+from typing import Any, Dict, Optional, Set, Type, cast
 
 from pyhtml.compiler.codegen.generator import CodeGenerator
 from pyhtml.compiler.parser import PyHTMLParser
@@ -13,7 +13,7 @@ from pyhtml.runtime.page import BasePage
 class PageLoader:
     """Loads and compiles .pyhtml files into page classes."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.parser = PyHTMLParser()
         self.codegen = CodeGenerator()
         self._cache: Dict[str, Type[BasePage]] = {}  # path -> compiled class
@@ -58,8 +58,9 @@ class PageLoader:
         module = type(sys)("pyhtml_page")
 
         # Inject global load_layout
-        module.load_layout = self.load_layout
-        module.load_component = self.load_component
+        module_any = cast(Any, module)
+        module_any.load_layout = self.load_layout
+        module_any.load_component = self.load_component
 
         exec(code, module.__dict__)
 
@@ -69,7 +70,7 @@ class PageLoader:
             obj = module.__page_class__
             self._cache[path_key] = obj
             obj.__file_path__ = str(pyhtml_file)
-            return obj
+            return cast(Type[BasePage], obj)
 
         # Fallback (legacy/backup)
         import pyhtml.runtime.page as page_mod
@@ -88,10 +89,10 @@ class PageLoader:
                     # Cache the compiled class
                     self._cache[path_key] = obj
                     obj.__file_path__ = str(pyhtml_file)
-                    return obj
+                    return cast(Type[BasePage], obj)
         raise ValueError(f"No page class found in {pyhtml_file}")
 
-    def invalidate_cache(self, path: Path = None) -> Set[str]:
+    def invalidate_cache(self, path: Optional[Path] = None) -> Set[str]:
         """Clear cached classes. If path given, only clear that entry and its dependents.
         Returns set of invalidated paths (strings).
         """
@@ -115,7 +116,7 @@ class PageLoader:
             self._reverse_deps.clear()
             return set()  # All cleared
 
-    def load_layout(self, layout_path: str, base_path: str = None) -> Type[BasePage]:
+    def load_layout(self, layout_path: str, base_path: Optional[str] = None) -> Type[BasePage]:
         """Load a layout file and return its class."""
         path = Path(layout_path)
         if not path.is_absolute():
@@ -140,7 +141,7 @@ class PageLoader:
 
         return self.load(path)
 
-    def load_component(self, component_path: str, base_path: str = None) -> Type[BasePage]:
+    def load_component(self, component_path: str, base_path: Optional[str] = None) -> Type[BasePage]:
         """Load a component file and return its class (same logic as layout)."""
         return self.load_layout(component_path, base_path)
 
@@ -154,11 +155,11 @@ def get_loader() -> PageLoader:
     return _loader_instance
 
 
-def load_layout(path: str, base_path: str = None) -> Type[BasePage]:
+def load_layout(path: str, base_path: Optional[str] = None) -> Type[BasePage]:
     """Helper for generated code to load layouts."""
     return _loader_instance.load_layout(path, base_path)
 
 
-def load_component(path: str, base_path: str = None) -> Type[BasePage]:
+def load_component(path: str, base_path: Optional[str] = None) -> Type[BasePage]:
     """Helper for generated code to load components."""
     return _loader_instance.load_component(path, base_path)

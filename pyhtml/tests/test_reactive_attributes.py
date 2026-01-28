@@ -9,12 +9,12 @@ from pyhtml.runtime.loader import PageLoader
 
 
 @pytest.fixture
-def loader():
+def loader() -> PageLoader:
     return PageLoader()
 
 
 @pytest.fixture
-def mock_app():
+def mock_app() -> MagicMock:
     from unittest.mock import MagicMock
 
     app = MagicMock()
@@ -24,7 +24,7 @@ def mock_app():
     return app
 
 
-def test_variable_binding(loader, mock_app):
+def test_variable_binding(loader: PageLoader, mock_app: MagicMock) -> None:
     """Test attr={var} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -51,7 +51,7 @@ my_class = "btn"
             os.chdir(orig_cwd)
 
 
-def test_method_binding_paramless(loader, mock_app):
+def test_method_binding_paramless(loader: PageLoader, mock_app: MagicMock) -> None:
     """Test attr="method" auto-call binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -77,7 +77,7 @@ def get_title():
             os.chdir(orig_cwd)
 
 
-def test_expression_binding(loader, mock_app):
+def test_expression_binding(loader: PageLoader, mock_app: MagicMock) -> None:
     """Test attr={expr} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -102,7 +102,7 @@ is_error = True
             os.chdir(orig_cwd)
 
 
-def test_boolean_attributes(loader, mock_app):
+def test_boolean_attributes(loader: PageLoader, mock_app: MagicMock) -> None:
     """Test boolean attribute behavior."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -134,7 +134,7 @@ is_readonly = None
             os.chdir(orig_cwd)
 
 
-def test_async_binding(loader, mock_app):
+def test_async_binding(loader: PageLoader, mock_app: MagicMock) -> None:
     """Test attr={await async_call()} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -160,7 +160,7 @@ async def get_data():
             os.chdir(orig_cwd)
 
 
-def test_aria_boolean_attributes(loader, mock_app):
+def test_aria_boolean_attributes(loader: PageLoader, mock_app: MagicMock) -> None:
     """Test ARIA boolean attributes (true/false strings)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)

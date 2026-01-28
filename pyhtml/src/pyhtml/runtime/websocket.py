@@ -6,7 +6,7 @@ import sys
 import traceback
 from typing import Any, Dict, Set
 
-import msgpack
+import msgpack  # type: ignore
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from pyhtml.runtime.logging import log_callback_ctx
@@ -16,13 +16,13 @@ from pyhtml.runtime.page import BasePage
 class WebSocketHandler:
     """Handles WebSocket connections for events and hot reload."""
 
-    def __init__(self, app):
+    def __init__(self, app: Any) -> None:
         self.app = app
         self.active_connections: Set[WebSocket] = set()
         # Map websocket to page instance
         self.connection_pages: Dict[WebSocket, BasePage] = {}
 
-    async def handle(self, websocket: WebSocket):
+    async def handle(self, websocket: WebSocket) -> None:
         """Handle new WebSocket connection."""
         # Optional: Auth check hook
         if hasattr(self.app, "on_ws_connect"):
@@ -66,7 +66,7 @@ class WebSocketHandler:
 
             traceback.print_exc()
 
-    async def _process_message(self, websocket: WebSocket, data: Dict[str, Any]):
+    async def _process_message(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
         """Process incoming message from client."""
         msg_type = data.get("type")
 
@@ -80,7 +80,7 @@ class WebSocketHandler:
                 websocket, f"Unknown message type: {msg_type}", level="error"
             )
 
-    async def _send_console_message(self, websocket: WebSocket, output: str, level: str = "info"):
+    async def _send_console_message(self, websocket: WebSocket, output: str, level: str = "info") -> None:
         """Send a console log message to the client."""
         # Split by newlines to send as list
         lines = output.splitlines()
@@ -91,7 +91,7 @@ class WebSocketHandler:
             msgpack.packb({"type": "console", "lines": lines, "level": level})
         )
 
-    async def _send_error_trace(self, websocket: WebSocket, error: Exception):
+    async def _send_error_trace(self, websocket: WebSocket, error: Exception) -> None:
         """Send a structured error trace to the client."""
         # Gate on debug mode + dev mode
         # If not in dev mode, send generic error message only
@@ -146,7 +146,7 @@ class WebSocketHandler:
 
                 # Advance to next raw frame
                 if current_tb:
-                    current_tb = current_tb.tb_next
+                    current_tb = current_tb.tb_next  # type: ignore # tb_next is Optional[TracebackType]
 
                 trace.append(frame_data)
 
@@ -160,14 +160,14 @@ class WebSocketHandler:
             )
         )
 
-    async def _handle_event(self, websocket: WebSocket, data: Dict[str, Any]):
+    async def _handle_event(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
         """Handle UI event (click, etc)."""
         handler_name = data.get("handler")
         path = data.get("path", "/")
         event_data = data.get("data", {})
 
         # Define callback for log streaming
-        async def send_log(msg: str, level: str = "info"):
+        async def send_log(msg: str, level: str = "info") -> None:
             if msg and msg.strip():
                 await self._send_console_message(websocket, output=msg, level=level)
 
@@ -263,7 +263,7 @@ class WebSocketHandler:
                 page = self.connection_pages[websocket]
 
             # Define update broadcaster
-            async def broadcast_update():
+            async def broadcast_update() -> None:
                 up_response = await page.render(init=False)
                 up_html = up_response.body.decode("utf-8")
                 await websocket.send_bytes(msgpack.packb({"type": "update", "html": up_html}))
@@ -286,12 +286,12 @@ class WebSocketHandler:
         finally:
             log_callback_ctx.reset(token)
 
-    async def _handle_relocate(self, websocket: WebSocket, data: Dict[str, Any]):
+    async def _handle_relocate(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
         """Handle SPA navigation between sibling paths."""
 
         # Define callback for log streaming
         # Define callback for log streaming
-        async def send_log(msg: str, level: str = "info"):
+        async def send_log(msg: str, level: str = "info") -> None:
             if msg and msg.strip():
                 await self._send_console_message(websocket, output=msg, level=level)
 
@@ -413,7 +413,7 @@ class WebSocketHandler:
 
                         # Create a closure helper
                         class BoundErrorPage(ErrorPage):
-                            def __init__(self, request: Request, *args, **kwargs):
+                            def __init__(self, request: Request, *args: Any, **kwargs: Any) -> None:
                                 super().__init__(
                                     request,
                                     "404 Not Found",
@@ -486,7 +486,7 @@ class WebSocketHandler:
             self.connection_pages[websocket] = new_page
 
             # Set update hook
-            async def broadcast_update():
+            async def broadcast_update() -> None:
                 up_response = await new_page.render(init=False)
                 up_html = up_response.body.decode("utf-8")
                 await websocket.send_bytes(msgpack.packb({"type": "update", "html": up_html}))
@@ -516,7 +516,7 @@ class WebSocketHandler:
         finally:
             log_callback_ctx.reset(token)
 
-    async def broadcast_reload(self):
+    async def broadcast_reload(self) -> None:
         """Broadcast reload to all clients, preserving state where possible.
 
         For each connection with an existing page instance, attempts to:

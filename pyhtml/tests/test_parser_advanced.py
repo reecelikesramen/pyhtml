@@ -1,14 +1,15 @@
 import unittest
+from typing import Any, cast
 
-from pyhtml.compiler.ast_nodes import EventAttribute
+from pyhtml.compiler.ast_nodes import EventAttribute, TemplateNode
 from pyhtml.compiler.parser import PyHTMLParser
 
 
 class TestParserAdvanced(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.parser = PyHTMLParser()
 
-    def test_extract_all_validation_rules(self):
+    def test_extract_all_validation_rules(self) -> None:
         content = """
 <form @submit={save}>
     <input name="t1" type="text" required minlength="2" maxlength="10" pattern="[a-z]+">
@@ -21,9 +22,9 @@ class TestParserAdvanced(unittest.TestCase):
 </form>
 """
         parsed = self.parser.parse(content)
-        form = parsed.template[0]
+        form = cast(TemplateNode, parsed.template[0])
         submit = next(a for a in form.special_attributes if isinstance(a, EventAttribute))
-        fields = submit.validation_schema.fields
+        fields = cast(Any, submit).validation_schema.fields
 
         # Text
         self.assertTrue(fields["t1"].required)
@@ -47,16 +48,16 @@ class TestParserAdvanced(unittest.TestCase):
         # Select
         self.assertEqual(fields["sel"].input_type, "select")
 
-    def test_reactive_validation_rules(self):
+    def test_reactive_validation_rules(self) -> None:
         content = """
 <form @submit={save}>
     <input name="email" required={is_required} min={min_age} max={max_age}>
 </form>
 """
         parsed = self.parser.parse(content)
-        form = parsed.template[0]
+        form = cast(TemplateNode, parsed.template[0])
         submit = next(a for a in form.special_attributes if isinstance(a, EventAttribute))
-        field = submit.validation_schema.fields["email"]
+        field = cast(Any, submit).validation_schema.fields["email"]
 
         self.assertEqual(field.required_expr, "is_required")
         self.assertEqual(field.min_expr, "min_age")

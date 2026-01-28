@@ -9,7 +9,7 @@ class MockPage(BasePage):
 
 
 class TestRouterExhaustive(unittest.TestCase):
-    def test_route_compilation_params(self):
+    def test_route_compilation_params(self) -> None:
         # Test root path
         r0 = Route("/", MockPage, "root")
         self.assertTrue(r0.regex.match("/"))
@@ -36,14 +36,14 @@ class TestRouterExhaustive(unittest.TestCase):
         r5 = Route("/custom/:val:unknown", MockPage, "r5")
         self.assertTrue(r5.regex.match("/custom/foo"))
 
-    def test_route_match_params(self):
+    def test_route_match_params(self) -> None:
         r = Route("/user/:id:int/:action", MockPage, "user_action")
         params = r.match("/user/42/edit")
         self.assertEqual(params, {"id": "42", "action": "edit"})
 
         self.assertIsNone(r.match("/user/abc/edit"))
 
-    def test_url_template_format(self):
+    def test_url_template_format(self) -> None:
         t1 = URLTemplate("/user/:id/edit")
         self.assertEqual(t1.format(id="123"), "/user/123/edit")
 
@@ -54,7 +54,7 @@ class TestRouterExhaustive(unittest.TestCase):
         self.assertEqual(str(t1), "/user/{id}/edit")
         self.assertEqual(str(t2), "/projects/{pid}/{action}")
 
-    def test_url_helper(self):
+    def test_url_helper(self) -> None:
         routes = {"home": "/", "user": "/user/:id"}
         helper = URLHelper(routes)
 
@@ -69,7 +69,7 @@ class TestRouterExhaustive(unittest.TestCase):
         self.assertIn("'home': '/'", h_str)
         self.assertIn("'user': '/user/{id}'", h_str)
 
-    def test_router_basics(self):
+    def test_router_basics(self) -> None:
         router = Router()
 
         class PageA(MockPage):
@@ -85,16 +85,19 @@ class TestRouterExhaustive(unittest.TestCase):
 
         # Match A
         match = router.match("/a")
+        assert match is not None
         self.assertEqual(match[0], PageA)
         self.assertEqual(match[2], None)
 
         # Match B List
         match = router.match("/b")
+        assert match is not None
         self.assertEqual(match[0], PageB)
         self.assertEqual(match[2], "list")
 
         # Match B Detail
         match = router.match("/b/123")
+        assert match is not None
         self.assertEqual(match[0], PageB)
         self.assertEqual(match[1], {"id": "123"})
         self.assertEqual(match[2], "detail")
@@ -102,7 +105,7 @@ class TestRouterExhaustive(unittest.TestCase):
         # Match None
         self.assertIsNone(router.match("/c"))
 
-    def test_remove_routes_for_file(self):
+    def test_remove_routes_for_file(self) -> None:
         router = Router()
 
         class PageF(MockPage):

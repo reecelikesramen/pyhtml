@@ -7,11 +7,11 @@ from pyhtml.compiler.parser import PyHTMLParser
 
 
 class TestInteractivityCodegenComplex(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.generator = CodeGenerator()
         self.parser = PyHTMLParser()
 
-    def test_inline_argument_lifting(self):
+    def test_inline_argument_lifting(self) -> None:
         """Test that @click={delete_item(item.id, 'confirm')} lifts arguments."""
         template = "<button @click={delete_item(item.id, 'confirmed')}>Delete</button>"
         # Mock python code with the handler method
@@ -33,7 +33,7 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         self.assertIn("data-arg-0", code)
         self.assertNotIn("data-arg-1", code)  # 'confirmed' is a literal, not lifted
 
-    def test_multiple_handlers_complex(self):
+    def test_multiple_handlers_complex(self) -> None:
         """Verify behavior with multiple handlers having arguments and modifiers."""
         template = "<button @click.stop={foo(id1)} @click.prevent={bar(id2)}>Click</button>"
         parsed = self.parser.parse(template)
@@ -52,7 +52,7 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         self.assertIn("stop", modifiers_line)
         self.assertIn("prevent", modifiers_line)
 
-    def test_form_validation_wrapper(self):
+    def test_form_validation_wrapper(self) -> None:
         """Test that @submit on a form with validation schema generates a wrapper."""
         # This requires more setup (mocking a validation schema in the AST)
         # For now, let's verify if the generator handles EventAttribute with validation_schema

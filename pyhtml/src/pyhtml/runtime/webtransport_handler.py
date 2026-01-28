@@ -12,7 +12,7 @@ from pyhtml.runtime.page import BasePage
 class WebTransportHandler:
     """Handles WebTransport connections."""
 
-    def __init__(self, app):
+    def __init__(self, app: Any) -> None:
         self.app = app
         # Store active sessions/connections
         # For WebTransport, the 'scope' is the connection identifier
@@ -21,7 +21,7 @@ class WebTransportHandler:
         # Map connection -> current page instance
         self.connection_pages: Dict[Any, BasePage] = {}
 
-    async def handle(self, scope, receive, send):
+    async def handle(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         """Handle ASGI webtransport scope."""
         print("DEBUG: WebTransport handler started")
         # Active streams buffer: stream_id -> bytes
@@ -95,7 +95,7 @@ class WebTransportHandler:
             if connection_id in self.connection_pages:
                 del self.connection_pages[connection_id]
 
-    async def _handle_message(self, data: dict, scope, send, stream_id):
+    async def _handle_message(self, data: dict[str, Any], scope: dict[str, Any], send: Any, stream_id: int) -> None:
         """Handle decoded JSON message."""
         msg_type = data.get("type")
         connection_id = id(scope)
@@ -108,12 +108,15 @@ class WebTransportHandler:
                 event_data = data.get("data", {})
 
                 try:
-                    # Execute handler
-                    response = await page.handle_event(handler_name, event_data)
+                    if handler_name and isinstance(handler_name, str):
+                        # Execute handler
+                        response = await page.handle_event(handler_name, event_data)
+                    else:
+                        raise ValueError("Invalid handler name")
 
                     # If response is HTML, send update
                     if hasattr(response, "body"):
-                        html = response.body.decode("utf-8")
+                        html = bytes(response.body).decode("utf-8")
                         response_data = {"type": "update", "html": html}
                         await self._send_response(send, stream_id, response_data)
 
@@ -156,7 +159,7 @@ class WebTransportHandler:
 
                 self.connection_pages[connection_id] = page
 
-    async def _send_response(self, send, stream_id: int, data: dict):
+    async def _send_response(self, send: Any, stream_id: int, data: dict[str, Any]) -> None:
         """Send response back on the same stream."""
         payload = json.dumps(data).encode("utf-8")
         await send(
@@ -168,7 +171,7 @@ class WebTransportHandler:
             }
         )
 
-    async def broadcast_reload(self):
+    async def broadcast_reload(self) -> None:
         """Broadcast reload to all active WebTransport connections."""
         # For broadcast, we must initiate a NEW stream for each connection
         # But we don't have reference to 'send' callable for each connection here!

@@ -1,7 +1,7 @@
 """Routing system."""
 
 import re
-from typing import Dict, Optional, Tuple, Type
+from typing import Any, Dict, Optional, Tuple, Type
 
 from pyhtml.runtime.page import BasePage
 
@@ -9,7 +9,7 @@ from pyhtml.runtime.page import BasePage
 class Route:
     """Represents a single route pattern."""
 
-    def __init__(self, pattern: str, page_class: Type[BasePage], name: Optional[str]):
+    def __init__(self, pattern: str, page_class: Type[BasePage], name: Optional[str]) -> None:
         self.pattern = pattern
         self.page_class = page_class
         self.name = name
@@ -92,7 +92,7 @@ class Route:
         regex_str = "^/" + "/".join(regex_parts) + "$"
         return re.compile(regex_str)
 
-    def match(self, path: str) -> Optional[dict]:
+    def match(self, path: str) -> Optional[dict[str, str]]:
         """Try to match path, return params if successful."""
         match = self.regex.match(path)
         if match:
@@ -122,7 +122,7 @@ class Route:
 class URLHelper:
     """Helper to generate URLs."""
 
-    def __init__(self, routes: Dict[str, str]):
+    def __init__(self, routes: Dict[str, str]) -> None:
         self.routes = routes
 
     def __getitem__(self, key: str) -> "URLTemplate":
@@ -130,12 +130,12 @@ class URLHelper:
             raise KeyError(f"Route variant '{key}' not found")
         return URLTemplate(self.routes[key])
 
-    def __str__(self):
+    def __str__(self) -> str:
         # Return dict with normalized patterns
         import re
 
-        def normalize_pattern(pattern):
-            def replace_param(match):
+        def normalize_pattern(pattern: str) -> str:
+            def replace_param(match: re.Match) -> str:
                 return f"{{{match.group(1)}}}"
 
             cleaned = re.sub(r":(\w+)(:\w+)?", replace_param, pattern)
@@ -149,10 +149,10 @@ class URLHelper:
 class URLTemplate:
     """Wraps a route pattern to allow .format()."""
 
-    def __init__(self, pattern: str):
+    def __init__(self, pattern: str) -> None:
         self.pattern = pattern
 
-    def format(self, **kwargs) -> str:
+    def format(self, **kwargs: Any) -> str:
         url = self.pattern
         # Simple replacement for now.
         # Needs to handle :param syntax conversion to {param} for format,
@@ -167,18 +167,18 @@ class URLTemplate:
 
         pattern = r"\{(\w+)(?::\w+)?\}|:(\w+)(?::\w+)?"
 
-        def replace_match(match):
+        def replace_match(match: re.Match) -> str:
             # Group 1 is from {}, Group 2 is from :
             name = match.group(1) or match.group(2)
             return f"{{{name}}}"
 
         return re.sub(pattern, replace_match, url).format(**kwargs)
 
-    def __str__(self):
+    def __str__(self) -> str:
         # Return normalized pattern with {param} instead of :param
         pattern = r"\{(\w+)(?::\w+)?\}|:(\w+)(?::\w+)?"
 
-        def replace_match(match):
+        def replace_match(match: re.Match) -> str:
             name = match.group(1) or match.group(2)
             return f"{{{name}}}"
 
@@ -188,14 +188,14 @@ class URLTemplate:
 class Router:
     """Routes requests to page classes based on !path directives."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.routes: list[Route] = []
 
-    def add_route(self, pattern: str, page_class: Type[BasePage], name: Optional[str] = None):
+    def add_route(self, pattern: str, page_class: Type[BasePage], name: Optional[str] = None) -> None:
         """Add route from compiled page."""
         self.routes.append(Route(pattern, page_class, name))
 
-    def add_page(self, page_class: Type[BasePage]):
+    def add_page(self, page_class: Type[BasePage]) -> None:
         """Register all routes for a page class."""
         if hasattr(page_class, "__routes__"):
             for name, pattern in page_class.__routes__.items():
@@ -203,7 +203,7 @@ class Router:
         elif hasattr(page_class, "__route__"):
             self.add_route(page_class.__route__, page_class)
 
-    def match(self, path: str) -> Optional[Tuple[Type[BasePage], dict, str]]:
+    def match(self, path: str) -> Optional[Tuple[Type[BasePage], dict[str, str], Optional[str]]]:
         """Match URL path to page class. Returns: (PageClass, params, variant_name)."""
         for route in self.routes:
             params = route.match(path)
@@ -211,7 +211,7 @@ class Router:
                 return (route.page_class, params, route.name)
         return None
 
-    def remove_routes_for_file(self, file_path: str):
+    def remove_routes_for_file(self, file_path: str) -> None:
         """Remove all routes associated with a file path."""
         # Normalize file path for comparison
         file_path = str(file_path)

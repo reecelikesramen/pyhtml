@@ -17,9 +17,9 @@ class ErrorPage(BasePage):
         self.error_title = error_title
         self.error_detail = error_detail
 
-    async def render(self) -> HTMLResponse:
+    async def render(self, init: bool = True) -> HTMLResponse:
         """Render the error page."""
-        escaped_detail = html.escape(self.error_detail)
+        escaped_detail = html.escape(self.error_detail or "")
         content = f"""
         <!DOCTYPE html>
         <html>
@@ -68,6 +68,6 @@ class ErrorPage(BasePage):
         """
         return HTMLResponse(content)
 
-    async def handle_event(self, handler_name: str, data: Dict[str, Any]):
+    async def handle_event(self, handler_name: str, data: Dict[str, Any]) -> HTMLResponse:
         """No-op for error page."""
         return HTMLResponse("Error page does not handle events")

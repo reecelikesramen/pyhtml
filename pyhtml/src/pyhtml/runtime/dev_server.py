@@ -3,10 +3,10 @@
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, Tuple
 
 
-def _import_app(app_str: str):
+def _import_app(app_str: str) -> Any:
     """Import application from string."""
     module_name, app_name = app_str.split(":", 1)
     # Ensure current directory is in path (should be from main.py, but safe to add)
@@ -19,16 +19,16 @@ def _import_app(app_str: str):
     return getattr(module, app_name)
 
 
-def _generate_cert():
+def _generate_cert() -> Tuple[str, str, bytes]:
     """Generate self-signed certificate for localhost."""
     import datetime
     import os
     import tempfile
 
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.x509.oid import NameOID
+    from cryptography import x509  # type: ignore
+    from cryptography.hazmat.primitives import hashes, serialization  # type: ignore
+    from cryptography.hazmat.primitives.asymmetric import ec  # type: ignore
+    from cryptography.x509.oid import NameOID  # type: ignore
 
     # Use ECDSA P-256 (More standard for QUIC/TLS 1.3 than RSA)
     key = ec.generate_private_key(ec.SECP256R1())
@@ -95,7 +95,7 @@ async def run_dev_server(
     port: int,
     ssl_keyfile: Optional[str] = None,
     ssl_certfile: Optional[str] = None,
-):
+) -> None:
     """Run development server with hot reload."""
     import asyncio
     import logging
@@ -125,8 +125,8 @@ async def run_dev_server(
 
     # Try to import Hypercorn for HTTP/3 support
     try:
-        from hypercorn.asyncio import serve
-        from hypercorn.config import Config
+        from hypercorn.asyncio import serve  # type: ignore
+        from hypercorn.config import Config  # type: ignore
 
         has_http3 = True
     except ImportError:
@@ -143,7 +143,7 @@ async def run_dev_server(
     # Create shutdown event
     shutdown_event = asyncio.Event()
 
-    async def _handle_signal():
+    async def _handle_signal() -> None:
         print("\nPyHTML: Shutting down...")
         shutdown_event.set()
 
@@ -156,7 +156,7 @@ async def run_dev_server(
         pass
 
     # Watcher task
-    async def watch_changes():
+    async def watch_changes() -> None:
         try:
             # Determine pyhtml source directory
             import pyhtml
@@ -174,7 +174,7 @@ async def run_dev_server(
             # Also watch the file defining the app if possible?
             # app_str "main:app" -> main.py
             app_module_path = (
-                Path(sys.modules[pyhtml_app.__module__].__file__)
+                Path(str(sys.modules[pyhtml_app.__module__].__file__))
                 if hasattr(sys.modules.get(pyhtml_app.__module__), "__file__")
                 else None
             )
@@ -365,14 +365,15 @@ async def run_dev_server(
                 ssl_options["ssl_keyfile"] = key_path
 
             config = uvicorn.Config(
-                pyhtml_app.app, host=host, port=port, reload=False, log_level="info", **ssl_options
+                pyhtml_app.app, host=host, port=port, reload=False, log_level="info", **ssl_options  # type: ignore
             )
             server = uvicorn.Server(config)
 
             # Disable Uvicorn's signal handlers so we can manage it
-            server.install_signal_handlers = lambda: None
+            # Disable Uvicorn's signal handlers so we can manage it
+            server.install_signal_handlers = lambda: None  # type: ignore
 
-            async def stop_uvicorn():
+            async def stop_uvicorn() -> None:
                 await shutdown_event.wait()
                 server.should_exit = True
 

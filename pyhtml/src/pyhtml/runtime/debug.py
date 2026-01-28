@@ -3,7 +3,9 @@ import linecache
 import os
 import traceback
 import urllib.parse
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union, cast, Type, TYPE_CHECKING
+if TYPE_CHECKING:
+    from types import TracebackType
 
 from starlette.responses import HTMLResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -33,7 +35,7 @@ class DevErrorMiddleware:
             response = self.render_error_page(exc)
             await response(scope, receive, send)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         return getattr(self.app, name)
 
     def render_error_page(self, exc: Exception) -> HTMLResponse:
@@ -59,7 +61,7 @@ class DevErrorMiddleware:
     def _render_compile_error(self, exc: PyHTMLSyntaxError) -> HTMLResponse:
         """Render a specialized error page for compile-time syntax errors."""
         # Read the context around the error line
-        context_lines = []
+        context_lines: List[Dict[str, Union[int, str, bool]]] = []
         if exc.file_path and exc.line and os.path.exists(exc.file_path):
             try:
                 lines = linecache.getlines(exc.file_path)
@@ -81,10 +83,11 @@ class DevErrorMiddleware:
         # Generate code context HTML
         context_html = ""
         for line in context_lines:
+            content = cast(str, line["content"])
             cls = "line-current" if line["is_current"] else "line"
             context_html += (
                 f"<div class='{cls}'><span class='line-num'>{line['num']}</span> "
-                f"<span class='code'>{html.escape(line['content'])}</span></div>"
+                f"<span class='code'>{html.escape(content)}</span></div>"
             )
 
         short_path = self._shorten_path(exc.file_path) if exc.file_path else "unknown file"
@@ -143,7 +146,7 @@ class DevErrorMiddleware:
             status_code=500,
         )
 
-    def _get_frames(self, tb) -> List[Dict[str, Any]]:
+    def _get_frames(self, tb: Optional["TracebackType"]) -> List[Dict[str, Any]]:
         frames = []
         for frame, lineno in traceback.walk_tb(tb):
             filename = frame.f_code.co_filename

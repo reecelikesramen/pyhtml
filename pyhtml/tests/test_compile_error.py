@@ -1,20 +1,22 @@
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 from pyhtml.compiler.exceptions import PyHTMLSyntaxError
 from pyhtml.runtime.compile_error_page import CompileErrorPage
 from starlette.requests import Request
+from starlette.responses import HTMLResponse
 
 
 @pytest.fixture
-def mock_request():
+def mock_request() -> MagicMock:
     request = MagicMock(spec=Request)
     request.scope = {"type": "http", "server": ("localhost", 8000), "path": "/"}
     return request
 
 
 @pytest.fixture
-def temp_pyhtml_file(tmp_path):
+def temp_pyhtml_file(tmp_path: Path) -> str:
     file_path = tmp_path / "test.pyhtml"
     content = "\n".join([f"line {i}" for i in range(1, 20)])
     file_path.write_text(content)
@@ -22,22 +24,28 @@ def temp_pyhtml_file(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_compile_error_page_syntax_error(mock_request, temp_pyhtml_file):
+async def test_compile_error_page_syntax_error(
+    mock_request: MagicMock, temp_pyhtml_file: str
+) -> None:
     error = PyHTMLSyntaxError("Invalid syntax", file_path=temp_pyhtml_file, line=10)
     page = CompileErrorPage(mock_request, error)
 
     response = await page.render()
-    content = response.body.decode()
-
+    assert isinstance(response, HTMLResponse)
+    assert response.status_code == 200
+    content = bytes(response.body).decode()
     assert "PyHTML Syntax Error" in content
     assert "Invalid syntax" in content
     assert "line 10" in content
     assert "line-num'>10</span>" in content
     assert "line-current" in content
+    assert temp_pyhtml_file in content
 
 
 @pytest.mark.asyncio
-async def test_compile_error_page_generic_exception(mock_request, temp_pyhtml_file):
+async def test_compile_error_page_generic_exception(
+    mock_request: MagicMock, temp_pyhtml_file: str
+) -> None:
     try:
         # Create an exception with a traceback
         raise ValueError("Something went wrong")
@@ -47,7 +55,7 @@ async def test_compile_error_page_generic_exception(mock_request, temp_pyhtml_fi
     page = CompileErrorPage(mock_request, error, file_path=temp_pyhtml_file)
 
     response = await page.render()
-    content = response.body.decode()
+    content = bytes(response.body).decode()
 
     assert "Compilation Error" in content
     assert "ValueError: Something went wrong" in content
@@ -56,12 +64,12 @@ async def test_compile_error_page_generic_exception(mock_request, temp_pyhtml_fi
 
 
 @pytest.mark.asyncio
-async def test_compile_error_page_traceback_inference(mock_request, tmp_path):
+async def test_compile_error_page_traceback_inference(mock_request: MagicMock, tmp_path: Path) -> None:
     # Create a dummy file and raise an error that "looks" like it came from there
     file_path = tmp_path / "app_logic.pyhtml"
     file_path.write_text("dummy content")
 
-    def raise_err():
+    def raise_err() -> None:
         raise RuntimeError("Fail")
 
     try:
@@ -72,19 +80,19 @@ async def test_compile_error_page_traceback_inference(mock_request, tmp_path):
     page = CompileErrorPage(mock_request, error)
 
     response = await page.render()
-    content = response.body.decode()
+    content = bytes(response.body).decode()
 
     assert "RuntimeError: Fail" in content
     assert "Full Traceback" in content
 
 
 @pytest.mark.asyncio
-async def test_compile_error_page_missing_file(mock_request):
+async def test_compile_error_page_missing_file(mock_request: MagicMock) -> None:
     error = PyHTMLSyntaxError("Bad", file_path="/non/existent/file.pyhtml", line=1)
     page = CompileErrorPage(mock_request, error)
 
     response = await page.render()
-    content = response.body.decode()
+    content = bytes(response.body).decode()
 
     assert "Bad" in content
     # Should not crash even if file missing

@@ -3,7 +3,7 @@
 import re
 import traceback
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional, Set, cast
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -30,7 +30,7 @@ class PyHTML:
         enable_webtransport: bool = False,
         static_dir: Optional[str] = None,
         static_path: str = "/static",
-    ):
+    ) -> None:
         if pages_dir is None:
             # Auto-discovery
             cwd = Path.cwd()
@@ -91,7 +91,7 @@ class PyHTML:
         self.web_transport_handler = WebTransportHandler(self)
 
         # Valid upload tokens
-        self.upload_tokens = set()
+        self.upload_tokens: Set[str] = set()
 
         # Compile and register all pages
         self._load_pages()
@@ -100,9 +100,7 @@ class PyHTML:
         internal_static_dir = Path(__file__).parent.parent / "static"
 
         # Prepare exception handlers
-        exception_handlers = {}
-        # Prepare exception handlers
-        exception_handlers = {}
+        exception_handlers: Dict[int, Any] = {}
         # Always register our handler to check for custom error pages
         exception_handlers[500] = self._handle_500
 
@@ -221,11 +219,13 @@ class PyHTML:
             form = await request.form()
             response_data = {}
             for field_name, file in form.items():
-                if hasattr(file, "filename"):  # It's an UploadFile
-                    # We don't really need the ID if we are just testing upload for now?
-                    # Wait, saving returns the ID!
-                    upload_id = upload_manager.save(file)
-                    response_data[field_name] = upload_id
+                    if hasattr(file, "filename"):  # It's an UploadFile
+                        # We don't really need the ID if we are just testing upload for now?
+                        # Wait, saving returns the ID!
+                        from starlette.datastructures import UploadFile
+
+                        upload_id = upload_manager.save(cast(UploadFile, file))
+                        response_data[field_name] = upload_id
 
             print(f"DEBUG: Upload successful. Returning: {response_data}")
             return JSONResponse(response_data)
@@ -326,7 +326,7 @@ class PyHTML:
             {"workspace": {"root": str(project_root.resolve()), "uuid": project_uuid}}
         )
 
-    def _load_pages(self):
+    def _load_pages(self) -> None:
         """Discover and compile all .pyhtml files."""
         # Scan pages directory
         # We need to sort files to ensure deterministic order but scanning is recursive
@@ -349,7 +349,7 @@ class PyHTML:
 
     def _scan_directory(
         self, dir_path: Path, layout_path: Optional[str] = None, url_prefix: str = ""
-    ):
+    ) -> None:
         """Recursively scan directory for pages and layouts."""
         current_layout = layout_path
 
@@ -453,7 +453,7 @@ class PyHTML:
                     traceback.print_exc()
                     self._register_error_page(entry, e)
 
-    def _register_error_page(self, file_path: Path, error: Exception):
+    def _register_error_page(self, file_path: Path, error: Exception) -> None:
         """Register an error page for a failed file."""
         # Try to infer route from file path/content
         # 1. Start with path relative to pages_dir
@@ -493,11 +493,11 @@ class PyHTML:
                     class ModeAwareErrorPage(BasePage):
                         """Error page that decides whether to show details or trigger 500."""
 
-                        def __init__(self, request: Request, *args, **kwargs):
+                        def __init__(self, request: Request, *args: Any, **kwargs: Any) -> None:
                             # Store for parent __init__
                             super().__init__(request, *args, **kwargs)
 
-                        async def render(self, init=True):
+                        async def render(self, init: bool = True) -> Any:
                             # Check mode at render time (not registration time!)
                             # This allows dev_server.py to set _is_dev_mode after app init
                             if captured_app.debug or getattr(captured_app, "_is_dev_mode", False):
@@ -600,7 +600,7 @@ class PyHTML:
 
         return None
 
-    def reload_page(self, path: Path):
+    def reload_page(self, path: Path) -> bool:
         """Reload and recompile a specific page and its dependents."""
         # Invalidate cache for this file and dependents
         invalidated_paths = self.loader.invalidate_cache(path)
@@ -786,7 +786,7 @@ class PyHTML:
 
         # Inject WebTransport certificate hash if available (Dev Mode)
         if isinstance(response, Response) and response.media_type == "text/html":
-            body = response.body.decode("utf-8")
+            body = bytes(response.body).decode("utf-8")
             injections = []
 
             # WebTransport Hash
@@ -813,7 +813,7 @@ class PyHTML:
 
         return response
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         """ASGI interface."""
         print(f"DEBUG: Scope type: {scope['type']}")
         if scope["type"] == "webtransport":
@@ -824,14 +824,14 @@ class PyHTML:
 
     # --- Extensible Hooks ---
 
-    async def on_ws_connect(self, websocket) -> bool:
+    async def on_ws_connect(self, websocket: Any) -> bool:
         """
         Hook called before WebSocket upgrade.
         Return False to reject connection.
         """
         return True
 
-    def get_user(self, request_or_websocket):
+    def get_user(self, request_or_websocket: Any) -> Any:
         """
         Hook to populate page.user from request/websocket.
         Override to return user from session/JWT.

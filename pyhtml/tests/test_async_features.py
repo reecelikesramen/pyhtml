@@ -2,6 +2,7 @@ import ast
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
@@ -11,10 +12,10 @@ from pyhtml.compiler.codegen.generator import CodeGenerator
 
 
 class TestAsyncFeatures(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.generator = CodeGenerator()
 
-    def compile_and_get_handlers(self, template_node, python_code=""):
+    def compile_and_get_handlers(self, template_node: Any, python_code: str = "") -> Any:
         parsed = ParsedPyHTML(
             template=[template_node],
             python_code=python_code,
@@ -33,7 +34,7 @@ class TestAsyncFeatures(unittest.TestCase):
                         handlers[item.name] = item
         return handlers, parsed
 
-    def test_implicit_async_await(self):
+    def test_implicit_async_await(self) -> None:
         # Python code with async method
         py_code = """
 async def my_async_task(self):

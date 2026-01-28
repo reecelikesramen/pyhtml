@@ -1,3 +1,6 @@
+from pathlib import Path
+from typing import Any, Dict, MutableMapping
+
 import pytest
 from pyhtml.compiler.exceptions import PyHTMLSyntaxError
 from pyhtml.runtime.debug import DevErrorMiddleware
@@ -5,8 +8,8 @@ from starlette.responses import PlainTextResponse
 from starlette.testclient import TestClient
 
 
-def test_debug_middleware_catches_generic_exception():
-    async def app(scope, receive, send):
+def test_debug_middleware_catches_generic_exception() -> None:
+    async def app(scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
         raise ValueError("Oops!")
 
     debug_app = DevErrorMiddleware(app)
@@ -19,12 +22,12 @@ def test_debug_middleware_catches_generic_exception():
     assert "Traceback" in response.text
 
 
-def test_debug_middleware_catches_syntax_error(tmp_path):
+def test_debug_middleware_catches_syntax_error(tmp_path: Path) -> None:
     # Create a dummy file for the syntax error to point to
     file_path = tmp_path / "broken.pyhtml"
     file_path.write_text("line 1\nline 2\nline 3")
 
-    async def app(scope, receive, send):
+    async def app(scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
         raise PyHTMLSyntaxError("Bad tags", file_path=str(file_path), line=2)
 
     debug_app = DevErrorMiddleware(app)
@@ -40,13 +43,14 @@ def test_debug_middleware_catches_syntax_error(tmp_path):
     assert "line 3" in response.text
 
 
-def test_debug_middleware_skips_non_http():
+def test_debug_middleware_skips_non_http() -> None:
     # Only HTTP scope should be caught by the middleware logic
-    async def app(scope, receive, send):
+    async def app(scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] == "websocket":
             await send({"type": "websocket.accept"})
             raise RuntimeError("WS Crash")
-        return PlainTextResponse("OK")(scope, receive, send)
+        response = PlainTextResponse("OK")
+        await response(scope, receive, send)
 
     debug_app = DevErrorMiddleware(app)
     client = TestClient(debug_app)
@@ -57,12 +61,12 @@ def test_debug_middleware_skips_non_http():
             pass
 
 
-def test_debug_middleware_attribute_forwarding():
+def test_debug_middleware_attribute_forwarding() -> None:
     class MockApp:
-        def __init__(self):
+        def __init__(self) -> None:
             self.foo = "bar"
 
-        async def __call__(self, scope, receive, send):
+        async def __call__(self, scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
             pass
 
     mock_app = MockApp()

@@ -2,7 +2,7 @@
 
 import inspect
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Dict, List, Optional, Union
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -16,7 +16,7 @@ from pyhtml.runtime.style_collector import StyleCollector
 class EventData(dict):
     """Dict that allows dot-access to keys for Alpine.js compatibility."""
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         try:
             return self[name]
         except KeyError:
@@ -28,7 +28,7 @@ class EventData(dict):
                 return self[camel]
             raise AttributeError(f"'EventData' object has no attribute '{name}'")
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         self[name] = value
 
 
@@ -37,6 +37,7 @@ class BasePage:
 
     # Layout ID (overridden by generator)
     LAYOUT_ID: Optional[str] = None
+    __file_path__: ClassVar[str]
 
     # Lifecycle hooks registry (extensible!)
     INIT_HOOKS = [
@@ -56,10 +57,10 @@ class BasePage:
         request: Request,
         params: Dict[str, str],
         query: Dict[str, str],
-        path: Dict[str, bool] = None,
-        url: "URLHelper" = None,
-        **kwargs,
-    ):
+        path: Optional[Dict[str, bool]] = None,
+        url: Optional["URLHelper"] = None,
+        **kwargs: Any,
+    ) -> None:
         self.request = request
         self.params = params or {}  # URL params from route
         self.query = query or {}  # Query string params
@@ -78,11 +79,12 @@ class BasePage:
         # If passed from parent component, make a shallow copy for child-specific shadowing.
         # Otherwise create a new empty context (root page).
         if "_context" in kwargs:
-            self.context: Dict[str, Any] = kwargs.pop("_context").copy()
+            self.context = kwargs.pop("_context").copy()
         else:
-            self.context: Dict[str, Any] = {}
+            self.context = {}
+        self.context: Dict[str, Any] # type: ignore
 
-        self.user = None  # Set by middleware
+        self.user: Any = None  # Set by middleware
 
         # Expose params as attributes for easy access in templates
         for k, v in self.params.items():
@@ -111,11 +113,16 @@ class BasePage:
         # Async update hook for intermediate state (injected by runtime)
         self._on_update: Optional[Callable[[], Awaitable[None]]] = None
 
-    def register_slot(self, layout_id: str, slot_name: str, renderer: Callable):
+        # Error state for error pages
+        self.error_code: Optional[int] = None
+        self.error_detail: Optional[str] = None
+        self.error_trace: Optional[str] = None
+
+    def register_slot(self, layout_id: str, slot_name: str, renderer: Callable[..., Any]) -> None:
         """Register a content renderer for a slot in a specific layout."""
         self.slots[layout_id][slot_name] = renderer
 
-    def register_head_slot(self, layout_id: str, renderer: Callable):
+    def register_head_slot(self, layout_id: str, renderer: Callable[..., Any]) -> None:
         """Register head content to be appended (top-down order)."""
         # Prevent duplicate registration (can happen with super()._init_slots() chaining)
         if renderer not in self.head_slots[layout_id]:
@@ -124,8 +131,8 @@ class BasePage:
     async def render_slot(
         self,
         slot_name: str,
-        default_renderer: Optional[Callable] = None,
-        layout_id: str = None,
+        default_renderer: Optional[Callable[..., Any]] = None,
+        layout_id: Optional[str] = None,
         append: bool = False,
     ) -> str:
         """Render a slot for the current layout."""
@@ -143,27 +150,27 @@ class BasePage:
 
             # Collect head content from ALL layout IDs in the inheritance chain
             for layout_id_key in self.head_slots:
-                for renderer in self.head_slots[layout_id_key]:
-                    if inspect.iscoroutinefunction(renderer):
-                        parts.append(await renderer())
+                for head_renderer in self.head_slots[layout_id_key]:
+                    if inspect.iscoroutinefunction(head_renderer):
+                        parts.append(await head_renderer())
                     else:
-                        parts.append(renderer())
+                        parts.append(head_renderer())
             return "".join(parts)
 
         # Normal replacement semantics
         if target_id and slot_name in self.slots[target_id]:
-            renderer = self.slots[target_id][slot_name]
+            renderer: Union[Callable[..., Any], str] = self.slots[target_id][slot_name]
             if callable(renderer):
                 if inspect.iscoroutinefunction(renderer):
-                    return await renderer()
-                return renderer()
+                    return str(await renderer())
+                return str(renderer())
             return str(renderer)
 
         # Fallback to default content if provided
         if default_renderer:
             if inspect.iscoroutinefunction(default_renderer):
-                return await default_renderer()
-            return default_renderer()
+                return str(await default_renderer())
+            return str(default_renderer())
 
         return ""
 
@@ -208,7 +215,7 @@ class BasePage:
 
         return Response(html, media_type="text/html")
 
-    async def handle_event(self, event_name: str, event_data: dict) -> Response:
+    async def handle_event(self, event_name: str, event_data: dict[str, Any]) -> Response:
         """Handle client event (from @click, etc.)."""
 
         # Retrieve handler
@@ -272,7 +279,7 @@ class BasePage:
         # Re-render without re-initializing
         return await self.render(init=False)
 
-    async def push_state(self):
+    async def push_state(self) -> None:
         """Force a UI update with current state (useful for streaming progress)."""
         if self._on_update:
             if inspect.iscoroutinefunction(self._on_update):

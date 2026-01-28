@@ -6,13 +6,13 @@ from pyhtml.runtime.websocket import WebSocketHandler
 
 
 class TestWebSocketAdvanced(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.app = MagicMock(spec=PyHTML)
         # Fix: ensure app.router.match is a mock
         self.app.router = MagicMock()
         self.handler = WebSocketHandler(self.app)
 
-    async def test_broadcast_reload(self):
+    async def test_broadcast_reload(self) -> None:
         """Test broadcast_reload method."""
         ws1 = AsyncMock()
         ws2 = AsyncMock()

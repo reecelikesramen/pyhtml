@@ -2,6 +2,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 from pyhtml.runtime.app import PyHTML
@@ -9,7 +10,7 @@ from starlette.requests import Request
 
 
 class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.test_dir = tempfile.mkdtemp()
         self.pages_dir = Path(self.test_dir)
         (self.pages_dir / "index.pyhtml").write_text("<h1>Index</h1>")
@@ -32,17 +33,17 @@ class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
         self.mock_loader_instance = MagicMock()
         self.mock_get_loader.return_value = self.mock_loader_instance
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for p in self.patches:
             p.stop()
         shutil.rmtree(self.test_dir)
 
-    def test_legacy_layout_ignored(self):
+    def test_legacy_layout_ignored(self) -> None:
         """Confirm layout.pyhtml is IGNORED."""
         # Create layout.pyhtml
         (self.pages_dir / "layout.pyhtml").write_text("LayoutContent <slot />")
 
-        app = PyHTML(self.pages_dir)
+        app = PyHTML(str(self.pages_dir))
 
         # app.loader should be a mock instance
         # We expect that for Strict Requirements, layout.pyhtml is NOT loaded as a layout.
@@ -54,17 +55,18 @@ class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
         # Normalize path for comparison if needed, but Path objects compare well usually.
         # Check call args
         loaded_paths = []
-        for call in app.loader.load.call_args_list:
+        loader = cast(Any, app.loader)
+        for call in loader.load.call_args_list:
             # call.args[0] is path
             loaded_paths.append(str(call.args[0]))
 
         self.assertNotIn(str(layout_path), loaded_paths, "layout.pyhtml should NOT be loaded")
 
-    async def test_404_pyhtml_not_error_page(self):
+    async def test_404_pyhtml_not_error_page(self) -> None:
         """Confirm 404.pyhtml is NOT used for error handling."""
         (self.pages_dir / "404.pyhtml").write_text("<h1>My Custom 404</h1>")
 
-        app = PyHTML(self.pages_dir)
+        app = PyHTML(str(self.pages_dir))
         # Mock router match to NOT find anything for /nonexistent
         # But we need it to NOT find /404 when looking for error page
 
@@ -77,7 +79,7 @@ class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
 
         # If I can spy on router.match, I can verify calls.
         app.router = MagicMock()
-        app.router.match.return_value = None  # Nothing found
+        cast(Any, app.router).match.return_value = None  # Nothing found
 
         request = MagicMock(spec=Request)
         request.url.path = "/nonexistent"
@@ -89,19 +91,19 @@ class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
 
         await app._handle_request(request)
 
-        calls = app.router.match.call_args_list
+        calls = cast(Any, app.router).match.call_args_list
         paths_checked = [c[0][0] for c in calls]
 
         self.assertIn("/nonexistent", paths_checked)
         self.assertNotIn("/404", paths_checked, "Should not look for /404")
         self.assertIn("/__error__", paths_checked, "Should look for /__error__")
 
-    async def test_nested_error_ignored(self):
+    async def test_nested_error_ignored(self) -> None:
         """Confirm nested __error__.pyhtml is ignored."""
         (self.pages_dir / "sub").mkdir()
         (self.pages_dir / "sub" / "__error__.pyhtml").write_text("Nested Error")
 
-        app = PyHTML(self.pages_dir)
+        app = PyHTML(str(self.pages_dir))
 
         # To verify it is ignored, we check existing routes
         # app.router.routes is a list of Route objects
@@ -116,7 +118,8 @@ class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
         # So it should NOT be loaded at all.
 
         nested_error_path = self.pages_dir / "sub" / "__error__.pyhtml"
-        loaded_paths = [str(call.args[0]) for call in app.loader.load.call_args_list]
+        loader = cast(Any, app.loader)
+        loaded_paths = [str(call.args[0]) for call in loader.load.call_args_list]
 
         self.assertNotIn(
             str(nested_error_path), loaded_paths, "Nested __error__.pyhtml should NOT be loaded"

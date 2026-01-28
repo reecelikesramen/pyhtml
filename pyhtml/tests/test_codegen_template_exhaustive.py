@@ -1,5 +1,6 @@
 import ast
 import unittest
+from typing import Any, cast, List, Union
 
 from pyhtml.compiler.ast_nodes import (
     BindAttribute,
@@ -14,10 +15,10 @@ from pyhtml.compiler.codegen.template import TemplateCodegen
 
 
 class TestCodegenTemplateExhaustive(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.codegen = TemplateCodegen()
 
-    def normalize_ast(self, node):
+    def normalize_ast(self, node: ast.AST | list[ast.AST]) -> ast.AST | list[ast.AST]:
         """Ensure all nodes have lineno/col_offset for unparse."""
         if isinstance(node, list):
             for n in node:
@@ -26,19 +27,20 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
 
         for child in ast.walk(node):
             if not hasattr(child, "lineno"):
-                child.lineno = 1
-                child.end_lineno = 1
-                child.col_offset = 0
-                child.end_col_offset = 0
+                c = cast(Any, child)
+                c.lineno = 1
+                c.end_lineno = 1
+                c.col_offset = 0
+                c.end_col_offset = 0
         return node
 
-    def assert_code_in(self, snippet, statements):
+    def assert_code_in(self, snippet: str, statements: List[ast.stmt]) -> None:
         """Helper to check if snippet exists in unparsed statements."""
-        self.normalize_ast(statements)
+        self.normalize_ast(cast(Any, statements))
         full_code = "\n".join(ast.unparse(s) for s in statements)
         self.assertIn(snippet, full_code)
 
-    def test_add_node_for_loop(self):
+    def test_add_node_for_loop(self) -> None:
         # <template $for={item in items}><span>{item}</span></template>
         for_attr = ForAttribute(
             name="$for",
@@ -54,23 +56,23 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
             tag="template", special_attributes=[for_attr], children=[span], line=1, column=0
         )
 
-        lines = []
+        lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines)
 
         self.assert_code_in("async for item in ensure_async_iterator(self.items):", lines)
         # Check that child node was added with increased indent
         self.assert_code_in("parts.append('<span')", lines)
 
-    def test_add_node_if_condition(self):
+    def test_add_node_if_condition(self) -> None:
         # <div $if={show_me}>Content</div>
         if_attr = IfAttribute(name="$if", value="show_me", condition="show_me", line=1, column=0)
         node = TemplateNode(tag="div", special_attributes=[if_attr], children=[], line=1, column=0)
 
-        lines = []
+        lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines)
         self.assert_code_in("if self.show_me:", lines)
 
-    def test_add_node_bind_checkbox(self):
+    def test_add_node_bind_checkbox(self) -> None:
         # <input type="checkbox" $bind={is_active}>
         bind = BindAttribute(
             name="$bind",
@@ -88,13 +90,13 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
             column=0,
         )
 
-        lines = []
+        lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines)
         # Check for checked binding logic
         self.assert_code_in("if self.is_active:", lines)
         self.assert_code_in("attrs['checked'] = ''", lines)
 
-    def test_add_node_bind_select(self):
+    def test_add_node_bind_select(self) -> None:
         # <select $bind={selected_val}><option value="1">One</option></select>
         bind = BindAttribute(
             name="$bind",
@@ -116,7 +118,7 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
             column=0,
         )
 
-        lines = []
+        lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines)
         # Check that option has selected logic based on bound_var
         self.assert_code_in(
@@ -124,32 +126,32 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         )
         self.assert_code_in("attrs['selected'] = ''", lines)
 
-    def test_add_node_reactive_boolean(self):
+    def test_add_node_reactive_boolean(self) -> None:
         # <button disabled={is_disabled}>Click</button>
         reactive = ReactiveAttribute(
             name="disabled", value="is_disabled", expr="is_disabled", line=1, column=0
         )
         node = TemplateNode(tag="button", special_attributes=[reactive], line=1, column=0)
 
-        lines = []
+        lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines)
         # Should handle HTML boolean attribute (presence/absence)
         self.assert_code_in("if _r_val is True:", lines)
         self.assert_code_in("attrs['disabled'] = ''", lines)
 
-    def test_add_node_show_attribute(self):
+    def test_add_node_show_attribute(self) -> None:
         # <div $show={is_visible}>...</div>
         show = ShowAttribute(
             name="$show", value="is_visible", condition="is_visible", line=1, column=0
         )
         node = TemplateNode(tag="div", special_attributes=[show], line=1, column=0)
 
-        lines = []
+        lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines)
         self.assert_code_in("if not self.is_visible:", lines)
         self.assert_code_in("attrs['style'] = attrs.get('style', '') + '; display: none'", lines)
 
-    def test_add_node_event_with_args(self):
+    def test_add_node_event_with_args(self) -> None:
         # <button @click={delete_user(user.id)}>Delete</button>
         event = EventAttribute(
             name="@click",
@@ -162,7 +164,7 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         )
         node = TemplateNode(tag="button", special_attributes=[event], line=1, column=0)
 
-        lines = []
+        lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, local_vars={"user"})
         # Should encode arguments to data-arg-0
         self.assert_code_in("attrs['data-arg-0'] = json.dumps(user.id)", lines)

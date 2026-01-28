@@ -2,6 +2,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pyhtml.runtime.app import PyHTML
@@ -10,7 +11,7 @@ from starlette.responses import Response
 
 
 class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.test_dir = tempfile.mkdtemp()
         self.pages_dir = Path(self.test_dir).resolve()
         # Mock Starlette to avoid actual server setup
@@ -21,16 +22,16 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
             patch("pyhtml.runtime.app.WebSocketHandler"),
             patch("pyhtml.runtime.webtransport_handler.WebTransportHandler"),
         ):
-            self.app = PyHTML(self.pages_dir)
+            self.app = PyHTML(str(self.pages_dir))
             # Setup router mock
             self.app.router = MagicMock()
             # Setup loader mock to avoid actual compilation
             self.app.loader = MagicMock()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         shutil.rmtree(self.test_dir)
 
-    def test_layout_ignores_legacy(self):
+    def test_layout_ignores_legacy(self) -> None:
         """Verify layout.pyhtml is IGNORED."""
         # Create both files
         (self.pages_dir / "layout.pyhtml").touch()
@@ -47,15 +48,16 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
         legacy_layout_path = self.pages_dir / "layout.pyhtml"
 
         # Filter calls for layout loading
+        loader = cast(Any, self.app.loader)
         layout_load_calls = [
             call
-            for call in self.app.loader.load.call_args_list
+            for call in loader.load.call_args_list
             if call.args[0] == expected_layout_path
         ]
 
         legacy_load_calls = [
             call
-            for call in self.app.loader.load.call_args_list
+            for call in loader.load.call_args_list
             if call.args[0] == legacy_layout_path
         ]
 
@@ -64,11 +66,12 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
 
         # Verify index page was loaded with implicit layout
         index_path = self.pages_dir / "index.pyhtml"
-        self.app.loader.load.assert_any_call(
+        loader = cast(Any, self.app.loader)
+        loader.load.assert_any_call(
             index_path, implicit_layout=str(expected_layout_path.resolve())
         )
 
-    def test_error_page_registration(self):
+    def test_error_page_registration(self) -> None:
         """Verify __error__.pyhtml is registered at /__error__."""
         (self.pages_dir / "__error__.pyhtml").touch()
 
@@ -80,9 +83,10 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
         # OR run _load_pages
 
         # Verify router add_route("/__error__", ...)
-        self.app.router.add_route.assert_any_call("/__error__", unittest.mock.ANY)
+        router = cast(Any, self.app.router)
+        router.add_route.assert_any_call("/__error__", unittest.mock.ANY)
 
-    async def test_error_code_injection(self):
+    async def test_error_code_injection(self) -> None:
         """Verify fallback to /__error__ injects error_code."""
         # Setup router.match to simulate finding /__error__
         # Scenario: User requests /nonexistent -> 404
@@ -97,14 +101,14 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
         # match("/404") -> None
         # match("/__error__") -> (PageClass, {}, 'main')
 
-        def router_match_side_effect(path):
+        def router_match_side_effect(path: str) -> Any:
             if path == "/404":
                 return None
             if path == "/__error__":
                 return (mock_page_class, {}, "main")
             return None
 
-        self.app.router.match.side_effect = router_match_side_effect
+        cast(Any, self.app.router).match.side_effect = router_match_side_effect
 
         request = MagicMock(spec=Request)
         request.url.path = "/nonexistent"
@@ -116,7 +120,7 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 404)
 
         # Verify error_code was set on page instance
-        self.assertEqual(mock_page_instance.error_code, 404)
+        self.assertEqual(cast(Any, mock_page_instance).error_code, 404)
 
 
 if __name__ == "__main__":

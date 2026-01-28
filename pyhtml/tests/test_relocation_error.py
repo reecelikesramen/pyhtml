@@ -1,13 +1,15 @@
 import base64
+from pathlib import Path
 
-import msgpack
+import msgpack # type: ignore[import-untyped]
 import pytest
+from typing import Any, cast
 from pyhtml.runtime.app import PyHTML
 from starlette.testclient import TestClient
 
 
 @pytest.fixture
-def app_dev(tmp_path):
+def app_dev(tmp_path: Path) -> PyHTML:
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()
     (pages_dir / "index.pyhtml").write_text(
@@ -19,7 +21,7 @@ def app_dev(tmp_path):
     return app
 
 
-def test_source_relocation_endpoint(app_dev, tmp_path):
+def test_source_relocation_endpoint(app_dev: PyHTML, tmp_path: Path) -> None:
     client = TestClient(app_dev.app)
 
     # Test /_pyhtml/source
@@ -42,7 +44,7 @@ def test_source_relocation_endpoint(app_dev, tmp_path):
     assert response.text == "print('hello')"
 
 
-def test_source_relocation_security(app_dev):
+def test_source_relocation_security(app_dev: PyHTML) -> None:
     client = TestClient(app_dev.app)
 
     # Should 404 if debug is off
@@ -57,7 +59,7 @@ def test_source_relocation_security(app_dev):
     assert response.status_code == 404
 
 
-def test_spa_relocation_failure_forces_reload(app_dev):
+def test_spa_relocation_failure_forces_reload(app_dev: PyHTML) -> None:
     client = TestClient(app_dev.app)
 
     with client.websocket_connect("/_pyhtml/ws") as websocket:
@@ -68,12 +70,12 @@ def test_spa_relocation_failure_forces_reload(app_dev):
         # We can mock the router to throw
         original_match = app_dev.router.match
 
-        def mock_match(path):
+        def mock_match(path: str) -> Any:
             if path == "/fail-hard":
                 raise RuntimeError("Hard failure")
             return original_match(path)
 
-        app_dev.router.match = mock_match
+        cast(Any, app_dev.router).match = mock_match
 
         websocket.send_bytes(msgpack.packb({"type": "relocate", "path": "/fail-hard"}))
 

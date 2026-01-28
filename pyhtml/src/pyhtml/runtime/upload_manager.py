@@ -17,7 +17,7 @@ class UploadManager:
     For this implementation, we rely on OS temp cleaning or process restart for now.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._temp_dir = Path(tempfile.mkdtemp(prefix="pyhtml_uploads_"))
 
     def save(self, file: UploadFile) -> str:

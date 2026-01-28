@@ -1,11 +1,12 @@
 """Server factory for uvicorn."""
 
 from pathlib import Path
+from typing import Any, Optional
 
 from pyhtml.runtime.app import PyHTML
 
 
-def create_app(pages_dir: Path = None, reload: bool = False):
+def create_app(pages_dir: Optional[Path] = None, reload: bool = False) -> Any:
     """Create ASGI app - used by uvicorn."""
     if pages_dir is None:
         # Default pages directory

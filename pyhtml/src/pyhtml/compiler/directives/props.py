@@ -45,7 +45,7 @@ class PropsDirectiveParser(DirectiveParser):
             parsed_args: List[Tuple[str, str, Optional[str]]] = []
 
             # Helper to get source segment if possible, or unparse
-            def unparse_node(node) -> str:
+            def unparse_node(node: ast.AST) -> str:
                 if hasattr(ast, "unparse"):
                     source = ast.unparse(node)
                     # ast.unparse might return something slightly different formatted,

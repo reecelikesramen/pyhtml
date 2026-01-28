@@ -2,9 +2,9 @@
 
 import ast
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
-from lxml import html
+from lxml import html  # type: ignore
 
 from pyhtml.compiler.ast_nodes import (
     EventAttribute,
@@ -16,6 +16,7 @@ from pyhtml.compiler.ast_nodes import (
     SpecialAttribute,
     SpreadAttribute,
     TemplateNode,
+    InterpolationNode,
 )
 from pyhtml.compiler.attributes.base import AttributeParser
 from pyhtml.compiler.attributes.bind import BindAttributeParser
@@ -37,7 +38,7 @@ from pyhtml.compiler.interpolation.jinja import JinjaInterpolationParser
 class PyHTMLParser:
     """Main parser orchestrator."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Directive registry
         self.directive_parsers: List[DirectiveParser] = [
             PathDirectiveParser(),
@@ -225,7 +226,7 @@ class PyHTMLParser:
             # Regex: attr={value} -> attr="{value}"
             # This allows lxml to parse attributes containing spaces (e.g. @click={count += 1})
             # Limitation: Does not handle nested braces for now.
-            def quote_wrapper(match):
+            def quote_wrapper(match: re.Match[str]) -> str:
                 attr = match.group(1)
                 value = match.group(2)
                 # If value contains double quotes, wrap in single quotes
@@ -447,7 +448,7 @@ class PyHTMLParser:
         """Extract validation rules from form inputs."""
         schema = FormValidationSchema()
 
-        def visit_node(node: TemplateNode):
+        def visit_node(node: TemplateNode) -> None:
             if not node.tag:
                 return
 
@@ -555,10 +556,10 @@ class PyHTMLParser:
 
         return rules
 
-    def _parse_attributes(self, attrs: Dict[str, Any]) -> Tuple[dict, List[SpecialAttribute]]:
+    def _parse_attributes(self, attrs: Dict[str, Any]) -> Tuple[dict, List[Union[SpecialAttribute, InterpolationNode]]]:
         """Separate regular attrs from special ones."""
         regular = {}
-        special = []
+        special: List[Union[SpecialAttribute, InterpolationNode]] = []
 
         for name, value in attrs.items():
             if value is None:

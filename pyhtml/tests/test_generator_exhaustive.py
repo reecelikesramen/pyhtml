@@ -12,10 +12,10 @@ from pyhtml.compiler.codegen.generator import CodeGenerator
 
 
 class TestGeneratorExhaustive(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.generator = CodeGenerator()
 
-    def test_generate_form_validation_complex(self):
+    def test_generate_form_validation_complex(self) -> None:
         # Form with validation and model
         schema = FormValidationSchema(
             fields={"email": FieldValidationRules(name="email", required=True)},
@@ -46,7 +46,7 @@ class TestGeneratorExhaustive(unittest.TestCase):
         # Verify it has some body content
         self.assertTrue(len(wrapper.body) > 0)
 
-    def test_transform_user_code_globals(self):
+    def test_transform_user_code_globals(self) -> None:
         code = "x = 10\ndef f(): pass"
         tree = ast.parse(code)
         # _transform_user_code handles assignments and functions

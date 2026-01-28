@@ -1,8 +1,10 @@
+from pathlib import Path
+
 from pyhtml.runtime.app import PyHTML
 from starlette.testclient import TestClient
 
 
-def test_source_endpoint_requires_dev_mode_and_debug(tmp_path):
+def test_source_endpoint_requires_dev_mode_and_debug(tmp_path: Path) -> None:
     """/_pyhtml/source only works when BOTH debug=True AND _is_dev_mode=True."""
     # Case 1: debug=True, _is_dev_mode=False (e.g. pyhtml run with debug=True)
     app = PyHTML(debug=True, pages_dir=str(tmp_path))
@@ -33,7 +35,7 @@ def test_source_endpoint_requires_dev_mode_and_debug(tmp_path):
     assert response.text == "# content"
 
 
-def test_file_endpoint_requires_dev_mode_and_debug(tmp_path):
+def test_file_endpoint_requires_dev_mode_and_debug(tmp_path: Path) -> None:
     """/_pyhtml/file/{encoded} gating."""
     import base64
 
@@ -57,7 +59,7 @@ def test_file_endpoint_requires_dev_mode_and_debug(tmp_path):
     assert response.text == "# content"
 
 
-def test_devtools_json_requires_dev_mode(tmp_path):
+def test_devtools_json_requires_dev_mode(tmp_path: Path) -> None:
     """DevTools JSON endpoint gating."""
     app = PyHTML(debug=True, pages_dir=str(tmp_path))
     # _is_dev_mode defaults to False

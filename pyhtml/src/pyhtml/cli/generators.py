@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-def generate_page(name: str):
+def generate_page(name: str) -> None:
     """Generate a new page."""
     pages_dir = Path("pages")
     pages_dir.mkdir(exist_ok=True)
@@ -27,7 +27,7 @@ def generate_page(name: str):
     page_file.write_text(template)
 
 
-def generate_component(name: str):
+def generate_component(name: str) -> None:
     """Generate a new component."""
     components_dir = Path("components")
     components_dir.mkdir(exist_ok=True)

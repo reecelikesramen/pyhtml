@@ -2,7 +2,7 @@
 
 import ast
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 
 @dataclass
@@ -260,7 +260,7 @@ class TemplateNode(ASTNode):
 
     tag: Optional[str]  # None for text nodes
     attributes: Dict[str, str] = field(default_factory=dict)  # Regular HTML attributes
-    special_attributes: List[SpecialAttribute] = field(default_factory=list)
+    special_attributes: List[Union[SpecialAttribute, "InterpolationNode"]] = field(default_factory=list)
     children: List["TemplateNode"] = field(default_factory=list)
     text_content: Optional[str] = None
     is_raw: bool = False

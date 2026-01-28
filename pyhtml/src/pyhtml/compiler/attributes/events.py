@@ -1,7 +1,7 @@
 """Event attribute parser."""
 
 import re
-from typing import Optional
+from typing import Optional, List
 
 from pyhtml.compiler.ast_nodes import EventAttribute
 from pyhtml.compiler.attributes.base import AttributeParser
@@ -38,7 +38,7 @@ class EventAttributeParser(AttributeParser):
         handler_name = attr_value[1:-1].strip()  # Strip brackets and whitespace
 
         # Parse handler args if present (future: handler(arg1, arg2))
-        handler_args = []
+        handler_args: List[str] = []
         if "(" in handler_name:
             # Future: parse args
             pass

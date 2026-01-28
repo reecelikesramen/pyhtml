@@ -1,5 +1,6 @@
 import ast
 import unittest
+from typing import cast, Any, List, Set, Union
 
 from pyhtml.compiler.ast_nodes import (
     EventAttribute,
@@ -13,10 +14,10 @@ from pyhtml.compiler.codegen.generator import CodeGenerator
 
 
 class TestCodeGenerator(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.generator = CodeGenerator()
 
-    def test_extract_user_imports(self):
+    def test_extract_user_imports(self) -> None:
         code = "import os\nfrom math import sqrt"
         tree = ast.parse(code)
         imports = self.generator._extract_user_imports(tree)
@@ -24,14 +25,14 @@ class TestCodeGenerator(unittest.TestCase):
         self.assertIsInstance(imports[0], ast.Import)
         self.assertIsInstance(imports[1], ast.ImportFrom)
 
-    def test_extract_user_classes(self):
+    def test_extract_user_classes(self) -> None:
         code = "class MyModel:\n    pass\n\ndef my_func():\n    pass"
         tree = ast.parse(code)
         classes = self.generator._extract_user_classes(tree)
         self.assertEqual(len(classes), 1)
-        self.assertEqual(classes[0].name, "MyModel")
+        self.assertEqual(cast(ast.ClassDef, classes[0]).name, "MyModel")
 
-    def test_collect_global_names(self):
+    def test_collect_global_names(self) -> None:
         code = "x = 10\ndef func(): pass\nasync def afunc(): pass"
         tree = ast.parse(code)
         methods, variables, async_methods = self.generator._collect_global_names(tree)
@@ -41,7 +42,7 @@ class TestCodeGenerator(unittest.TestCase):
         self.assertIn("x", variables)
         self.assertIn("request", variables)  # Default variable
 
-    def test_generate_basic_module(self):
+    def test_generate_basic_module(self) -> None:
         parsed = ParsedPyHTML(
             template=[TemplateNode(tag="div", children=[], attributes={}, line=1, column=0)],
             python_code="name = 'World'",
@@ -56,7 +57,7 @@ class TestCodeGenerator(unittest.TestCase):
         self.assertEqual(len(class_defs), 1)
         self.assertEqual(class_defs[0].name, "TestPage")
 
-    def test_transform_inline_code_argument_lifting(self):
+    def test_transform_inline_code_argument_lifting(self) -> None:
         # Test that unbound variables in arguments are lifted to parameters
         code = "update_user(user_id, 'new_name')"
         # user_id is unbound
@@ -66,11 +67,12 @@ class TestCodeGenerator(unittest.TestCase):
         self.assertEqual(args[0], "user_id")
 
         # Verify the call was transformed to use arg0
-        call = body[0].value
+        expr = cast(ast.Expr, body[0])
+        call = cast(ast.Call, expr.value)
         self.assertIsInstance(call.args[0], ast.Name)
-        self.assertEqual(call.args[0].id, "arg0")
+        self.assertEqual(cast(ast.Name, call.args[0]).id, "arg0")
 
-    def test_generate_form_validation(self):
+    def test_generate_form_validation(self) -> None:
         schema = FormValidationSchema(
             fields={"email": FieldValidationRules(name="email", required=True, input_type="email")}
         )
@@ -93,9 +95,9 @@ class TestCodeGenerator(unittest.TestCase):
         self.assertEqual(len(methods), 2)
         self.assertIsInstance(methods[0], ast.Assign)
         self.assertIsInstance(methods[1], ast.AsyncFunctionDef)
-        self.assertTrue(methods[1].name.startswith("_form_submit_"))
+        self.assertTrue(cast(ast.AsyncFunctionDef, methods[1]).name.startswith("_form_submit_"))
 
-    def test_extract_import_names(self):
+    def test_extract_import_names(self) -> None:
         code = "import os as my_os\nfrom math import sqrt as my_sqrt"
         tree = ast.parse(code)
         names = self.generator._extract_import_names(tree)
@@ -103,7 +105,7 @@ class TestCodeGenerator(unittest.TestCase):
         self.assertIn("my_sqrt", names)
         self.assertIn("json", names)
 
-    def test_generate_spa_script_injection(self):
+    def test_generate_spa_script_injection(self) -> None:
         # Multi-path directive triggers SPA injection
         parsed = ParsedPyHTML(
             template=[TemplateNode(tag="div", children=[], attributes={}, line=1, column=0)],
@@ -158,7 +160,7 @@ class TestCodeGenerator(unittest.TestCase):
                         if (
                             arg0.values
                             and isinstance(arg0.values[0], ast.Constant)
-                            and "<script" in arg0.values[0].value
+                            and "<script" in str(cast(ast.Constant, arg0.values[0]).value)
                         ):
                             script_appends.append(node)
 

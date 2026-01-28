@@ -3,11 +3,12 @@
 import os
 import sys
 from pathlib import Path
+from typing import Any, Optional
 
 import click
 
 
-def import_app(app_str: str):
+def import_app(app_str: str) -> Any:
     """Import application from string (e.g. 'main:app')."""
     if ":" not in app_str:
         raise click.BadParameter("App must be in format 'module:app'", param_hint="APP")
@@ -79,7 +80,7 @@ def _discover_app_str() -> str:
 
 @click.group()
 @click.version_option()
-def cli():
+def cli() -> None:
     """PyHTML framework CLI.
 
     Run 'pyhtml dev APP' to start development server.
@@ -98,7 +99,14 @@ def cli():
 @click.option("--ssl-keyfile", default=None, help="SSL key file")
 @click.option("--ssl-certfile", default=None, help="SSL certificate file")
 @click.option("--env-file", default=None, help="Environment configuration file")
-def dev(app, host, port, ssl_keyfile, ssl_certfile, env_file):
+def dev(
+    app: Optional[str],
+    host: str,
+    port: int,
+    ssl_keyfile: Optional[str],
+    ssl_certfile: Optional[str],
+    env_file: Optional[str],
+) -> None:
     """Start development server."""
     import asyncio
 
@@ -128,7 +136,7 @@ def dev(app, host, port, ssl_keyfile, ssl_certfile, env_file):
 
 @cli.command()
 @click.argument("app", required=False)
-def build(app):
+def build(app: Optional[str]) -> None:
     """Build the application for production (stub)."""
     if not app:
         app = _discover_app_str()
@@ -144,7 +152,9 @@ def build(app):
 @click.option("--port", default=8000, type=int, help="Port to bind to")
 @click.option("--workers", default=None, type=int, help="Number of worker processes")
 @click.option("--no-access-log", is_flag=True, help="Disable access logging")
-def run(app, host, port, workers, no_access_log):
+def run(
+    app: Optional[str], host: str, port: int, workers: Optional[int], no_access_log: bool
+) -> None:
     """Run production server using Uvicorn."""
     import multiprocessing
 

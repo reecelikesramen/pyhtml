@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -9,10 +10,10 @@ from pyhtml.runtime.validation import FieldRules, FormValidator
 
 
 class TestServerValidation(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.validator = FormValidator()
 
-    def test_numeric_min_max(self):
+    def test_numeric_min_max(self) -> None:
         """Test numeric min/max constraints."""
         rules = FieldRules(input_type="number", min_value="5", max_value="10")
 
@@ -31,7 +32,7 @@ class TestServerValidation(unittest.TestCase):
         # validate_field(..., "abc", ...) -> valid number check
         self.assertIsNotNone(self.validator.validate_field("age", "abc", rules))
 
-    def test_numeric_step(self):
+    def test_numeric_step(self) -> None:
         """Test numeric step validation."""
         rules = FieldRules(input_type="number", step="2", min_value="0")
 
@@ -44,7 +45,7 @@ class TestServerValidation(unittest.TestCase):
         self.assertIsNotNone(self.validator.validate_field("count", "1", rules))
         self.assertIsNotNone(self.validator.validate_field("count", "3", rules))
 
-    def test_string_length(self):
+    def test_string_length(self) -> None:
         """Test string length validation."""
         rules = FieldRules(minlength=3, maxlength=5)
 
@@ -56,7 +57,7 @@ class TestServerValidation(unittest.TestCase):
         self.assertIsNotNone(self.validator.validate_field("user", "ab", rules))
         self.assertIsNotNone(self.validator.validate_field("user", "abcdef", rules))
 
-    def test_pattern(self):
+    def test_pattern(self) -> None:
         """Test regex pattern validation."""
         rules = FieldRules(pattern=r"^\d{3}$")
 
@@ -67,7 +68,7 @@ class TestServerValidation(unittest.TestCase):
         self.assertIsNotNone(self.validator.validate_field("code", "12a", rules))
         self.assertIsNotNone(self.validator.validate_field("code", "1234", rules))
 
-    def test_type_email(self):
+    def test_type_email(self) -> None:
         """Test email validation."""
         rules = FieldRules(input_type="email")
 
@@ -77,7 +78,7 @@ class TestServerValidation(unittest.TestCase):
             self.validator.validate_field("email", "test@com", rules)
         )  # naive regex?
 
-    def test_required(self):
+    def test_required(self) -> None:
         """Test required validation."""
         rules = FieldRules(required=True)
 
@@ -90,7 +91,8 @@ class TestServerValidation(unittest.TestCase):
         self.assertIsNone(self.validator.validate_field("opt", "", rules_opt))
         self.assertIsNone(self.validator.validate_field("opt", None, rules_opt))
 
-    def test_validate_form_conversion(self):
+
+    async def test_validate_server_error(self) -> None:
         """Test validate_form handles type conversion and returns strictly typed data."""
         schema = {
             "age": FieldRules(input_type="number", min_value="18"),
@@ -109,12 +111,12 @@ class TestServerValidation(unittest.TestCase):
         self.assertTrue(cleaned["active"])
         self.assertEqual(cleaned["email"], "test@example.com")
 
-    def test_dynamic_validation(self):
+    def test_dynamic_validation(self) -> None:
         """Test dynamic expression validation."""
         # Simulating a state getter
         state = {"min_age": 21, "is_admin": True}
 
-        def get_state(expr):
+        def get_state(expr: str) -> Any:
             return eval(expr, {}, state)
 
         rules = FieldRules(

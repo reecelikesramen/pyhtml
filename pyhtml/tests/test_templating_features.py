@@ -1,8 +1,10 @@
+from pathlib import Path
+
 from pyhtml.runtime.app import PyHTML
 from starlette.testclient import TestClient
 
 
-def test_interpolation_ignore_in_script_and_style(tmp_path):
+def test_interpolation_ignore_in_script_and_style(tmp_path: Path) -> None:
     """Verify that {} in script and style tags are treated as literal text."""
     page_content = """
     <div>
@@ -33,7 +35,7 @@ def test_interpolation_ignore_in_script_and_style(tmp_path):
     assert "<p>Real interpolation: 2</p>" in content
 
 
-def test_interpolation_node_explicit_render(tmp_path):
+def test_interpolation_node_explicit_render(tmp_path: Path) -> None:
     """Cover the InterpolationNode logic in TemplateCodegen (fallback logic)."""
     page_content = "!path '/standalone'\\n{ 'hello' }\\n---\\n---"
     # Note: the double backslash is because I'm writing this in a python string
@@ -46,7 +48,7 @@ def test_interpolation_node_explicit_render(tmp_path):
     assert "hello" in response.text
 
 
-def test_multiple_event_handlers(tmp_path):
+def test_multiple_event_handlers(tmp_path: Path) -> None:
     """Cover multiple event handler logic in template codegen."""
     page_content = """!path '/multi'
 <button @click={fn1} @click.stop={fn2}>Click</button>
@@ -64,7 +66,7 @@ def fn2(): pass
     assert "fn2" in response.text
 
 
-def test_reactive_attributes(tmp_path):
+def test_reactive_attributes(tmp_path: Path) -> None:
     """Cover reactive attribute and boolean logic in template codegen."""
     page_content = """!path '/reactive'
 <input disabled={is_disabled} required={is_required} aria-label={label}>

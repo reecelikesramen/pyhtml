@@ -1,11 +1,14 @@
 import traceback
+from pathlib import Path
+from unittest.mock import MagicMock
+from typing import Any, cast
 
 import pytest
 from pyhtml.runtime.loader import PageLoader
 
 
 class TestCompilerSourceMap:
-    def test_traceback_line_numbers_script_runtime(self, tmp_path):
+    def test_traceback_line_numbers_script_runtime(self, tmp_path: Path) -> None:
         """Verify runtime errors in python blocks point to correct lines."""
         loader = PageLoader()
 
@@ -23,7 +26,7 @@ raise ValueError("Boom")
 
         try:
             page_cls = loader.load(pyhtml_file)
-            page = page_cls(None, {}, {}, {}, None)
+            page = page_cls(cast(Any, None), {}, {}, {}, None)
             import asyncio
 
             asyncio.run(page.render())
@@ -39,7 +42,7 @@ raise ValueError("Boom")
             # raise on line 2
             assert error_frame.lineno == 2, f"Raise should be on line 2, got {error_frame.lineno}"
 
-    def test_traceback_line_numbers_embedded_expr(self, tmp_path):
+    def test_traceback_line_numbers_embedded_expr(self, tmp_path: Path) -> None:
         """Verify errors in { expression } point to correct lines."""
         loader = PageLoader()
 
@@ -61,7 +64,7 @@ raise ValueError("Boom")
             # unless they are constant folded or top-level (which these aren't)
 
             # Setup minimal page instance
-            page = page_cls(None, {}, {}, {}, None)
+            page = page_cls(cast(Any, None), {}, {}, {}, None)
 
             # Render needs to be awaited? BasePage.render is async
             import asyncio

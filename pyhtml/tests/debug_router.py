@@ -1,7 +1,7 @@
 import re
 
 
-def replace_param(match):
+def replace_param(match: re.Match) -> str:
     print(f"MATCH: {match.group(0)} -> {{{match.group(1)}}}")
     return f"{{{match.group(1)}}}"
 

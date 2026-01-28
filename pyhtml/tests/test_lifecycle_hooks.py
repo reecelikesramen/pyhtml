@@ -2,26 +2,28 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
+from typing import Any, Coroutine
 from unittest.mock import MagicMock
 
 from pyhtml.runtime.loader import PageLoader
 
 
 class TestLifecycleHooks(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.loader = PageLoader()
         self.temp_dir = tempfile.TemporaryDirectory()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.temp_dir.cleanup()
         self.loader.invalidate_cache()
 
-    def create_page_class(self, content: str, filename: str = "temp.pyhtml"):
+    def create_page_class(self, content: str, filename: str = "temp.pyhtml") -> Any:
         path = Path(self.temp_dir.name) / filename
         path.write_text(content)
         return self.loader.load(path)
 
-    def run_async(self, coro):
+    def run_async(self, coro: Coroutine[Any, Any, Any]) -> Any:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
@@ -29,7 +31,7 @@ class TestLifecycleHooks(unittest.TestCase):
         finally:
             loop.close()
 
-    def test_top_level_init_execution(self):
+    def test_top_level_init_execution(self) -> None:
         """Verify top-level executable statements run on init=True."""
         content = """
 <p>Content</p>
@@ -58,7 +60,7 @@ self.counter = 1
         self.run_async(page.render(init=False))
         self.assertEqual(page.counter, 99)
 
-    def test_mount_hook(self):
+    def test_mount_hook(self) -> None:
         """Verify @mount decorated method runs on init."""
         content = """
 <p>Hello</p>
@@ -79,7 +81,7 @@ def initialize(self):
         self.assertTrue(hasattr(page, "mounted"))
         self.assertTrue(page.mounted)
 
-    def test_execution_order(self):
+    def test_execution_order(self) -> None:
         """Verify order: top-level -> @mount."""
         content = """
 <p>Test</p>

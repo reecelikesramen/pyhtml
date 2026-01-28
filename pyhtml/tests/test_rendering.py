@@ -1,11 +1,14 @@
 import asyncio
 import sys
 import unittest
+from typing import Any, cast
 from unittest.mock import MagicMock
+
+BasePage: Any = None
 
 
 # Helper to mock modules for tests
-def mock_modules(mapping):
+def mock_modules(mapping: dict) -> dict:
     original_modules = {}
     for name, mock in mapping.items():
         if name in sys.modules:
@@ -14,7 +17,7 @@ def mock_modules(mapping):
     return original_modules
 
 
-def restore_modules(original_modules, mapping):
+def restore_modules(original_modules: dict, mapping: dict) -> None:
     for name in mapping:
         if name in original_modules:
             sys.modules[name] = original_modules[name]
@@ -23,7 +26,7 @@ def restore_modules(original_modules, mapping):
 
 
 class TestPageRendering(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.mock_starlette = MagicMock()
         self.mocks = {
             "starlette": self.mock_starlette,
@@ -55,7 +58,7 @@ class TestPageRendering(unittest.TestCase):
         importlib.reload(loader_mod)
         BasePage = page_mod.BasePage
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         import importlib
 
         import pyhtml.runtime.loader as loader_mod
@@ -65,7 +68,7 @@ class TestPageRendering(unittest.TestCase):
         importlib.reload(page_mod)
         importlib.reload(loader_mod)
 
-    def test_params_as_attributes(self):
+    def test_params_as_attributes(self) -> None:
         """Verify params are exposed as attributes."""
         request = MagicMock()
         params = {"id": "42", "slug": "test-post"}
@@ -76,20 +79,20 @@ class TestPageRendering(unittest.TestCase):
         self.assertEqual(page.id, "42")
         self.assertEqual(page.slug, "test-post")
 
-    def test_recursive_slot_logic(self):
+    def test_recursive_slot_logic(self) -> None:
         """Verify slot registration logic manually."""
 
         # 1. Root Layout (LAYOUT_ID="ROOT")
         class RootLayout(BasePage):
             LAYOUT_ID = "ROOT"
 
-            async def _render_template(self):
+            async def _render_template(self) -> str:
                 # <slot /> renders default slot for layout ROOT
                 renderer = self.slots.get("ROOT", {}).get("default")
                 content = await renderer() if renderer else ""
                 return "ROOT_START|" + content + "|ROOT_END"
 
-            def _init_slots(self):
+            def _init_slots(self) -> None:
                 if hasattr(super(), "_init_slots"):
                     super()._init_slots()
 
@@ -99,13 +102,13 @@ class TestPageRendering(unittest.TestCase):
 
             # CodeGen: registers filler for ROOT default slot
             # MUST be unique to avoid override by child!
-            async def _render_slot_fill_default_sub(self):
+            async def _render_slot_fill_default_sub(self) -> str:
                 # SubLayout content: <slot /> (which renders SUB default slot)
                 renderer = self.slots.get("SUB", {}).get("default")
                 content = await renderer() if renderer else ""
                 return "SUB_START|" + content + "|SUB_END"
 
-            def _init_slots(self):
+            def _init_slots(self) -> None:
                 if hasattr(super(), "_init_slots"):
                     super()._init_slots()
                 # Register self for parent
@@ -116,10 +119,10 @@ class TestPageRendering(unittest.TestCase):
             # NO LAYOUT_ID (it's a page)
 
             # CodeGen: registers filler for SUB default slot
-            async def _render_slot_fill_default_leaf(self):
+            async def _render_slot_fill_default_leaf(self) -> str:
                 return "LEAF_CONTENT"
 
-            def _init_slots(self):
+            def _init_slots(self) -> None:
                 if hasattr(super(), "_init_slots"):
                     super()._init_slots()
                 self.register_slot("SUB", "default", self._render_slot_fill_default_leaf)
@@ -140,14 +143,14 @@ class TestPageRendering(unittest.TestCase):
         finally:
             loop.close()
 
-    def test_page_style_initialization(self):
+    def test_page_style_initialization(self) -> None:
         from pyhtml.runtime.style_collector import StyleCollector
 
         request = MagicMock()
         page = BasePage(request, {}, {})
         self.assertIsInstance(page._style_collector, StyleCollector)
 
-    def test_page_shared_style_collector(self):
+    def test_page_shared_style_collector(self) -> None:
         from pyhtml.runtime.style_collector import StyleCollector
 
         collector = StyleCollector()
@@ -155,9 +158,9 @@ class TestPageRendering(unittest.TestCase):
         page = BasePage(request, {}, {}, _style_collector=collector)
         self.assertIs(page._style_collector, collector)
 
-    def test_page_injects_styles_into_head(self):
+    def test_page_injects_styles_into_head(self) -> None:
         class StylePage(BasePage):
-            async def _render_template(self):
+            async def _render_template(self) -> str:
                 return "<html><head></head><body></body></html>"
 
         request = MagicMock()
@@ -173,12 +176,12 @@ class TestPageRendering(unittest.TestCase):
             # The HTML is passed to the Response constructor
             from starlette.responses import Response
 
-            html_passed = Response.call_args[0][0]
+            html_passed = cast(Any, Response).call_args[0][0]
             self.assertIn("<style>.test { color: red; }</style></head>", html_passed)
         finally:
             loop.close()
 
-    def test_render_head_slot_append(self):
+    def test_render_head_slot_append(self) -> None:
         request = MagicMock()
         page = BasePage(request, {}, {})
         page.register_head_slot("main", lambda: "<meta 1>")
@@ -194,15 +197,15 @@ class TestPageRendering(unittest.TestCase):
         finally:
             loop.close()
 
-    def test_handle_event_arg_normalization(self):
+    def test_handle_event_arg_normalization(self) -> None:
         # We need Response to be available for the class definition
         from starlette.responses import Response
 
         class HandlerPage(BasePage):
-            def on_click(self, arg0=None):
+            def on_click(self, arg0: Any = None) -> None:
                 self.last_arg0 = arg0
 
-            async def render(self, init=True):
+            async def render(self, init: bool = True) -> Response:
                 return Response("ok")
 
         request = MagicMock()

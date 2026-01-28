@@ -1,8 +1,10 @@
+from pathlib import Path
+
 from pyhtml.runtime.app import PyHTML
 from starlette.testclient import TestClient
 
 
-def test_synchronous_loop(tmp_path):
+def test_synchronous_loop(tmp_path: Path) -> None:
     """Verify that synchronous lists work in $for loops."""
 
     page_content = """
@@ -26,7 +28,7 @@ items = [1, 2, 3]
     assert "<li>3</li>" in response.text
 
 
-def test_static_path_config(tmp_path):
+def test_static_path_config(tmp_path: Path) -> None:
     """Verify static asset serving with custom URL path."""
 
     # Create pages dir

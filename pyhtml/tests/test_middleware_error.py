@@ -1,12 +1,13 @@
 import os
 
 import pytest
+from typing import Any, Dict, List, MutableMapping
 from pyhtml.runtime.debug import DevErrorMiddleware
 from starlette.responses import PlainTextResponse
 
 
 class MockApp:
-    async def __call__(self, scope, receive, send):
+    async def __call__(self, scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
         if scope["path"] == "/error":
             raise ValueError("Test Error")
         response = PlainTextResponse("OK")
@@ -14,18 +15,18 @@ class MockApp:
 
 
 @pytest.mark.asyncio
-async def test_middleware_catches_exception():
+async def test_middleware_catches_exception() -> None:
     app = MockApp()
     middleware = DevErrorMiddleware(app)
 
     scope = {"type": "http", "path": "/error", "method": "GET"}
 
-    async def receive():
+    async def receive() -> Dict[str, Any]:
         return {}
 
     sent_messages = []
 
-    async def send(message):
+    async def send(message: MutableMapping[str, Any]) -> None:
         sent_messages.append(message)
 
     await middleware(scope, receive, send)
@@ -42,7 +43,7 @@ async def test_middleware_catches_exception():
     assert "Traceback" in html
 
 
-def test_is_framework_error_logic():
+def test_is_framework_error_logic() -> None:
     # Unit test the path detection
     app = MockApp()
     middleware = DevErrorMiddleware(app)

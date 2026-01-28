@@ -7,14 +7,14 @@ from pyhtml.runtime.app import PyHTML
 
 
 class TestConfig(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.test_dir = tempfile.mkdtemp()
         self.tmp_path = Path(self.test_dir).resolve()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         shutil.rmtree(self.test_dir)
 
-    def test_default_config(self):
+    def test_default_config(self) -> None:
         # Should default to looking for 'pages' or 'src/pages' relative to cwd
         # But we can override it
         app = PyHTML(pages_dir=str(self.tmp_path), debug=True)
@@ -22,7 +22,7 @@ class TestConfig(unittest.TestCase):
         self.assertTrue(app.debug)
         self.assertTrue(app.path_based_routing)  # Default is True from user snippet
 
-    def test_explicit_config(self):
+    def test_explicit_config(self) -> None:
         app = PyHTML(
             pages_dir=str(self.tmp_path / "custom"),
             path_based_routing=False,
@@ -34,7 +34,7 @@ class TestConfig(unittest.TestCase):
         self.assertFalse(app.enable_pjax)
         self.assertTrue(app.enable_webtransport)
 
-    def test_auto_discovery(self):
+    def test_auto_discovery(self) -> None:
         # We can't easily test auto-discovery of CWD without mocking Path.cwd
         # causing side effects.
         # But we can test that passing None triggers the logic.
@@ -45,7 +45,7 @@ class TestConfig(unittest.TestCase):
             app = PyHTML(pages_dir=None)
             self.assertEqual(app.pages_dir, self.tmp_path / "src" / "pages")
 
-    def test_auto_discovery_root(self):
+    def test_auto_discovery_root(self) -> None:
         # Test finding 'pages' in root
         from unittest.mock import patch
 

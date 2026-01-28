@@ -6,16 +6,16 @@ which requires explicit enable_webtransport=True in H3Connection initialization.
 """
 
 import asyncio
-from typing import Callable, Optional
+from typing import Any, Callable, Optional, cast
 
-from aioquic.asyncio import QuicConnectionProtocol, serve
-from aioquic.h3.connection import H3_ALPN, H3Connection
-from aioquic.h3.events import (
+from aioquic.asyncio import QuicConnectionProtocol, serve  # type: ignore
+from aioquic.h3.connection import H3_ALPN, H3Connection  # type: ignore
+from aioquic.h3.events import (  # type: ignore
     H3Event,
     HeadersReceived,
 )
-from aioquic.quic.configuration import QuicConfiguration
-from aioquic.quic.events import ProtocolNegotiated, QuicEvent
+from aioquic.quic.configuration import QuicConfiguration  # type: ignore
+from aioquic.quic.events import ProtocolNegotiated, QuicEvent  # type: ignore
 
 
 class ASGIProtocol(QuicConnectionProtocol):
@@ -25,11 +25,11 @@ class ASGIProtocol(QuicConnectionProtocol):
     Handles WebTransport by creating H3Connection with enable_webtransport=True.
     """
 
-    def __init__(self, quic, app_factory: Callable, *args, **kwargs):
+    def __init__(self, quic: Any, *args: Any, app_factory: Callable, **kwargs: Any) -> None:
         super().__init__(quic, *args, **kwargs)
         self._http: Optional[H3Connection] = None
         self._app_factory = app_factory
-        self._app = None
+        self._app: Optional[Callable] = None
 
     def quic_event_received(self, event: QuicEvent) -> None:
         """Handle QUIC events, including protocol negotiation."""
@@ -93,50 +93,54 @@ class ASGIProtocol(QuicConnectionProtocol):
             "server": ("localhost", 3000),
         }
 
-    async def _handle_asgi(self, scope: dict, event: HeadersReceived):
+    async def _handle_asgi(self, scope: dict, event: HeadersReceived) -> None:
         """Handle ASGI application invocation."""
         stream_id = event.stream_id
 
         # Create receive/send callables
-        async def receive():
+        async def receive() -> dict:
             # For WebTransport: wait for connect message
             if scope["type"] == "webtransport":
                 return {"type": "webtransport.connect"}
             return {"type": "http.request"}
 
-        async def send(message):
+        async def send(message: dict) -> None:
             msg_type = message["type"]
             print(f"PyHTML: Sending {msg_type} on stream {stream_id}", flush=True)
 
             if msg_type == "webtransport.accept":
                 # Send 200 OK for WebTransport
-                self._http.send_headers(
-                    stream_id=stream_id,
-                    headers=[
-                        (b":status", b"200"),
-                        (b"sec-webtransport-http3-draft", b"draft02"),
-                    ],
-                )
+                if self._http:
+                    self._http.send_headers(
+                        stream_id=stream_id,
+                        headers=[
+                            (b":status", b"200"),
+                            (b"sec-webtransport-http3-draft", b"draft02"),
+                        ],
+                    )
                 print(f"PyHTML: WebTransport connection accepted on stream {stream_id}", flush=True)
             elif msg_type == "http.response.start":
                 status = message.get("status", 200)
                 response_headers = message.get("headers", [])
-                self._http.send_headers(
-                    stream_id=stream_id,
-                    headers=[(b":status", str(status).encode())] + response_headers,
-                )
+                if self._http:
+                    self._http.send_headers(
+                        stream_id=stream_id,
+                        headers=[(b":status", str(status).encode())] + response_headers,
+                    )
             elif msg_type == "http.response.body":
                 data = message.get("body", b"")
-                self._http.send_data(
-                    stream_id=stream_id,
-                    data=data,
-                    end_stream=not message.get("more_body", False),
-                )
+                if self._http:
+                    self._http.send_data(
+                        stream_id=stream_id,
+                        data=data,
+                        end_stream=not message.get("more_body", False),
+                    )
 
             self.transmit()
 
         # Dispatch to ASGI app
-        await self._app(scope, receive, send)
+        if self._app:
+            await self._app(scope, receive, send)
 
 
 async def run_aioquic_server(
@@ -145,7 +149,7 @@ async def run_aioquic_server(
     port: int,
     certfile: str,
     keyfile: str,
-):
+) -> None:
     """
     Run HTTP/3 + WebTransport server using aioquic directly.
 
@@ -165,7 +169,10 @@ async def run_aioquic_server(
     configuration.load_cert_chain(certfile, keyfile)
 
     # Create protocol factory
-    def create_protocol(*args, **kwargs):
+    # Create protocol factory
+    def create_protocol(*args: Any, **kwargs: Any) -> ASGIProtocol:
+        if "app_factory" in kwargs:
+            del kwargs["app_factory"]
         return ASGIProtocol(*args, app_factory=app_factory, **kwargs)
 
     # Start server
@@ -174,5 +181,5 @@ async def run_aioquic_server(
         host,
         port,
         configuration=configuration,
-        create_protocol=create_protocol,
+        create_protocol=create_protocol,  # type: ignore
     )

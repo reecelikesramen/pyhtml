@@ -1,14 +1,15 @@
 import pytest
+from typing import Any
 from pyhtml.compiler.exceptions import PyHTMLSyntaxError
 from pyhtml.compiler.parser import PyHTMLParser
 
 
-def parse(html):
+def parse(html: str) -> Any:
     parser = PyHTMLParser()
     return parser.parse(html)
 
 
-def test_event_syntax_enforcement():
+def test_event_syntax_enforcement() -> None:
     """Test that @event attributes must use brackets."""
     # Valid
     parse("<button @click={handler}></button>")
@@ -19,7 +20,7 @@ def test_event_syntax_enforcement():
         parse('<button @click="handler"></button>')
 
 
-def test_bind_syntax_enforcement():
+def test_bind_syntax_enforcement() -> None:
     """Test that $bind attributes must use brackets and $bind:busy is ignored."""
     # Valid
     parse("<input $bind={val}>")
@@ -52,7 +53,7 @@ def test_bind_syntax_enforcement():
     assert reactive_attrs[0].name == "$bind:busy"
 
 
-def test_conditional_syntax_enforcement():
+def test_conditional_syntax_enforcement() -> None:
     """Test that $if/$show attributes must use brackets."""
     # Valid
     parse("<div $if={cond}></div>")
@@ -65,7 +66,7 @@ def test_conditional_syntax_enforcement():
         parse('<div $show="cond"></div>')
 
 
-def test_loop_syntax_enforcement():
+def test_loop_syntax_enforcement() -> None:
     """Test that $for/$key attributes must use brackets."""
     # Valid
     parse("<div $for={item in items}></div>")
@@ -78,7 +79,7 @@ def test_loop_syntax_enforcement():
         parse('<div $key="item.id"></div>')
 
 
-def test_reactive_syntax_removal():
+def test_reactive_syntax_removal() -> None:
     """Test that :prop syntax is no longer supported as special attribute."""
     # :prop should be treated as literal string attribute
     parsed = parse('<div :title="val"></div>')

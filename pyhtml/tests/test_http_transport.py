@@ -1,8 +1,10 @@
 import asyncio
 import unittest
+from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 from unittest.mock import MagicMock
 
-import msgpack
+import msgpack  # type: ignore[import-untyped]
 from pyhtml.runtime.http_transport import HTTPSession, HTTPTransportHandler
 from pyhtml.runtime.page import BasePage
 from starlette.requests import Request
@@ -10,7 +12,12 @@ from starlette.requests import Request
 
 class MockRequest:
     @staticmethod
-    def create(body_data=None, query_params=None, headers=None, path="/"):
+    def create(
+        body_data: Optional[Dict[str, Any]] = None,
+        query_params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        path: str = "/",
+    ) -> Request:
         body = msgpack.packb(body_data) if body_data is not None else b""
         scope = {
             "type": "http",
@@ -25,22 +32,22 @@ class MockRequest:
 
             scope["query_string"] = urlencode(query_params).encode()
 
-        async def receive():
+        async def receive() -> Dict[str, Any]:
             return {"type": "http.request", "body": body, "more_body": False}
 
         return Request(scope, receive=receive)
 
 
 class MockPage(BasePage):
-    async def _render_template(self):
+    async def _render_template(self) -> str:
         return "<div>HTTP Page</div>"
 
-    async def handle_event(self, name, data):
+    async def handle_event(self, name: str, data: dict) -> Any:  # Response
         return await self.render()
 
 
 class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         import msgpack
         import pyhtml.runtime.http_transport as ht
 
@@ -50,7 +57,7 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         self.app.router = MagicMock()
         self.handler = HTTPTransportHandler(self.app)
 
-    async def test_create_session(self):
+    async def test_create_session(self) -> None:
         self.app.router.match.return_value = (MockPage, {}, "main")
         request = MockRequest.create(body_data={"path": "/test"})
 
@@ -63,7 +70,7 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.handler.sessions[session_id].path, "/test")
         self.assertIsInstance(self.handler.sessions[session_id].page, MockPage)
 
-    async def test_poll_timeout(self):
+    async def test_poll_timeout(self) -> None:
         session_id = "test-session"
         session = HTTPSession(session_id=session_id, path="/")
         self.handler.sessions[session_id] = session
@@ -71,8 +78,8 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         request = MockRequest.create(query_params={"session": session_id})
 
         # Patch timeout to be very short for test
-        def timeout_side_effect(coro, timeout):
-            coro.close()
+        def timeout_side_effect(coro: asyncio.Task, timeout: float) -> None:
+            cast(Any, coro).close()
             raise asyncio.TimeoutError
 
         with unittest.mock.patch("asyncio.wait_for", side_effect=timeout_side_effect):
@@ -80,7 +87,7 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
             data = msgpack.unpackb(response.body, raw=False)
             self.assertEqual(data, [])
 
-    async def test_poll_with_updates(self):
+    async def test_poll_with_updates(self) -> None:
         session_id = "test-session"
         session = HTTPSession(session_id=session_id, path="/")
         self.handler.sessions[session_id] = session
@@ -96,7 +103,7 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data[0]["type"], "update")
         self.assertEqual(data[0]["html"], "foo")
 
-    async def test_handle_event(self):
+    async def test_handle_event(self) -> None:
         session_id = "test-session"
         session = HTTPSession(session_id=session_id, path="/")
         # Create a real request for the page to avoid scope issues

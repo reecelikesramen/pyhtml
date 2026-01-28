@@ -2,26 +2,27 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 from pyhtml.runtime.loader import PageLoader
 
 
 class TestHooksRemoval(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.loader = PageLoader()
         self.temp_dir = tempfile.TemporaryDirectory()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.temp_dir.cleanup()
         self.loader.invalidate_cache()
 
-    def create_page_class(self, content: str, filename: str = "temp.pyhtml"):
+    def create_page_class(self, content: str, filename: str = "temp.pyhtml") -> Any:
         path = Path(self.temp_dir.name) / filename
         path.write_text(content)
         return self.loader.load(path)
 
-    def run_async(self, coro):
+    def run_async(self, coro: Any) -> Any:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
@@ -29,7 +30,7 @@ class TestHooksRemoval(unittest.TestCase):
         finally:
             loop.close()
 
-    def test_standard_hooks_ignored(self):
+    def test_standard_hooks_ignored(self) -> None:
         """Verify on_load/on_before_load are ignored unless called manually."""
         content = """
 <p>Test</p>

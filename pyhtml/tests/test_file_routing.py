@@ -5,10 +5,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Type, cast
 from unittest.mock import MagicMock
 
 
-def mock_modules(mapping):
+def mock_modules(mapping: dict) -> dict:
     original_modules = {}
     for name, mock in mapping.items():
         if name in sys.modules:
@@ -17,7 +18,7 @@ def mock_modules(mapping):
     return original_modules
 
 
-def restore_modules(original_modules, mapping):
+def restore_modules(original_modules: dict, mapping: dict) -> None:
     for name in mapping:
         if name in original_modules:
             sys.modules[name] = original_modules[name]
@@ -32,10 +33,12 @@ class MockPage:
 
 
 class MockLoader:
-    def __init__(self):
-        self.loaded = []
+    def __init__(self) -> None:
+        self.loaded: List[Tuple[Path, Optional[str]]] = []
 
-    def load(self, path, use_cache=True, implicit_layout=None):
+    def load(
+        self, path: Path, use_cache: bool = True, implicit_layout: str | None = None
+    ) -> type[MockPage]:
         self.loaded.append((path, implicit_layout))
 
         # Return a mock class with identifying info
@@ -46,12 +49,12 @@ class MockLoader:
 
         return Page
 
-    def invalidate_cache(self, path=None):
+    def invalidate_cache(self, path: Optional[Path] = None) -> None:
         pass
 
 
 class TestFileRouting(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         # Setup mocks
         self.mock_starlette = MagicMock()
         self.mock_jinja2 = MagicMock()
@@ -83,10 +86,13 @@ class TestFileRouting(unittest.TestCase):
         self.tmp_path = Path(self.test_dir)
 
         self.app = PyHTML(str(self.tmp_path))
-        self.app.loader = MockLoader()
+        self.app.loader = cast(Any, MockLoader())
         self.app.router = Router()
 
-    def tearDown(self):
+    def expected_mounts(self, expected: List[str]) -> None:
+        pass
+
+    def tearDown(self) -> None:
         from pyhtml.runtime import app as app_mod
         from pyhtml.runtime import loader as loader_mod
         from pyhtml.runtime import router as router_mod
@@ -97,7 +103,7 @@ class TestFileRouting(unittest.TestCase):
         importlib.reload(router_mod)
         importlib.reload(loader_mod)
 
-    def test_scan_simple_structure(self):
+    def test_scan_simple_structure(self) -> None:
         """Test standard file structure scanning."""
         # Create pages
         (self.tmp_path / "index.pyhtml").touch()
@@ -112,7 +118,7 @@ class TestFileRouting(unittest.TestCase):
         self.assertTrue(any("^/$" in p for p in root_patterns) or "/" in routes)
         self.assertIn("/about", routes)
 
-    def test_scan_nested_structure(self):
+    def test_scan_nested_structure(self) -> None:
         """Test nested directories and params."""
         (self.tmp_path / "index.pyhtml").touch()
 
@@ -140,7 +146,7 @@ class TestFileRouting(unittest.TestCase):
         # Normalized by router might be different
         self.assertIn("/posts/{slug}", routes)
 
-    def test_scan_layouts(self):
+    def test_scan_layouts(self) -> None:
         """Test layout discovery and injection."""
         layout = self.tmp_path / "__layout__.pyhtml"
         layout.touch()
@@ -158,7 +164,8 @@ class TestFileRouting(unittest.TestCase):
         self.app._scan_directory(self.tmp_path)
 
         # Check loading calls
-        loaded = self.app.loader.loaded
+        loader = cast(Any, self.app.loader)
+        loaded = loader.loaded
 
         # 1. Root layout should be loaded first (implicit_layout=None)
         # Loader called with (path, implicit_layout)
@@ -166,7 +173,7 @@ class TestFileRouting(unittest.TestCase):
         # Normalize paths for comparison
         # On macOS /var is link to /private/var. resolve() resolves it.
         # But we need to be consistent.
-        def norm(p):
+        def norm(p: Path) -> str:
             return str(p.resolve())
 
         loaded_normalized = [(norm(p), layout) for p, layout in loaded]
@@ -183,13 +190,13 @@ class TestFileRouting(unittest.TestCase):
         # Sub page should have sub layout
         self.assertIn((norm(sub / "page.pyhtml"), norm(sub_layout)), loaded_normalized)
 
-    def test_disable_path_based_routing(self):
+    def test_disable_path_based_routing(self) -> None:
         """Test that path_based_routing=False ignores implicit routes but keeps explicit ones."""
         # Re-init app with path_based_routing=False
         from pyhtml.runtime.app import PyHTML
 
         self.app = PyHTML(str(self.tmp_path), path_based_routing=False)
-        self.app.loader = MockLoader()
+        self.app.loader = cast(Any, MockLoader())
 
         # 1. Implicit page (should be IGNORED)
         (self.tmp_path / "implicit.pyhtml").touch()
@@ -200,15 +207,15 @@ class TestFileRouting(unittest.TestCase):
 
         # We need MockLoader to return a class with __routes__ for the explicit one
         # This requires a bit of mocking magic since MockLoader is simple
-        original_load = self.app.loader.load
+        original_load = cast(Any, self.app.loader).load
 
-        def mock_load(path, **kwargs):
-            cls = original_load(path, **kwargs)
+        def mock_load(path: Path, use_cache: bool = True, implicit_layout: str | None = None) -> Type[MockPage]:
+            cls = original_load(path, use_cache=use_cache, implicit_layout=implicit_layout)
             if path.name == "explicit.pyhtml":
-                cls.__routes__ = {"main": "/explicit"}
-            return cls
+                cast(Any, cls).__routes__ = {"main": "/explicit"}
+            return cast(Type[MockPage], cls)
 
-        self.app.loader.load = mock_load
+        cast(Any, self.app.loader).load = mock_load
 
         self.app._scan_directory(self.tmp_path)
 
@@ -216,13 +223,13 @@ class TestFileRouting(unittest.TestCase):
         self.assertNotIn("/implicit", routes)
         self.assertIn("/explicit", routes)
 
-    def test_enable_path_based_routing(self):
+    def test_enable_path_based_routing(self) -> None:
         """Test that path_based_routing=True (default) enables implicit routes."""
         # Re-init app with path_based_routing=True
         from pyhtml.runtime.app import PyHTML
 
         self.app = PyHTML(str(self.tmp_path), path_based_routing=True)
-        self.app.loader = MockLoader()
+        self.app.loader = cast(Any, MockLoader())
 
         (self.tmp_path / "implicit.pyhtml").touch()
 

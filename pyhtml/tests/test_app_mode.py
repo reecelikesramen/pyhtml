@@ -2,7 +2,7 @@ from pyhtml.runtime.app import PyHTML
 from starlette.testclient import TestClient
 
 
-def test_app_mode_gating_prod():
+def test_app_mode_gating_prod() -> None:
     # Production mode: debug=False, _is_dev_mode=False
     app = PyHTML(debug=False)
     app._is_dev_mode = False
@@ -20,7 +20,7 @@ def test_app_mode_gating_prod():
     assert app._get_client_script_url() == "/_pyhtml/static/pyhtml.core.min.js"
 
 
-def test_app_mode_gating_debug_not_dev():
+def test_app_mode_gating_debug_not_dev() -> None:
     # Debug=True but NOT dev mode (e.g. 'pyhtml run --debug')
     app = PyHTML(debug=True)
     app._is_dev_mode = False
@@ -38,7 +38,7 @@ def test_app_mode_gating_debug_not_dev():
     assert app._get_client_script_url() == "/_pyhtml/static/pyhtml.core.min.js"
 
 
-def test_app_mode_gating_dev():
+def test_app_mode_gating_dev() -> None:
     # Dev mode: debug=True, _is_dev_mode=True
     app = PyHTML(debug=True)
     app._is_dev_mode = True
@@ -57,7 +57,7 @@ def test_app_mode_gating_dev():
     assert app._get_client_script_url() == "/_pyhtml/static/pyhtml.dev.min.js"
 
 
-def test_capabilities_endpoint():
+def test_capabilities_endpoint() -> None:
     app = PyHTML()
     client = TestClient(app.app)
     response = client.get("/_pyhtml/capabilities")

@@ -4,7 +4,7 @@ from pyhtml.compiler.ast_nodes import EventAttribute, ParsedPyHTML, TemplateNode
 from pyhtml.compiler.codegen.generator import CodeGenerator
 
 
-def test_inline_handler_extraction():
+def test_inline_handler_extraction() -> None:
     generator = CodeGenerator()
 
     # Create template with inline handler

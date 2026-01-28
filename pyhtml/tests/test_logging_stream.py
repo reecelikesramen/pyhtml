@@ -6,7 +6,7 @@ import pytest
 from pyhtml.runtime.logging import ContextAwareStdout, log_callback_ctx
 
 
-def test_context_aware_stdout_no_context():
+def test_context_aware_stdout_no_context() -> None:
     """Verify print goes to original stdout when no context is active."""
     original_stdout = io.StringIO()
     ca_stdout = ContextAwareStdout(original_stdout)
@@ -16,14 +16,14 @@ def test_context_aware_stdout_no_context():
 
 
 @pytest.mark.asyncio
-async def test_context_aware_stdout_with_context():
+async def test_context_aware_stdout_with_context() -> None:
     """Verify print is intercepted when context is active."""
     original_stdout = io.StringIO()
     ca_stdout = ContextAwareStdout(original_stdout)
 
     received_msgs = []
 
-    async def callback(msg):
+    async def callback(msg: str) -> None:
         received_msgs.append(msg)
 
     token = log_callback_ctx.set(callback)
@@ -39,7 +39,7 @@ async def test_context_aware_stdout_with_context():
 
 
 @pytest.mark.asyncio
-async def test_websocket_logging_integration():
+async def test_websocket_logging_integration() -> None:
     """Verify websocket handler logic for logging."""
     from pyhtml.runtime.websocket import WebSocketHandler
 
